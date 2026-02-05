@@ -16,7 +16,15 @@ const formatDateDisplay = (isoString: string) => {
   return `${day}/${month}/${year}`;
 };
 
-const CollapsibleSection = ({ title, count, children, isOpenDefault = false, color }: { title: string, count: number, children: React.ReactNode, isOpenDefault?: boolean, color: string }) => {
+interface CollapsibleSectionProps {
+  title: string;
+  count: number;
+  children: React.ReactNode;
+  isOpenDefault?: boolean;
+  color: string;
+}
+
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, count, children, isOpenDefault = false, color }) => {
   const [isOpen, setIsOpen] = useState(isOpenDefault);
   
   const colorMap: Record<string, string> = {
@@ -49,7 +57,15 @@ const CollapsibleSection = ({ title, count, children, isOpenDefault = false, col
   );
 };
 
-const JobCard = ({ job, candidates, onEdit, onDelete, isTrashView = false }: { job: Job, candidates: Candidate[], onEdit: () => void, onDelete: (e: React.MouseEvent) => void, isTrashView?: boolean }) => {
+interface JobCardProps {
+  job: Job;
+  candidates: Candidate[];
+  onEdit: () => void;
+  onDelete: (e: React.MouseEvent) => void;
+  isTrashView?: boolean;
+}
+
+const JobCard: React.FC<JobCardProps> = ({ job, candidates, onEdit, onDelete, isTrashView = false }) => {
     const jobCandidates = candidates.filter(c => c.jobId === job.id);
     const hired = jobCandidates.find(c => c.status === 'Contratado');
     

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
@@ -8,11 +9,12 @@ import {
   BarChart, 
   Settings, 
   LogOut, 
-  UserCircle 
+  UserCircle,
+  Database
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, logout } = useData();
+  const { user, logout, isMockMode } = useData();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -25,16 +27,16 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
-      {/* 
-         Sidebar - Liquid Glass Effect 
-         bg-white/70: Semi-transparent white
-         backdrop-blur-lg: Strong blur for glass effect
-         border-r border-white/50: Subtle glass border
-      */}
+      {/* Sidebar */}
       <aside className="w-64 bg-white/70 backdrop-blur-lg border-r border-white/50 flex flex-col shadow-2xl z-20 relative">
         <div className="p-8 border-b border-slate-200/50">
           <h1 className="text-2xl font-bold tracking-tight text-blue-900">ATS Master</h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">Recruitment System</p>
+          {isMockMode && (
+              <div className="mt-2 flex items-center gap-1.5 px-2 py-1 bg-amber-100 text-amber-700 rounded text-[10px] font-bold border border-amber-200">
+                  <Database size={12} /> DADOS LOCAIS (PREVIEW)
+              </div>
+          )}
         </div>
 
         <nav className="flex-1 p-4 space-y-3 overflow-y-auto">
@@ -84,8 +86,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto bg-slate-50 relative">
-        {/* subtle background decoration */}
         <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-100/50 to-transparent pointer-events-none"></div>
+        
+        {/* Mock Mode Banner */}
+        {isMockMode && (
+          <div className="bg-amber-100 border-b border-amber-200 text-amber-800 px-4 py-2 text-xs font-bold text-center relative z-20">
+             ⚠ MODO DE VISUALIZAÇÃO: Conexão com banco de dados falhou. Exibindo dados de exemplo locais. Alterações não serão salvas.
+          </div>
+        )}
+
         <div className="p-8 max-w-[1600px] mx-auto relative z-10">
           {children}
         </div>

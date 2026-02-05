@@ -1,5 +1,5 @@
 
-import { sql } from '@vercel/postgres';
+import { neon } from '@neondatabase/serverless';
 
 export const config = {
   runtime: 'edge',
@@ -7,6 +7,8 @@ export const config = {
 
 export default async function handler(request: Request) {
   try {
+    const sql = neon(process.env.DATABASE_URL!);
+
     // Tabela de Usuários
     await sql`
       CREATE TABLE IF NOT EXISTS users (
@@ -21,8 +23,6 @@ export default async function handler(request: Request) {
     `;
 
     // Tabela Genérica para Dados (Jobs, Candidates, Talents, Settings)
-    // Utilizamos JSONB para armazenar a estrutura complexa do TypeScript sem precisar de centenas de colunas
-    // e separamos por 'type' para filtrar.
     await sql`
       CREATE TABLE IF NOT EXISTS entities (
         id TEXT PRIMARY KEY,
@@ -34,19 +34,22 @@ export default async function handler(request: Request) {
     `;
 
     // Criar usuário Master padrão se não existir
+    // Nota: O driver do Neon retorna um array de linhas diretamente
     const masterExists = await sql`SELECT * FROM users WHERE username = 'masteraccount'`;
-    if (masterExists.rowCount === 0) {
+    
+    if (masterExists.length === 0) {
       await sql`
         INSERT INTO users (id, username, password, name, role)
         VALUES ('u-master', 'masteraccount', 'master.123', 'Master Admin', 'MASTER')
       `;
     }
 
-    return new Response(JSON.stringify({ message: 'Database tables created successfully' }), {
+    return new Response(JSON.stringify({ message: 'Database tables created successfully (Neon)' }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
   } catch (error) {
+    console.error(error);
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { 'content-type': 'application/json' },
