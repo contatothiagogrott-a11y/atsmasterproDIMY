@@ -57,13 +57,14 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handlePasswordChange = (e: React.FormEvent) => {
+  // FIX: handlePasswordChange should be async to await changePassword promise
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     if (passwordData.new !== passwordData.confirm) {
       setPasswordMsg({ type: 'error', text: 'A confirmação de senha não coincide.' });
       return;
     }
-    const result = changePassword(passwordData.current, passwordData.new);
+    const result = await changePassword(passwordData.current, passwordData.new);
     if (result.success) {
       setPasswordMsg({ type: 'success', text: result.message });
       setPasswordData({ current: '', new: '', confirm: '' });
@@ -72,14 +73,15 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleAdminReset = (e: React.FormEvent) => {
+  // FIX: handleAdminReset should be async to await adminResetPassword promise
+  const handleAdminReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userToReset) return;
     if (resetData.new !== resetData.confirm) {
       setResetMsg({ type: 'error', text: 'As senhas não coincidem.' });
       return;
     }
-    const result = adminResetPassword(userToReset.id, resetData.new);
+    const result = await adminResetPassword(userToReset.id, resetData.new);
     if (result.success) {
       setResetMsg({ type: 'success', text: result.message });
       setTimeout(() => {

@@ -1,5 +1,6 @@
 
 import { neon } from '@neondatabase/serverless';
+import bcrypt from 'bcryptjs';
 
 export const config = {
   runtime: 'edge',
@@ -37,9 +38,10 @@ export default async function handler(request: Request) {
     const masterExists = await sql`SELECT * FROM users WHERE username = 'masteraccount'`;
     
     if (masterExists.length === 0) {
+      const hashedPassword = await bcrypt.hash('master.123', 10);
       await sql`
         INSERT INTO users (username, password, name, role)
-        VALUES ('masteraccount', 'master.123', 'Master Admin', 'MASTER')
+        VALUES ('masteraccount', ${hashedPassword}, 'Master Admin', 'MASTER')
       `;
     }
 

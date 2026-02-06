@@ -86,7 +86,8 @@ const JobCard: React.FC<JobCardProps> = ({ job, candidates, onEdit, onDelete, is
             <div className="flex justify-between items-start mb-3">
                 <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                         {job.isConfidential && <Lock size={14} className="text-amber-500" title="Confidencial" />}
+                         {/* FIX: Use span title attribute instead of title prop on Lucide icon */}
+                         {job.isConfidential && <span title="Confidencial"><Lock size={14} className="text-amber-500" /></span>}
                          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${getStatusColor(job.status)}`}>
                              {job.status}
                          </span>
