@@ -6,7 +6,7 @@ export const config = {
 };
 
 async function initTables(sql: any) {
-  // MUDANÇA: id agora é TEXT para aceitar "u-master" e outros IDs antigos
+  // Tabela de Usuários (ID Texto para aceitar u-master)
   await sql`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -20,7 +20,7 @@ async function initTables(sql: any) {
     );
   `;
 
-  // MUDANÇA: id agora é TEXT
+  // Tabela de Entidades (Genérica)
   await sql`
     CREATE TABLE IF NOT EXISTS entities (
       id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -58,7 +58,7 @@ export default async function handler(request: any, response: any) {
   const sql = neon(process.env.DATABASE_URL);
 
   try {
-    // --- FUNÇÃO DE RESTAURAR BACKUP ---
+    // --- 1. RESTAURAR BACKUP ---
     if (action === 'restore-backup') {
       const { data } = request.body;
       
@@ -66,16 +66,16 @@ export default async function handler(request: any, response: any) {
         return response.status(400).json({ error: 'Dados inválidos ou vazios' });
       }
 
-      // 1. Restaurar Usuários
+      // A. Restaurar Usuários
       if (data.users && Array.isArray(data.users)) {
         for (const user of data.users) {
           let finalPassword = user.password;
+          // Se a senha não estiver criptografada, criptografa
           if (!user.password.startsWith('$2a$')) {
              finalPassword = await bcrypt.hash(user.password, 10);
           }
           const finalRole = user.role ? user.role.toUpperCase() : 'USER';
 
-          // REMOVIDO ::uuid PARA ACEITAR TEXTO
           await sql`
             INSERT INTO users (id, username, password, name, role, created_by)
             VALUES (${user.id}, ${user.username}, ${finalPassword}, ${user.name}, ${finalRole}, ${user.createdBy || null})
@@ -88,9 +88,9 @@ export default async function handler(request: any, response: any) {
         }
       }
 
-      // 2. Restaurar Entidades
+      // B. Restaurar Entidades (Setores, Vagas, etc)
       const insertEntity = async (type: string, item: any) => {
-        // REMOVIDO ::uuid
+        // Salva o item inteiro dentro da coluna 'data'
         await sql`
           INSERT INTO entities (id, type, data)
           VALUES (${item.id}, ${type}, ${item})
@@ -107,9 +107,41 @@ export default async function handler(request: any, response: any) {
       return response.status(200).json({ success: true, message: 'Backup restaurado com sucesso!' });
     }
 
+    // --- 2. BUSCAR DADOS (GET-DATA) ---
+    // AQUI ESTAVA O PROBLEMA: Agora vamos separar os dados antes de enviar
+    if (action === 'get-data') {
+      try {
+        const rawEntities = await sql`SELECT * FROM entities WHERE deleted_at IS NULL`;
+        const users = await sql`SELECT id, username, name, role, created_by FROM users WHERE deleted_at IS NULL`;
+
+        // Separa a "massaroca" de entities em listas organizadas
+        const settings = rawEntities.filter((e: any) => e.type === 'setting').map((e: any) => e.data);
+        const jobs = rawEntities.filter((e: any) => e.type === 'job').map((e: any) => e.data);
+        const talents = rawEntities.filter((e: any) => e.type === 'talent').map((e: any) => e.data);
+        const candidates = rawEntities.filter((e: any) => e.type === 'candidate').map((e: any) => e.data);
+
+        // Retorna tudo separado para o Frontend entender
+        return response.status(200).json({ 
+          users, 
+          settings, 
+          jobs, 
+          talents, 
+          candidates 
+        });
+
+      } catch (err: any) {
+        if (err.code === '42P01' || err.message?.includes('does not exist')) {
+           await initTables(sql);
+           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [] });
+        }
+        throw err;
+      }
+    }
+
+    // --- 3. OUTRAS AÇÕES ---
+
     if (action === 'verify-password') {
       const { userId, password } = request.body;
-      // REMOVIDO ::uuid
       const rows = await sql`SELECT password FROM users WHERE id = ${userId} AND deleted_at IS NULL`;
       if (rows.length > 0) {
         const isMatch = await bcrypt.compare(password, rows[0].password);
@@ -126,7 +158,6 @@ export default async function handler(request: any, response: any) {
       }
       const role = user.role ? user.role.toUpperCase() : 'USER';
 
-      // REMOVIDO ::uuid
       await sql`
         INSERT INTO users (id, username, password, name, role, created_by)
         VALUES (${user.id || crypto.randomUUID()}, ${user.username}, ${hashedPassword}, ${user.name}, ${role}, ${user.created_by || null})
@@ -136,25 +167,8 @@ export default async function handler(request: any, response: any) {
       return response.status(200).json({ success: true });
     }
 
-    if (action === 'get-data') {
-      try {
-        const entities = await sql`SELECT * FROM entities WHERE deleted_at IS NULL`;
-        const users = await sql`SELECT id, username, name, role, created_by FROM users WHERE deleted_at IS NULL`;
-        return response.status(200).json({ entities, users });
-      } catch (err: any) {
-        if (err.code === '42P01' || err.message?.includes('does not exist')) {
-           await initTables(sql);
-           const entities = await sql`SELECT * FROM entities WHERE deleted_at IS NULL`;
-           const users = await sql`SELECT id, username, name, role, created_by FROM users WHERE deleted_at IS NULL`;
-           return response.status(200).json({ entities, users });
-        }
-        throw err;
-      }
-    }
-
     if (action === 'save-entity') {
       const { id, type, data } = request.body;
-      // REMOVIDO ::uuid
       await sql`
         INSERT INTO entities (id, type, data)
         VALUES (${id}, ${type}, ${data})
@@ -166,7 +180,6 @@ export default async function handler(request: any, response: any) {
 
     if (action === 'delete-entity') {
       const { id } = request.body;
-      // REMOVIDO ::uuid
       await sql`UPDATE entities SET deleted_at = NOW() WHERE id = ${id}`;
       return response.status(200).json({ success: true });
     }
