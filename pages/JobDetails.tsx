@@ -7,7 +7,7 @@ import {
   Globe, Users, UserPlus, MapPin, Briefcase, Filter,
   CheckCircle, Award, DollarSign, Activity, Lock, Download,
   Plus, Archive, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
-  Beaker, AlertTriangle, UserX // Adicionei UserX para desistência
+  Beaker, AlertTriangle, FileText // Adicionei FileText para o contrato
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType, CandidateTimeline } from '../types';
 import { exportJobCandidates } from '../services/excelService';
@@ -56,7 +56,7 @@ export const JobDetails: React.FC = () => {
   const [hiringData, setHiringData] = useState({ contractType: 'CLT' as ContractType, finalSalary: '', startDate: '' });
 
   // --- ESTADOS DE CANDIDATO ---
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false); // Edição
   const [formData, setFormData] = useState<Partial<Candidate>>({});
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
 
@@ -300,17 +300,28 @@ export const JobDetails: React.FC = () => {
           </div>
       </div>
 
-      {/* BANNER DE CONTRATAÇÃO */}
+      {/* BANNER DE CONTRATAÇÃO (ATUALIZADO COM TESTE E CONTRATO) */}
       {job.status === 'Fechada' && hiredCandidate && (
         <div className="mb-8 bg-gradient-to-r from-emerald-600 to-emerald-800 rounded-2xl shadow-xl text-white p-6 relative overflow-hidden flex flex-col md:flex-row items-center gap-6">
            <div className="bg-white/20 p-4 rounded-full"><CheckCircle size={40} className="text-white"/></div>
            <div className="flex-1 text-center md:text-left">
               <h2 className="text-2xl font-bold mb-1">Vaga Preenchida!</h2>
               <p className="text-emerald-100 font-medium text-lg">{hiredCandidate.name}</p>
+              
               <div className="flex flex-wrap gap-4 mt-3 justify-center md:justify-start text-sm">
-                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2"><DollarSign size={14}/> {hiredCandidate.finalSalary || 'N/I'}</span>
-                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2"><Calendar size={14}/> Início: {formatDate(hiredCandidate.timeline?.startDate)}</span>
-                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2"><Activity size={14}/> Processo: {metrics.daysOpen} dias</span>
+                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Salário Final"><DollarSign size={14}/> {hiredCandidate.finalSalary || 'N/I'}</span>
+                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Data de Início"><Calendar size={14}/> Início: {formatDate(hiredCandidate.timeline?.startDate)}</span>
+                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Tempo de Processo"><Activity size={14}/> Processo: {metrics.daysOpen} dias</span>
+                 
+                 {/* NOVOS CAMPOS DO SLA */}
+                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Tipo de Contrato">
+                    <FileText size={14}/> {hiredCandidate.contractType || 'CLT'}
+                 </span>
+                 {hiredCandidate.techTestEvaluator && (
+                    <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Aprovador Técnico">
+                        <Beaker size={14}/> Aprov.: {hiredCandidate.techTestEvaluator}
+                    </span>
+                 )}
               </div>
            </div>
         </div>
@@ -349,6 +360,7 @@ export const JobDetails: React.FC = () => {
                    </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
+                   {/* Badge de Status com cor Laranja para Desistência */}
                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase 
                         ${c.status === 'Reprovado' ? 'bg-red-100 text-red-700' : 
                           c.status === 'Desistência' ? 'bg-amber-100 text-amber-700' :
@@ -493,6 +505,7 @@ export const JobDetails: React.FC = () => {
                          </select>
                       </div>
                       
+                      {/* CAMPO DE MOTIVO DE REPROVAÇÃO (NOVO!) */}
                       {techForm.result === 'Reprovado' && (
                           <div className="animate-fadeIn">
                               <label className="block text-xs font-bold text-red-600 mb-1 flex items-center gap-1"><AlertTriangle size={10}/> Motivo da Reprovação</label>
