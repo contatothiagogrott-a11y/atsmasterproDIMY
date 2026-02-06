@@ -1,12 +1,10 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { db } from '../services/mockSupabase';
 import { User, Job, Candidate, TalentProfile, SettingItem } from '../types';
 
+// Definição da Interface do Contexto
 interface DataContextType {
   user: User | null;
   login: (u: string, p: string) => Promise<boolean>;
-  verifyUserPassword: (p: string) => Promise<boolean>;
   logout: () => void;
   changePassword: (currentPass: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   adminResetPassword: (targetUserId: string, newPass: string) => Promise<{ success: boolean, message: string }>;
@@ -14,12 +12,13 @@ interface DataContextType {
   users: User[];
   addUser: (u: User) => Promise<void>;
   updateUser: (u: User) => Promise<void>;
+  removeUser: (id: string) => Promise<void>;
 
   settings: SettingItem[];
   addSetting: (s: SettingItem) => Promise<void>;
   removeSetting: (id: string) => Promise<void>;
   updateSetting: (s: SettingItem) => Promise<void>;
-  importSettings: (s: SettingItem[]) => Promise<void>;
+  importSettings: (s: SettingItem[]) => Promise<void>; // Mantido para compatibilidade
 
   jobs: Job[];
   addJob: (j: Job) => Promise<void>;
@@ -34,181 +33,238 @@ interface DataContextType {
   talents: TalentProfile[];
   addTalent: (t: TalentProfile) => Promise<void>;
   removeTalent: (id: string) => Promise<void>;
+  updateTalent: (t: TalentProfile) => Promise<void>;
 
   refreshData: () => Promise<void>;
-  isMockMode: boolean; // Exposed to UI
+  loading: boolean;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(db.getSession());
+  // Estados Locais
+  const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<SettingItem[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [talents, setTalents] = useState<TalentProfile[]>([]);
-  const [isMockMode, setIsMockMode] = useState(false);
+  const [loading, setLoading] = useState(true);
 
+  // --- 1. FUNÇÃO MESTRA DE CARREGAMENTO (Chama API) ---
   const refreshData = async () => {
     try {
-        // Now db.loadAll() is resilient and returns mock data on error
-        const data = await db.loadAll();
-        setUsers(data.users);
-        setSettings(data.settings);
-        setJobs(data.jobs);
-        setCandidates(data.candidates);
-        setTalents(data.talents);
-        setIsMockMode(data.isMock);
-    } catch (e: any) {
-        console.error("Critical Failure in DataContext:", e);
-        // Even if the mock fallback fails (unlikely), we don't crash the app
+      const response = await fetch('/api/main?action=get-data');
+      if (!response.ok) throw new Error('Falha ao conectar com o servidor');
+      
+      const data = await response.json();
+      
+      // Atualiza os estados com o que veio do banco
+      if (data.users) setUsers(data.users);
+      if (data.settings) setSettings(data.settings);
+      if (data.jobs) setJobs(data.jobs);
+      if (data.talents) setTalents(data.talents);
+      if (data.candidates) setCandidates(data.candidates);
+      
+    } catch (error) {
+      console.error("Erro ao sincronizar dados:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
+  // Carrega dados ao iniciar e recupera sessão
   useEffect(() => {
     refreshData();
+    const savedUser = localStorage.getItem('ats_user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    }
   }, []);
 
-  const login = async (u: string, p: string) => {
-    const loggedUser = await db.login(u, p);
-    if (loggedUser) {
-      setUser(loggedUser);
-      await refreshData();
-      return true;
-    }
-    return false;
-  };
+  // --- 2. AUTENTICAÇÃO ---
+  const login = async (username: string, pass: string) => {
+    try {
+      // Usamos a rota de login que já criamos
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password: pass }),
+      });
 
-  const verifyUserPassword = async (p: string) => {
-    if (!user) return false;
-    return await db.verifyPassword(user.id, p);
+      if (response.ok) {
+        const userData = await response.json();
+        setUser(userData);
+        localStorage.setItem('ats_user', JSON.stringify(userData));
+        await refreshData(); // Garante que carregamos os dados frescos
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
   };
 
   const logout = () => {
-    db.logout();
     setUser(null);
+    localStorage.removeItem('ats_user');
+    window.location.href = '/login'; // Força redirecionamento se necessário
   };
 
   const changePassword = async (currentPass: string, newPass: string) => {
-    if (!user) return { success: false, message: 'Usuário não autenticado.' };
-    const isValid = await db.verifyPassword(user.id, currentPass);
-    if (!isValid) return { success: false, message: 'Senha atual incorreta.' };
-    if (newPass.length < 3) return { success: false, message: 'Senha muito curta.' };
+    if (!user) return { success: false, message: 'Não logado' };
+    
+    try {
+      // 1. Verifica senha atual
+      const verifyRes = await fetch('/api/main?action=verify-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, password: currentPass })
+      });
+      const verifyData = await verifyRes.json();
+      
+      if (!verifyData.valid) return { success: false, message: 'Senha atual incorreta' };
 
-    const updatedUser = { ...user, password: newPass };
-    await db.saveUser(updatedUser);
-    setUser(updatedUser);
-    return { success: true, message: 'Senha alterada!' };
+      // 2. Salva nova senha
+      await addUser({ ...user, password: newPass });
+      return { success: true, message: 'Senha alterada com sucesso!' };
+    } catch (e) {
+      return { success: false, message: 'Erro ao alterar senha' };
+    }
   };
 
   const adminResetPassword = async (targetUserId: string, newPass: string) => {
-    if (!user || user.role !== 'MASTER') return { success: false, message: 'Acesso negado.' };
-    
+    // Admin não precisa saber a senha antiga
     const targetUser = users.find(u => u.id === targetUserId);
-    if (!targetUser) return { success: false, message: 'Usuário não encontrado.' };
+    if (!targetUser) return { success: false, message: 'Usuário não encontrado' };
 
-    const updatedUser = { ...targetUser, password: newPass };
-    await db.saveUser(updatedUser);
-    await refreshData();
-    return { success: true, message: `Senha de ${targetUser.name} redefinida!` };
+    await addUser({ ...targetUser, password: newPass });
+    return { success: true, message: 'Senha resetada com sucesso!' };
   };
 
-  // --- CRUD WRAPPERS ---
-  // Note: In Mock Mode, these updates will update local state but won't persist if page reloads
-  // The DataContext logic for updating state is optimistic (or we could fetch again).
-  // For simplicity in this demo, we call refreshData(), but since refreshData calls db.loadAll(),
-  // and db.loadAll returns STATIC mock data in failure mode, new items might disappear on refresh.
-  // To make the UI feel responsive in Mock Mode, we manually update local state below.
+  // --- 3. PERSISTÊNCIA GENÉRICA (AJUDANTE) ---
+  const saveEntity = async (type: string, item: any) => {
+    try {
+      await fetch('/api/main?action=save-entity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id, type, data: item }),
+      });
+      refreshData();
+    } catch (error) {
+      console.error(`Erro ao salvar ${type}:`, error);
+    }
+  };
 
+  const deleteEntity = async (id: string) => {
+    try {
+      await fetch('/api/main?action=delete-entity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      refreshData();
+    } catch (error) {
+      console.error("Erro ao deletar:", error);
+    }
+  };
+
+  // --- 4. FUNÇÕES CRUD ESPECÍFICAS ---
+
+  // Usuários
   const addUser = async (u: User) => {
-    await db.saveUser(u);
-    if (isMockMode) setUsers([...users, u]); else refreshData();
+    try {
+      await fetch('/api/main?action=save-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...u, created_by: user?.id }),
+      });
+      refreshData();
+    } catch (error) {
+      console.error("Erro ao salvar usuário:", error);
+    }
+  };
+  const updateUser = (u: User) => addUser(u); // Mesma lógica (Upsert)
+  const removeUser = async (id: string) => {
+     // Implementar se necessário exclusão de usuário via API
+     console.warn("Remoção de usuário via API ainda não implementada");
   };
 
-  const updateUser = async (u: User) => {
-    await db.saveUser(u);
-    if (isMockMode) setUsers(users.map(ex => ex.id === u.id ? u : ex)); else refreshData();
-  };
-
+  // Configurações (Setores/Unidades)
   const addSetting = async (s: SettingItem) => {
-    await db.saveSettings([s]);
-    if (isMockMode) setSettings([...settings, s]); else refreshData();
+    setSettings(prev => [...prev, s]); // Atualiza tela rápido
+    await saveEntity('setting', s);
   };
-
-  const removeSetting = async (id: string) => {
-    await db.deleteSetting(id);
-    if (isMockMode) setSettings(settings.filter(s => s.id !== id)); else refreshData();
-  };
-
   const updateSetting = async (s: SettingItem) => {
-     await db.saveSettings([s]);
-     if (isMockMode) setSettings(settings.map(ex => ex.id === s.id ? s : ex)); else refreshData();
+    setSettings(prev => prev.map(i => i.id === s.id ? s : i));
+    await saveEntity('setting', s);
   };
-
+  const removeSetting = async (id: string) => {
+    setSettings(prev => prev.filter(i => i.id !== id));
+    await deleteEntity(id);
+  };
   const importSettings = async (s: SettingItem[]) => {
-    await db.saveSettings(s);
-    refreshData();
+    // Compatibilidade: chama a lógica nova de backup se necessário, ou ignora
+    console.log("ImportSettings legado chamado.");
   };
 
+  // Vagas (Jobs)
   const addJob = async (j: Job) => {
     const jobWithOwner = { ...j, createdBy: user?.id };
-    await db.saveJob(jobWithOwner);
-    if (isMockMode) setJobs([...jobs, jobWithOwner]); else refreshData();
+    setJobs(prev => [...prev, jobWithOwner]);
+    await saveEntity('job', jobWithOwner);
   };
-
   const updateJob = async (j: Job) => {
-    await db.saveJob(j);
-    if (isMockMode) setJobs(jobs.map(ex => ex.id === j.id ? j : ex)); else refreshData();
+    setJobs(prev => prev.map(ex => ex.id === j.id ? j : ex));
+    await saveEntity('job', j);
   };
-
   const removeJob = async (id: string) => {
-    if (user) {
-        await db.deleteJob(id, user.id);
-        if (isMockMode) setJobs(jobs.filter(j => j.id !== id)); else refreshData();
-    }
+    setJobs(prev => prev.filter(j => j.id !== id));
+    await deleteEntity(id);
   };
 
+  // Candidatos
   const addCandidate = async (c: Candidate) => {
-    const newCandidate = { ...c, lastInteractionAt: c.lastInteractionAt || new Date().toISOString() };
-    await db.saveCandidate(newCandidate);
-    if (isMockMode) setCandidates([...candidates, newCandidate]); else refreshData();
+    const newCandidate = { ...c, lastInteractionAt: new Date().toISOString() };
+    setCandidates(prev => [...prev, newCandidate]);
+    await saveEntity('candidate', newCandidate);
   };
-
-  const updateCandidate = async (c: Candidate, manualInteraction: boolean = false) => {
-    let updatedCandidate = { ...c };
-    if (!manualInteraction) updatedCandidate.lastInteractionAt = new Date().toISOString();
-    if (!updatedCandidate.firstContactAt && updatedCandidate.status !== 'Aguardando Triagem') {
-      updatedCandidate.firstContactAt = new Date().toISOString();
-    }
-    await db.saveCandidate(updatedCandidate);
-    if (isMockMode) setCandidates(candidates.map(ex => ex.id === c.id ? updatedCandidate : ex)); else refreshData();
+  const updateCandidate = async (c: Candidate, manualInteraction = false) => {
+    let updated = { ...c };
+    if (!manualInteraction) updated.lastInteractionAt = new Date().toISOString();
+    
+    setCandidates(prev => prev.map(ex => ex.id === c.id ? updated : ex));
+    await saveEntity('candidate', updated);
   };
-
   const removeCandidate = async (id: string) => {
-    await db.deleteCandidate(id);
-    if (isMockMode) setCandidates(candidates.filter(c => c.id !== id)); else refreshData();
+    setCandidates(prev => prev.filter(c => c.id !== id));
+    await deleteEntity(id);
   };
 
+  // Talentos
   const addTalent = async (t: TalentProfile) => {
-    await db.saveTalent(t);
-    if (isMockMode) setTalents([...talents, t]); else refreshData();
+    setTalents(prev => [...prev, t]);
+    await saveEntity('talent', t);
   };
-
+  const updateTalent = async (t: TalentProfile) => {
+    setTalents(prev => prev.map(ex => ex.id === t.id ? t : ex));
+    await saveEntity('talent', t);
+  };
   const removeTalent = async (id: string) => {
-    await db.deleteTalent(id);
-    if (isMockMode) setTalents(talents.filter(t => t.id !== id)); else refreshData();
+    setTalents(prev => prev.filter(t => t.id !== id));
+    await deleteEntity(id);
   };
 
   return (
     <DataContext.Provider value={{
-      user, login, verifyUserPassword, logout, changePassword, adminResetPassword,
-      users, addUser, updateUser,
+      user, login, logout, changePassword, adminResetPassword,
+      users, addUser, updateUser, removeUser,
       settings, addSetting, removeSetting, updateSetting, importSettings,
       jobs, addJob, updateJob, removeJob,
       candidates, addCandidate, updateCandidate, removeCandidate,
-      talents, addTalent, removeTalent,
-      refreshData, isMockMode
+      talents, addTalent, removeTalent, updateTalent,
+      refreshData, loading
     }}>
       {children}
     </DataContext.Provider>
