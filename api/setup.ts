@@ -1,15 +1,14 @@
 import { neon } from '@neondatabase/serverless';
-import bcrypt from 'bcryptjs'; // Importação Padrão do Node.js
+import bcrypt from 'bcryptjs';
 
 export const config = {
   runtime: 'nodejs',
 };
 
-export default async function handler(request: Request) {
+export default async function handler(request: any, response: any) {
   try {
     const sql = neon(process.env.DATABASE_URL!);
 
-    // Tabela de Usuários com UUID real
     await sql`
       CREATE TABLE IF NOT EXISTS users (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -23,7 +22,6 @@ export default async function handler(request: Request) {
       );
     `;
 
-    // Tabela Genérica para Dados com UUID real
     await sql`
       CREATE TABLE IF NOT EXISTS entities (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -34,28 +32,19 @@ export default async function handler(request: Request) {
       );
     `;
 
-    // Criar usuário Master padrão se não existir
     const masterExists = await sql`SELECT * FROM users WHERE username = 'masteraccount'`;
      
     if (masterExists.length === 0) {
-      // Volta a usar bcrypt.hash
       const hashedPassword = await bcrypt.hash('master.123', 10);
-      
       await sql`
         INSERT INTO users (username, password, name, role)
         VALUES ('masteraccount', ${hashedPassword}, 'Master Admin', 'MASTER')
       `;
     }
 
-    return new Response(JSON.stringify({ message: 'Database tables updated to UUID successfully' }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  } catch (error) {
+    return response.status(200).json({ message: 'Database tables updated to UUID successfully' });
+  } catch (error: any) {
     console.error(error);
-    return new Response(JSON.stringify({ error: (error as Error).message }), {
-      status: 500,
-      headers: { 'content-type': 'application/json' },
-    });
+    return response.status(500).json({ error: error.message });
   }
 }
