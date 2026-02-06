@@ -9,6 +9,7 @@ import { JobDetails } from './pages/JobDetails';
 import { TalentPool } from './pages/TalentPool';
 import { Reports } from './pages/Reports';
 import { SettingsPage } from './pages/Settings';
+import { StrategicReport } from './pages/StrategicReport'; // <--- PASSO 2: IMPORTAÇÃO DA NOVA PÁGINA
 
 const ProtectedRoute = () => {
   const { user } = useData();
@@ -22,8 +23,6 @@ const ProtectedRoute = () => {
   );
 };
 
-// MUDANÇA 1: Tirei o <Router> daqui de dentro.
-// Agora esse componente só devolve as Rotas puras.
 const AppRoutes = () => {
   return (
     <Routes>
@@ -36,6 +35,7 @@ const AppRoutes = () => {
         <Route path="/talent" element={<TalentPool />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/strategic-report" element={<StrategicReport />} /> {/* <--- PASSO 2: NOVA ROTA ADICIONADA */}
       </Route>
     </Routes>
   );
@@ -43,8 +43,6 @@ const AppRoutes = () => {
 
 const App: React.FC = () => {
   return (
-    // MUDANÇA 2: O Router agora é o Pai de Todos!
-    // Ele precisa estar aqui fora para o DataProvider (que usa useLocation) funcionar.
     <Router>
       <DataProvider>
         <AppRoutes />
