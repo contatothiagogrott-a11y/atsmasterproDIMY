@@ -35,11 +35,11 @@ export default async function handler(request: Request) {
       );
     `;
 
-    // Criar usuário Master padrão se não existir (Deixando o banco gerar o ID)
+    // Criar usuário Master padrão se não existir
     const masterExists = await sql`SELECT * FROM users WHERE username = 'masteraccount'`;
      
     if (masterExists.length === 0) {
-      // CORREÇÃO: Usamos 'hash()' direto, sem o 'bcrypt.' antes
+      // CORREÇÃO AQUI: Removemos o "bcrypt."
       const hashedPassword = await hash('master.123', 10);
       
       await sql`
