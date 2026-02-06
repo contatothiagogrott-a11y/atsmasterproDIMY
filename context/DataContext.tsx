@@ -6,9 +6,7 @@ interface DataContextType {
   user: User | null;
   login: (u: string, p: string) => Promise<boolean>;
   logout: () => void;
-  // --- CORREÇÃO: Adicionada de volta a função que faltava ---
-  verifyUserPassword: (password: string) => Promise<boolean>;
-  
+  verifyUserPassword: (p: string) => Promise<boolean>;
   changePassword: (currentPass: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   adminResetPassword: (targetUserId: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   
@@ -38,6 +36,10 @@ interface DataContextType {
   removeTalent: (id: string) => Promise<void>;
   updateTalent: (t: TalentProfile) => Promise<void>;
 
+  // --- NOVO: Suporte à Lixeira ---
+  trash: any[];
+  restoreItem: (id: string) => Promise<void>;
+
   refreshData: () => Promise<void>;
   loading: boolean;
 }
@@ -51,8 +53,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [jobs, setJobs] = useState<Job[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [talents, setTalents] = useState<TalentProfile[]>([]);
+  
+  // Estado novo da Lixeira
+  const [trash, setTrash] = useState<any[]>([]);
+  
   const [loading, setLoading] = useState(true);
-
   const location = useLocation();
 
   const refreshData = async () => {
@@ -76,6 +81,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.talents) setTalents(data.talents);
       if (data.candidates) setCandidates(data.candidates);
       
+      // Carrega a lixeira
+      if (data.trash) setTrash(data.trash);
+      
     } catch (error) {
       console.error("Erro ao sincronizar dados:", error);
     } finally {
@@ -93,8 +101,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     refreshData();
   }, [location.pathname]);
-
-  // --- Funções de Autenticação ---
 
   const login = async (username: string, pass: string) => {
     try {
@@ -124,7 +130,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.location.href = '/'; 
   };
 
-  // --- CORREÇÃO: Implementação da função verifyUserPassword ---
   const verifyUserPassword = async (password: string) => {
     if (!user) return false;
     try {
@@ -143,11 +148,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const changePassword = async (currentPass: string, newPass: string) => {
     if (!user) return { success: false, message: 'Não logado' };
-    
-    // Podemos reutilizar a função interna agora
     const isValid = await verifyUserPassword(currentPass);
     if (!isValid) return { success: false, message: 'Senha atual incorreta' };
-
     await addUser({ ...user, password: newPass });
     return { success: true, message: 'Senha alterada com sucesso!' };
   };
@@ -155,13 +157,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const adminResetPassword = async (targetUserId: string, newPass: string) => {
     const targetUser = users.find(u => u.id === targetUserId);
     if (!targetUser) return { success: false, message: 'Usuário não encontrado' };
-
     await addUser({ ...targetUser, password: newPass });
     return { success: true, message: 'Senha resetada com sucesso!' };
   };
 
-  // --- Persistência ---
-
+  // --- Funções Auxiliares ---
   const saveEntity = async (type: string, item: any) => {
     try {
       await fetch('/api/main?action=save-entity', {
@@ -188,8 +188,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // --- CRUD WRAPPERS ---
+  // --- NOVO: Função de Restaurar ---
+  const restoreItem = async (id: string) => {
+    try {
+      await fetch('/api/main?action=restore-entity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      await refreshData();
+    } catch (error) {
+      console.error("Erro ao restaurar:", error);
+    }
+  };
 
+  // --- CRUD WRAPPERS ---
   const addUser = async (u: User) => {
     try {
       await fetch('/api/main?action=save-user', {
@@ -198,14 +211,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ ...u, created_by: user?.id }),
       });
       await refreshData();
-    } catch (error) {
-      console.error("Erro ao salvar usuário:", error);
-    }
+    } catch (error) { console.error("Erro ao salvar usuário:", error); }
   };
   const updateUser = (u: User) => addUser(u);
   const removeUser = async (id: string) => { console.warn("Not implemented"); };
 
-  // Settings
   const addSetting = async (s: SettingItem) => {
     setSettings(prev => [...prev, s]); 
     await saveEntity('setting', s);
@@ -220,7 +230,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const importSettings = async (s: SettingItem[]) => { console.log("Legacy import"); };
 
-  // Jobs
   const addJob = async (j: Job) => {
     const jobWithOwner = { ...j, createdBy: user?.id };
     setJobs(prev => [...prev, jobWithOwner]);
@@ -235,7 +244,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
-  // Candidates
   const addCandidate = async (c: Candidate) => {
     const newCandidate = { ...c, lastInteractionAt: new Date().toISOString() };
     setCandidates(prev => [...prev, newCandidate]);
@@ -252,7 +260,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
-  // Talents
   const addTalent = async (t: TalentProfile) => {
     setTalents(prev => [...prev, t]);
     await saveEntity('talent', t);
@@ -269,13 +276,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <DataContext.Provider value={{
       user, login, logout, 
-      verifyUserPassword, // Adicionado de volta ao export
-      changePassword, adminResetPassword,
+      verifyUserPassword, changePassword, adminResetPassword,
       users, addUser, updateUser, removeUser,
       settings, addSetting, removeSetting, updateSetting, importSettings,
       jobs, addJob, updateJob, removeJob,
       candidates, addCandidate, updateCandidate, removeCandidate,
       talents, addTalent, removeTalent, updateTalent,
+      trash, restoreItem, // <--- EXPOSTO AQUI
       refreshData, loading
     }}>
       {children}
