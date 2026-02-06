@@ -4,10 +4,11 @@ import { exportToExcel } from '../services/excelService';
 import { Download, Activity, TrendingDown, UserX, Building, Filter, TrendingUp, UserMinus, LayoutList, Lock, Unlock, X, PieChart } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { isWithinInterval, parseISO, endOfDay, startOfDay } from 'date-fns';
-import { ReportModal } from '../components/ReportModal';
+import { useNavigate } from 'react-router-dom'; // <--- PASSO 3: IMPORTAÇÃO DO NAVIGATE
 
 export const Reports: React.FC = () => {
   const { jobs, candidates, settings, user, users } = useData();
+  const navigate = useNavigate(); // <--- PASSO 3: INICIALIZAÇÃO DO HOOK
   
   // GLOBAL FILTERS
   const [sectorFilter, setSectorFilter] = useState('');
@@ -22,9 +23,6 @@ export const Reports: React.FC = () => {
   const [isConfidentialUnlocked, setIsConfidentialUnlocked] = useState(false);
   const [isUnlockModalOpen, setIsUnlockModalOpen] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState('');
-
-  // Modal State
-  const [isReportOpen, setIsReportOpen] = useState(false);
 
   const filteredData = useMemo(() => {
     // SECURITY: STRICT FILTER - ONLY SHOW CONFIDENTIAL IF UNLOCKED
@@ -56,6 +54,7 @@ export const Reports: React.FC = () => {
             const openInRange = isWithinInterval(opened, { start: filterStart, end: filterEnd });
             const closeInRange = closed ? isWithinInterval(closed, { start: filterStart, end: filterEnd }) : false;
             const spansPeriod = opened <= filterEnd && (!closed || closed >= filterStart);
+            
             return openInRange || closeInRange || spansPeriod;
          }
       });
@@ -83,7 +82,7 @@ export const Reports: React.FC = () => {
     const processReasons = (list: any[]) => {
       const counts: Record<string, number> = {};
       list.forEach(c => {
-        const reason = c.rejectionReason?.trim() || 'Sem Motivo';
+        const reason = c.rejectionReason || 'Sem Motivo';
         const norm = reason.charAt(0).toUpperCase() + reason.slice(1);
         counts[norm] = (counts[norm] || 0) + 1;
       });
@@ -151,11 +150,15 @@ export const Reports: React.FC = () => {
               <input type="date" className="bg-transparent text-sm p-2 outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
             </div>
             
-            <button onClick={() => setIsReportOpen(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-indigo-700 ml-2 shadow transition-all active:scale-95">
+            {/* BOTÃO ATUALIZADO: AGORA NAVEGA PARA A SUBPÁGINA */}
+            <button 
+              onClick={() => navigate('/strategic-report')} 
+              className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-indigo-700 ml-2 shadow transition-all active:scale-95"
+            >
               <PieChart size={18}/> Análise Estratégica (BI)
             </button>
 
-            <button onClick={() => exportToExcel(fJobs, fCandidates, users)} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-green-700 ml-2 shadow transition-all active:scale-95">
+            <button onClick={() => exportToExcel(fJobs, fCandidates, users)} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-green-700 ml-2 shadow transition-all hover:scale-105 active:scale-95">
               <Download size={18}/> Excel
             </button>
         </div>
@@ -292,8 +295,6 @@ export const Reports: React.FC = () => {
           </table>
         </div>
       </div>
-
-      <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} />
     </div>
   );
 };
