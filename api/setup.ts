@@ -1,4 +1,3 @@
-
 import { neon } from '@neondatabase/serverless';
 // Importa APENAS as funções específicas
 import { hash, compare } from 'bcryptjs';
@@ -20,6 +19,7 @@ export default async function handler(request: Request) {
         name TEXT NOT NULL,
         role TEXT NOT NULL,
         created_by UUID,
+        created_at TIMESTAMP DEFAULT NOW(),
         deleted_at TIMESTAMP
       );
     `;
@@ -37,9 +37,11 @@ export default async function handler(request: Request) {
 
     // Criar usuário Master padrão se não existir (Deixando o banco gerar o ID)
     const masterExists = await sql`SELECT * FROM users WHERE username = 'masteraccount'`;
-    
+     
     if (masterExists.length === 0) {
-      const hashedPassword = await bcrypt.hash('master.123', 10);
+      // CORREÇÃO: Usamos 'hash()' direto, sem o 'bcrypt.' antes
+      const hashedPassword = await hash('master.123', 10);
+      
       await sql`
         INSERT INTO users (username, password, name, role)
         VALUES ('masteraccount', ${hashedPassword}, 'Master Admin', 'MASTER')
