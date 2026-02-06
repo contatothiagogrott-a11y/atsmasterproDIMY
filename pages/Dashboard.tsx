@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
-import { Briefcase, Users, CheckCircle, XCircle, Clock, AlertCircle, Building2, TrendingUp, UserMinus, Lock, Unlock, X } from 'lucide-react';
+import { Briefcase, Users, CheckCircle, XCircle, Clock, AlertCircle, Building2, TrendingUp, UserMinus, Lock, Unlock, X, PieChart as PieChartIcon } from 'lucide-react';
 import { isWithinInterval, parseISO } from 'date-fns';
+import { ReportModal } from '../components/ReportModal'; // <--- IMPORT NOVO
 
 export const Dashboard: React.FC = () => {
   const { jobs, candidates, settings, user } = useData();
@@ -15,6 +16,9 @@ export const Dashboard: React.FC = () => {
 
   // Confidential Visibility
   const [showConfidential, setShowConfidential] = useState(false);
+
+  // NEW: Report Modal State
+  const [isReportOpen, setIsReportOpen] = useState(false); // <--- ESTADO NOVO
 
   // PERMISSION CHECK
   const hasConfidentialAccess = useMemo(() => {
@@ -102,44 +106,53 @@ export const Dashboard: React.FC = () => {
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
-           <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Dashboard</h1>
-           <p className="text-slate-500 mt-1">Visão geral dos indicadores de recrutamento</p>
+            <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Dashboard</h1>
+            <p className="text-slate-500 mt-1">Visão geral dos indicadores de recrutamento</p>
         </div>
         
         {/* Filters and Security Toggle */}
         <div className="flex flex-wrap gap-3 mt-4 md:mt-0 items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
-           {/* Confidential Toggle - Only if access exists */}
-           {hasConfidentialAccess && (
-             <button 
-               onClick={() => setShowConfidential(!showConfidential)}
-               className={`p-2 rounded-lg transition-colors border flex items-center gap-2 text-sm font-bold ${showConfidential ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-300 text-slate-400'}`}
-               title={showConfidential ? "Modo Sigiloso Ativo" : "Ativar Modo Sigiloso"}
-             >
-               {showConfidential ? <Unlock size={18} /> : <Lock size={18} />}
-               <span className="hidden sm:inline">{showConfidential ? "Modo Aberto" : "Modo Seguro"}</span>
-             </button>
-           )}
+            {/* NEW REPORT BUTTON */}
+            <button 
+                onClick={() => setIsReportOpen(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-bold shadow-md transition-all"
+            >
+                <PieChartIcon size={18} /> Relatório Estratégico
+            </button>
 
-           <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
+            <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
 
-           <select 
+            {hasConfidentialAccess && (
+              <button 
+                onClick={() => setShowConfidential(!showConfidential)}
+                className={`p-2 rounded-lg transition-colors border flex items-center gap-2 text-sm font-bold ${showConfidential ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-300 text-slate-400'}`}
+                title={showConfidential ? "Modo Sigiloso Ativo" : "Ativar Modo Sigiloso"}
+              >
+                {showConfidential ? <Unlock size={18} /> : <Lock size={18} />}
+                <span className="hidden sm:inline">{showConfidential ? "Modo Aberto" : "Modo Seguro"}</span>
+              </button>
+            )}
+
+            <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
+
+            <select 
             className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none focus:ring-2 focus:ring-blue-500"
             value={sectorFilter}
             onChange={e => setSectorFilter(e.target.value)}
-           >
-             <option value="">Todos Setores</option>
-             {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-           </select>
-           <select 
+            >
+              <option value="">Todos Setores</option>
+              {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            <select 
             className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none focus:ring-2 focus:ring-blue-500"
             value={unitFilter}
             onChange={e => setUnitFilter(e.target.value)}
-           >
-             <option value="">Todas Unidades</option>
-             {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-           </select>
-           <input type="date" className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none" value={startDate} onChange={e => setStartDate(e.target.value)} />
-           <input type="date" className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            >
+              <option value="">Todas Unidades</option>
+              {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            <input type="date" className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
         </div>
       </div>
 
@@ -245,10 +258,10 @@ export const Dashboard: React.FC = () => {
         {/* Job List - ACTIVE CANDIDATES ONLY */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 lg:col-span-2 overflow-hidden flex flex-col">
           <div className="p-6 border-b border-slate-100">
-             <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <Users size={20} className="text-blue-600"/> Candidatos Ativos (Prioridade)
-             </h3>
-             <p className="text-xs text-slate-400 mt-1">Exibindo apenas candidatos em processos seletivos abertos e ativos.</p>
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Exibindo apenas candidatos em processos seletivos abertos e ativos.</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
@@ -293,6 +306,9 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* REPORT MODAL INJECTION */}
+      <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} />
     </div>
   );
 };
