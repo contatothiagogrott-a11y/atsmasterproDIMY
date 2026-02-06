@@ -36,9 +36,9 @@ interface DataContextType {
   removeTalent: (id: string) => Promise<void>;
   updateTalent: (t: TalentProfile) => Promise<void>;
 
-  // --- NOVO: Suporte à Lixeira ---
   trash: any[];
   restoreItem: (id: string) => Promise<void>;
+  permanentlyDeleteItem: (id: string) => Promise<void>; // <--- NOVO
 
   refreshData: () => Promise<void>;
   loading: boolean;
@@ -53,8 +53,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [jobs, setJobs] = useState<Job[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [talents, setTalents] = useState<TalentProfile[]>([]);
-  
-  // Estado novo da Lixeira
   const [trash, setTrash] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
@@ -80,8 +78,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.jobs) setJobs(data.jobs);
       if (data.talents) setTalents(data.talents);
       if (data.candidates) setCandidates(data.candidates);
-      
-      // Carrega a lixeira
       if (data.trash) setTrash(data.trash);
       
     } catch (error) {
@@ -180,7 +176,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await fetch('/api/main?action=delete-entity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        // Envia quem está deletando (user.id)
+        body: JSON.stringify({ id, userId: user?.id }),
       });
       await refreshData();
     } catch (error) {
@@ -188,7 +185,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // --- NOVO: Função de Restaurar ---
   const restoreItem = async (id: string) => {
     try {
       await fetch('/api/main?action=restore-entity', {
@@ -197,9 +193,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ id }),
       });
       await refreshData();
-    } catch (error) {
-      console.error("Erro ao restaurar:", error);
-    }
+    } catch (error) { console.error("Erro ao restaurar:", error); }
+  };
+
+  const permanentlyDeleteItem = async (id: string) => {
+    try {
+      await fetch('/api/main?action=permanently-delete-entity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      await refreshData();
+    } catch (error) { console.error("Erro ao excluir permanentemente:", error); }
   };
 
   // --- CRUD WRAPPERS ---
@@ -282,7 +287,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       jobs, addJob, updateJob, removeJob,
       candidates, addCandidate, updateCandidate, removeCandidate,
       talents, addTalent, removeTalent, updateTalent,
-      trash, restoreItem, // <--- EXPOSTO AQUI
+      trash, restoreItem, permanentlyDeleteItem, // <--- EXPOSTO
       refreshData, loading
     }}>
       {children}
