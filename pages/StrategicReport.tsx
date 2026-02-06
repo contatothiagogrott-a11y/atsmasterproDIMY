@@ -111,11 +111,11 @@ export const StrategicReport: React.FC = () => {
     <div className="space-y-8 animate-fadeIn pb-12">
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div className="flex items-center gap-4">
-          <button onClick={() => navigate(-1)} className="p-2.5 hover:bg-white rounded-xl text-slate-500 hover:text-indigo-600 transition-all border border-transparent hover:border-slate-200 shadow-sm"><ArrowLeft size={24} /></button>
+        <div className="flex items-center gap-4 text-left">
+          <button onClick={() => navigate(-1)} className="p-2.5 hover:bg-white rounded-xl text-slate-500 hover:text-indigo-600 border border-transparent hover:border-slate-200 transition-all shadow-sm"><ArrowLeft size={24} /></button>
           <div>
             <h1 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3">Relatório Estratégico <PieChart className="text-indigo-600" size={28} /></h1>
-            <p className="text-slate-500 font-medium italic uppercase text-[10px] tracking-widest text-left">Analytics de performance e movimentação</p>
+            <p className="text-slate-500 font-medium italic uppercase text-[10px] tracking-widest">Performance e Movimentação por Área</p>
           </div>
         </div>
         <div className="flex gap-3">
@@ -124,17 +124,17 @@ export const StrategicReport: React.FC = () => {
                 {isConfidentialUnlocked ? <Unlock size={18} /> : <Lock size={18} />} {isConfidentialUnlocked ? "Sigilo Aberto" : "Ativar Sigilo"}
               </button>
             )}
-            <button onClick={() => exportStrategicReport(metrics, startDate, endDate)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3.5 rounded-2xl font-black flex items-center gap-3 shadow-xl transition-all active:scale-95 uppercase text-xs tracking-widest"><Download size={20} /> Excel</button>
+            <button onClick={() => exportStrategicReport(metrics, startDate, endDate)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3.5 rounded-2xl font-black flex items-center gap-3 shadow-xl uppercase text-xs tracking-widest transition-all"><Download size={20} /> Excel</button>
         </div>
       </div>
 
       {/* FILTROS */}
       <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-3xl shadow-sm border border-slate-200 w-fit">
-          <div className="flex items-center gap-3 px-3"><Calendar size={18} className="text-indigo-500" /><div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Início</span><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-sm font-bold text-slate-700 outline-none bg-transparent" /></div></div>
+          <div className="flex items-center gap-3 px-3"><Calendar size={18} className="text-indigo-500" /><div className="flex flex-col text-left"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Início</span><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-sm font-bold text-slate-700 outline-none bg-transparent" /></div></div>
           <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
-          <div className="flex items-center gap-3 px-3"><Calendar size={18} className="text-rose-500" /><div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Término</span><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="text-sm font-bold text-slate-700 outline-none bg-transparent" /></div></div>
+          <div className="flex items-center gap-3 px-3"><Calendar size={18} className="text-rose-500" /><div className="flex flex-col text-left"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Término</span><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="text-sm font-bold text-slate-700 outline-none bg-transparent" /></div></div>
           <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
-          <div className="flex items-center gap-3 px-3"><Building2 size={18} className="text-slate-400" /><div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Unidade</span><select className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas as Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div></div>
+          <div className="flex items-center gap-3 px-3"><Building2 size={18} className="text-slate-400" /><div className="flex flex-col text-left"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Unidade</span><select className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas as Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div></div>
       </div>
 
       {/* CARDS PRINCIPAIS */}
@@ -148,7 +148,7 @@ export const StrategicReport: React.FC = () => {
 
       {/* RELAÇÃO POR ÁREA */}
       <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-          <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-3 uppercase tracking-tighter"><TrendingUp size={22} className="text-indigo-600"/> Relação por Área</h3>
+          <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-3 uppercase tracking-tighter text-left"><TrendingUp size={22} className="text-indigo-600"/> Relação por Área</h3>
           <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                   <thead>
@@ -158,7 +158,7 @@ export const StrategicReport: React.FC = () => {
                           <th className="pb-4 text-center">Concluídas</th>
                           <th className="pb-4 text-center">Congeladas</th>
                           <th className="pb-4 text-center">Canceladas</th>
-                          <th className="pb-4 pr-2 text-right">Detalhamento</th>
+                          <th className="pb-4 pr-2 text-right">Ação</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -179,50 +179,43 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* JANELA DE BRANCH (DETALHAMENTO) - AJUSTADA PARA SER MENOR */}
+      {/* JANELA DE DETALHAMENTO (BRANCH) - MAIS ESTREITA E ACIMA DE TUDO */}
       {selectedSector && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[10001] p-4 lg:p-8 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md flex items-center justify-center z-[99999] p-4 lg:p-8 animate-fadeIn">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                       <div className="flex items-center gap-3">
-                          <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-indigo-100"><TrendingUp size={22} /></div>
-                          <div>
-                              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Área: {selectedSector}</h2>
-                              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest text-left">Funil operacional detalhado por vaga</p>
+                          <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg"><TrendingUp size={22} /></div>
+                          <div className="text-left">
+                              <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-tight">Área: {selectedSector}</h2>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Detalhes por Solicitação</p>
                           </div>
                       </div>
                       <button onClick={() => setSelectedSector(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={24} /></button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                      <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px]">
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white">
+                      <table className="w-full text-left text-[11px]">
+                          <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-widest text-[9px]">
                               <tr>
-                                  <th className="p-4 rounded-l-xl">Título da Vaga</th>
-                                  <th className="p-4 text-center">Status</th>
-                                  <th className="p-4 text-center bg-indigo-50/50">Ent.</th>
-                                  <th className="p-4 text-center bg-indigo-50/50">Test.</th>
-                                  <th className="p-4 text-center bg-red-50/50">Rep.</th>
-                                  <th className="p-4 text-center bg-orange-50/50">Des.</th>
-                                  <th className="p-4 text-right rounded-r-xl">Ação</th>
+                                  <th className="p-3 rounded-l-xl">Título da Vaga</th>
+                                  <th className="p-3 text-center bg-indigo-50/50">Ent.</th>
+                                  <th className="p-3 text-center bg-indigo-50/50">Test.</th>
+                                  <th className="p-3 text-center bg-red-50/50">Rep.</th>
+                                  <th className="p-3 text-center bg-orange-50/50">Des.</th>
+                                  <th className="p-3 text-right rounded-r-xl">Ação</th>
                               </tr>
                           </thead>
-                          <tbody className="divide-y divide-slate-100">
+                          <tbody className="divide-y divide-slate-50">
                               {sectorBranchData.map(vaga => (
                                   <tr key={vaga.id} className="hover:bg-slate-50 transition-colors">
-                                      <td className="p-4 font-black text-slate-700 text-sm text-left">{vaga.title}</td>
-                                      <td className="p-4 text-center">
-                                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                              vaga.status === 'Aberta' ? 'bg-blue-100 text-blue-700' : 
-                                              vaga.status === 'Fechada' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                                          }`}>{vaga.status}</span>
-                                      </td>
-                                      <td className="p-4 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.interviews}</td>
-                                      <td className="p-4 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.tests}</td>
-                                      <td className="p-4 text-center font-black text-red-600 bg-red-50/10">{vaga.rejected}</td>
-                                      <td className="p-4 text-center font-black text-orange-600 bg-orange-50/10">{vaga.withdrawn}</td>
-                                      <td className="p-4 text-right">
-                                          <button onClick={() => navigate(`/jobs/${vaga.id}`)} className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg shadow-sm transition-all flex items-center gap-2 ml-auto font-black uppercase text-[9px]"><ExternalLink size={14} /> Abrir</button>
+                                      <td className="p-3 font-black text-slate-700 text-xs text-left max-w-[180px] truncate">{vaga.title}</td>
+                                      <td className="p-3 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.interviews}</td>
+                                      <td className="p-3 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.tests}</td>
+                                      <td className="p-3 text-center font-black text-red-600 bg-red-50/10">{vaga.rejected}</td>
+                                      <td className="p-3 text-center font-black text-orange-600 bg-orange-50/10">{vaga.withdrawn}</td>
+                                      <td className="p-3 text-right">
+                                          <button onClick={() => navigate(`/jobs/${vaga.id}`)} className="bg-indigo-600 hover:bg-indigo-700 text-white p-1.5 rounded-lg shadow-sm transition-all inline-flex items-center gap-1 font-black uppercase text-[8px]"><ExternalLink size={12} /> Abrir</button>
                                       </td>
                                   </tr>
                               ))}
@@ -235,14 +228,14 @@ export const StrategicReport: React.FC = () => {
 
       {/* MODAL DE SEGURANÇA */}
       {isUnlockModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[10002] p-4">
-              <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm border-t-8 border-amber-500">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100000] p-4">
+              <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm border-t-8 border-amber-500 animate-fadeIn">
                   <div className="flex justify-center mb-6 bg-amber-100 w-20 h-20 rounded-full items-center mx-auto text-amber-600"><Lock size={40} /></div>
-                  <h3 className="text-xl font-bold text-center mb-2 uppercase tracking-tighter">Acesso Restrito</h3>
-                  <p className="text-center text-slate-500 text-xs mb-6 font-bold uppercase tracking-widest text-left">Confirme sua senha Master para ver dados sigilosos.</p>
+                  <h3 className="text-xl font-bold text-center mb-2 uppercase tracking-tighter">Acesso Master</h3>
+                  <p className="text-center text-slate-500 text-[10px] mb-6 font-bold uppercase tracking-widest">Confirme sua senha Master.</p>
                   <form onSubmit={handleUnlockSubmit}>
-                      <input type="password" autoFocus placeholder="Senha Master" className="w-full border border-slate-200 p-4 rounded-2xl mb-4 text-center font-bold outline-none focus:ring-4 focus:ring-amber-100" value={unlockPassword} onChange={e => setUnlockPassword(e.target.value)} />
-                      <button type="submit" className="w-full bg-amber-600 text-white font-black py-4 rounded-2xl hover:bg-amber-700 shadow-lg uppercase text-[10px] tracking-[0.2em]">Desbloquear</button>
+                      <input type="password" autoFocus placeholder="Senha" className="w-full border border-slate-200 p-4 rounded-2xl mb-4 text-center font-bold outline-none focus:ring-4 focus:ring-amber-100" value={unlockPassword} onChange={e => setUnlockPassword(e.target.value)} />
+                      <button type="submit" className="w-full bg-amber-600 text-white font-black py-4 rounded-2xl hover:bg-amber-700 transition-all uppercase text-[10px] tracking-[0.2em]">Desbloquear</button>
                       <button type="button" onClick={() => setIsUnlockModalOpen(false)} className="w-full py-3 text-slate-400 text-[10px] font-black hover:text-slate-600 mt-2 uppercase tracking-widest">Cancelar</button>
                   </form>
               </div>
@@ -265,7 +258,7 @@ const StrategicCard = ({ title, value, color, icon: Icon, subtitle }: any) => {
         <div className={`p-6 rounded-3xl border relative overflow-hidden group shadow-sm bg-white`}>
             <Icon className={`absolute -right-2 -bottom-2 opacity-[0.08] size-24 transform group-hover:scale-110 transition-transform ${colorClasses[color].split(' ')[1]}`} />
             <span className={`text-[10px] font-black uppercase tracking-widest block mb-2 relative z-10 text-left ${colorClasses[color].split(' ')[1]}`}>{title}</span>
-            <div className="text-4xl font-black text-slate-800 relative z-10 text-left">{value}</div>
+            <div className="text-4xl font-black text-slate-800 relative z-10 text-left tracking-tighter">{value}</div>
             <p className={`mt-4 text-[9px] font-black uppercase tracking-wide relative z-10 text-left ${colorClasses[color].split(' ')[1]}`}>{subtitle}</p>
         </div>
     );
