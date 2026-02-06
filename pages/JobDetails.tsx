@@ -7,7 +7,7 @@ import {
   Globe, Users, UserPlus, MapPin, Briefcase, Filter,
   CheckCircle, Award, DollarSign, Activity, Lock, Download,
   Plus, Archive, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
-  Beaker, AlertTriangle, FileText // Adicionei FileText para o contrato
+  Beaker, AlertTriangle, FileText, PauseCircle // PauseCircle para congelamento
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType, CandidateTimeline } from '../types';
 import { exportJobCandidates } from '../services/excelService';
@@ -15,7 +15,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 
 const generateId = () => crypto.randomUUID();
 
-// Helper de Data (UTC)
+// Helper de Data (UTC para não pular dia)
 const toInputDate = (isoString?: string) => {
   if (!isoString) return '';
   return isoString.split('T')[0];
@@ -49,14 +49,20 @@ export const JobDetails: React.FC = () => {
   // --- ESTADOS DE FLUXO DA VAGA ---
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [targetStatus, setTargetStatus] = useState<'Cancelada' | 'Congelada' | 'Aberta' | null>(null);
-  const [statusFormData, setStatusFormData] = useState({ requester: '', reason: '', date: toInputDate(new Date().toISOString()) });
+  
+  // Inicializa com a data de hoje para facilitar
+  const [statusFormData, setStatusFormData] = useState({ 
+    requester: '', 
+    reason: '', 
+    date: toInputDate(new Date().toISOString()) 
+  });
 
   const [isHiringModalOpen, setIsHiringModalOpen] = useState(false);
   const [candidateToHire, setCandidateToHire] = useState<Candidate | null>(null);
   const [hiringData, setHiringData] = useState({ contractType: 'CLT' as ContractType, finalSalary: '', startDate: '' });
 
   // --- ESTADOS DE CANDIDATO ---
-  const [isModalOpen, setIsModalOpen] = useState(false); // Edição
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Candidate>>({});
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
 
@@ -86,12 +92,33 @@ export const JobDetails: React.FC = () => {
       return jobCandidates.find(c => c.status === 'Contratado' || job?.hiredCandidateIds?.includes(c.id));
   }, [jobCandidates, job]);
 
-  // --- MÉTRICAS ---
+  // --- CÁLCULO DE MÉTRICAS E SLA ---
   const metrics = useMemo(() => {
-    const daysOpen = job?.status === 'Fechada' && job.closedAt 
-        ? Math.ceil((new Date(job.closedAt).getTime() - new Date(job.openedAt).getTime()) / (1000 * 3600 * 24))
-        : Math.ceil((new Date().getTime() - new Date(job?.openedAt || new Date()).getTime()) / (1000 * 3600 * 24));
+    if (!job) return { daysOpen: 0, daysFrozen: 0, daysNet: 0, enrolled: 0, interviewed: 0, finalists: 0, rejected: 0, withdrawn: 0, origins: {} };
 
+    // 1. SLA Bruto (Dias corridos desde abertura até hoje ou fechamento)
+    const endDate = job.status === 'Fechada' && job.closedAt ? new Date(job.closedAt).getTime() : new Date().getTime();
+    const startDate = new Date(job.openedAt).getTime();
+    const daysOpenBruto = Math.ceil((endDate - startDate) / (1000 * 3600 * 24));
+
+    // 2. Cálculo de Dias Congelados
+    let totalFrozenMilliseconds = 0;
+    if (job.freezeHistory) {
+        job.freezeHistory.forEach(freeze => {
+            const startFreeze = new Date(freeze.startDate).getTime();
+            // Se tem data fim, usa ela. Se não tem (ainda congelada), usa "agora" ou data de fechamento da vaga
+            const endFreeze = freeze.endDate ? new Date(freeze.endDate).getTime() : endDate;
+            if (endFreeze > startFreeze) {
+                totalFrozenMilliseconds += (endFreeze - startFreeze);
+            }
+        });
+    }
+    const daysFrozen = Math.floor(totalFrozenMilliseconds / (1000 * 3600 * 24));
+
+    // 3. SLA Líquido (Real)
+    const daysNet = Math.max(0, daysOpenBruto - daysFrozen);
+
+    // Contagem de Origens
     const origins: Record<string, number> = { 'LinkedIn': 0, 'Instagram': 0, 'Indicação': 0, 'Outros': 0 };
     jobCandidates.forEach(c => {
         const o = c.origin?.toLowerCase() || '';
@@ -102,7 +129,9 @@ export const JobDetails: React.FC = () => {
     });
 
     return {
-        daysOpen,
+        daysOpen: daysOpenBruto,
+        daysFrozen,
+        daysNet,
         enrolled: jobCandidates.length,
         interviewed: jobCandidates.filter(c => c.timeline?.interview).length,
         finalists: jobCandidates.filter(c => ['Em Teste', 'Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).length,
@@ -123,24 +152,55 @@ export const JobDetails: React.FC = () => {
         setCandidateToHire(likelyHire || null);
         return;
     }
+    
+    // Se for Congelar, Descongelar (Voltar pra Aberta) ou Cancelar, abre modal de data
     if (newStatus === 'Congelada' || newStatus === 'Cancelada' || (newStatus === 'Aberta' && job.status === 'Congelada')) {
         setTargetStatus(newStatus as any);
+        // Reseta o form com a data de hoje
+        setStatusFormData({ requester: '', reason: '', date: toInputDate(new Date().toISOString()) });
         setIsStatusModalOpen(true);
         return;
     }
+    
+    // Outras mudanças diretas
     updateJob({ ...job, status: newStatus as any });
   };
 
   const handleStatusSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!job || !targetStatus) return;
+    
+    // Data escolhida no modal + Hora fixa para evitar fuso (meio-dia UTC)
+    const actionDateISO = `${statusFormData.date}T12:00:00.000Z`;
+    
     const updatedJob = { ...job, status: targetStatus };
+    
     if (targetStatus === 'Congelada') {
-        updatedJob.freezeHistory = [...(job.freezeHistory || []), { startDate: new Date().toISOString(), reason: statusFormData.reason, requester: statusFormData.requester }];
+        // Adiciona novo registro de congelamento
+        updatedJob.freezeHistory = [
+            ...(job.freezeHistory || []), 
+            { 
+                startDate: actionDateISO, 
+                reason: statusFormData.reason, 
+                requester: statusFormData.requester 
+            }
+        ];
+    } else if (targetStatus === 'Aberta' && job.status === 'Congelada') {
+        // DESCONGELAMENTO: Fecha o último registro de congelamento
+        if (updatedJob.freezeHistory && updatedJob.freezeHistory.length > 0) {
+            const history = [...updatedJob.freezeHistory];
+            // Pega o último item e adiciona a data de fim (Descongelamento)
+            history[history.length - 1] = {
+                ...history[history.length - 1],
+                endDate: actionDateISO
+            };
+            updatedJob.freezeHistory = history;
+        }
     } else if (targetStatus === 'Cancelada') {
-        updatedJob.closedAt = new Date().toISOString();
+        updatedJob.closedAt = actionDateISO;
         updatedJob.cancellationReason = statusFormData.reason;
     }
+
     updateJob(updatedJob);
     setIsStatusModalOpen(false);
   };
@@ -158,7 +218,12 @@ export const JobDetails: React.FC = () => {
     } as Candidate;
     updateCandidate(updatedCandidate);
 
-    updateJob({ ...job, status: 'Fechada', closedAt: new Date().toISOString(), hiredCandidateIds: [candidateToHire.id] });
+    updateJob({ 
+        ...job, 
+        status: 'Fechada', 
+        closedAt: new Date().toISOString(), 
+        hiredCandidateIds: [candidateToHire.id] 
+    });
     setIsHiringModalOpen(false);
   };
 
@@ -180,10 +245,9 @@ export const JobDetails: React.FC = () => {
     if (processedData.interviewAt) processedData.interviewAt = `${toInputDate(processedData.interviewAt)}T12:00:00.000Z`;
     if (processedData.lastInteractionAt) processedData.lastInteractionAt = `${toInputDate(processedData.lastInteractionAt)}T12:00:00.000Z`;
 
-    // Se mudou para perda, marca quem reprovou e data
     if (processedData.status === 'Reprovado' || processedData.status === 'Desistência') {
         if (!processedData.rejectionReason) {
-            alert("Por favor, selecione um motivo para a perda (Reprovação ou Desistência).");
+            alert("Por favor, selecione um motivo para a perda.");
             return;
         }
         processedData.rejectedBy = user?.name || 'Sistema';
@@ -221,7 +285,6 @@ export const JobDetails: React.FC = () => {
         techTestResult: techForm.didTest ? techForm.result : undefined
     };
     
-    // CORREÇÃO: Salva o motivo específico no rejectionReason para o Relatório
     if (techForm.didTest && techForm.result === 'Reprovado') {
         update.status = 'Reprovado';
         update.rejectionReason = techForm.rejectionDetail || 'Reprovado no Teste Técnico';
@@ -264,7 +327,7 @@ export const JobDetails: React.FC = () => {
                             'bg-red-100 text-red-600 border-red-200'
                         }`}
                     >
-                        <option value="Aberta">Aberta</option>
+                        <option value="Aberta">Aberta {job.status === 'Congelada' ? '(Descongelar)' : ''}</option>
                         <option value="Fechada">Fechada (Concluir)</option>
                         <option value="Congelada">Congelada (Pausar)</option>
                         <option value="Cancelada">Cancelada</option>
@@ -282,16 +345,20 @@ export const JobDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* DASHBOARD DE MÉTRICAS */}
+      {/* DASHBOARD DE MÉTRICAS (SLA + ORIGENS) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 md:grid-cols-6 divide-x divide-slate-100 gap-y-4 md:gap-y-0">
-             <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Dias Aberta</div><div className="text-xl font-bold text-blue-600">{metrics.daysOpen}</div></div>
-             <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Inscritos</div><div className="text-xl font-bold text-slate-700">{metrics.enrolled}</div></div>
+          {/* SLA */}
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 md:grid-cols-7 divide-x divide-slate-100 gap-y-4 md:gap-y-0">
+             <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Dias Bruto</div><div className="text-xl font-bold text-slate-600">{metrics.daysOpen}</div></div>
+             <div className="px-2 text-center bg-amber-50/50 rounded"><div className="text-[10px] font-bold text-amber-600 uppercase">Dias Congelada</div><div className="text-xl font-bold text-amber-700">{metrics.daysFrozen}</div></div>
+             <div className="px-2 text-center bg-blue-50/50 rounded"><div className="text-[10px] font-bold text-blue-600 uppercase">SLA Líquido</div><div className="text-xl font-bold text-blue-700">{metrics.daysNet}</div></div>
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Entrevistas</div><div className="text-xl font-bold text-slate-700">{metrics.interviewed}</div></div>
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Finalistas</div><div className="text-xl font-bold text-slate-700">{metrics.finalists}</div></div>
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Reprovados</div><div className="text-xl font-bold text-red-600">{metrics.rejected}</div></div>
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Desistentes</div><div className="text-xl font-bold text-amber-500">{metrics.withdrawn}</div></div>
           </div>
+          
+          {/* ORIGENS */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex justify-around items-center">
              <div className="text-center"><Linkedin size={20} className="text-blue-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['LinkedIn']}</span></div>
              <div className="text-center"><Instagram size={20} className="text-pink-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['Instagram']}</span></div>
@@ -300,7 +367,7 @@ export const JobDetails: React.FC = () => {
           </div>
       </div>
 
-      {/* BANNER DE CONTRATAÇÃO (ATUALIZADO COM TESTE E CONTRATO) */}
+      {/* BANNER DE CONTRATAÇÃO */}
       {job.status === 'Fechada' && hiredCandidate && (
         <div className="mb-8 bg-gradient-to-r from-emerald-600 to-emerald-800 rounded-2xl shadow-xl text-white p-6 relative overflow-hidden flex flex-col md:flex-row items-center gap-6">
            <div className="bg-white/20 p-4 rounded-full"><CheckCircle size={40} className="text-white"/></div>
@@ -311,16 +378,10 @@ export const JobDetails: React.FC = () => {
               <div className="flex flex-wrap gap-4 mt-3 justify-center md:justify-start text-sm">
                  <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Salário Final"><DollarSign size={14}/> {hiredCandidate.finalSalary || 'N/I'}</span>
                  <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Data de Início"><Calendar size={14}/> Início: {formatDate(hiredCandidate.timeline?.startDate)}</span>
-                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Tempo de Processo"><Activity size={14}/> Processo: {metrics.daysOpen} dias</span>
-                 
-                 {/* NOVOS CAMPOS DO SLA */}
-                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Tipo de Contrato">
-                    <FileText size={14}/> {hiredCandidate.contractType || 'CLT'}
-                 </span>
+                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Tempo Líquido"><Activity size={14}/> SLA Real: {metrics.daysNet} dias</span>
+                 <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Tipo de Contrato"><FileText size={14}/> {hiredCandidate.contractType || 'CLT'}</span>
                  {hiredCandidate.techTestEvaluator && (
-                    <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Aprovador Técnico">
-                        <Beaker size={14}/> Aprov.: {hiredCandidate.techTestEvaluator}
-                    </span>
+                    <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Aprovador Técnico"><Beaker size={14}/> Aprov.: {hiredCandidate.techTestEvaluator}</span>
                  )}
               </div>
            </div>
@@ -360,7 +421,6 @@ export const JobDetails: React.FC = () => {
                    </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                   {/* Badge de Status com cor Laranja para Desistência */}
                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase 
                         ${c.status === 'Reprovado' ? 'bg-red-100 text-red-700' : 
                           c.status === 'Desistência' ? 'bg-amber-100 text-amber-700' :
@@ -393,6 +453,49 @@ export const JobDetails: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* --- MODAL DE STATUS (CONGELAMENTO/CANCELAMENTO) --- */}
+      {isStatusModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+             <div className="flex items-center gap-2 mb-4 text-slate-800">
+                {targetStatus === 'Congelada' ? <PauseCircle size={24} className="text-amber-500"/> : <AlertTriangle size={24} className="text-red-500"/>}
+                <h3 className="text-lg font-bold">
+                    {targetStatus === 'Congelada' ? 'Congelar Vaga' : 
+                     targetStatus === 'Aberta' ? 'Descongelar Vaga' : 'Cancelar Vaga'}
+                </h3>
+             </div>
+             
+             <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                     {targetStatus === 'Congelada' ? 'Data do Congelamento' : 
+                      targetStatus === 'Aberta' ? 'Data do Retorno (Descongelamento)' : 'Data do Cancelamento'}
+                  </label>
+                  <input required type="date" className="w-full border p-2 rounded text-sm" value={statusFormData.date} onChange={e => setStatusFormData({...statusFormData, date: e.target.value})} />
+                </div>
+                
+                {targetStatus !== 'Aberta' && (
+                    <>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Motivo</label>
+                            <input className="w-full border p-2 rounded" value={statusFormData.reason} onChange={e => setStatusFormData({...statusFormData, reason: e.target.value})} placeholder="Por que está alterando?" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Solicitante</label>
+                            <input className="w-full border p-2 rounded" value={statusFormData.requester} onChange={e => setStatusFormData({...statusFormData, requester: e.target.value})} placeholder="Quem pediu?" />
+                        </div>
+                    </>
+                )}
+
+                <div className="flex gap-2 pt-2">
+                    <button onClick={() => setIsStatusModalOpen(false)} className="flex-1 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded">Cancelar</button>
+                    <button onClick={handleStatusSubmit} className="flex-1 bg-slate-800 text-white font-bold py-2 rounded hover:bg-slate-900">Confirmar</button>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
 
       {/* --- MODAL DE EDIÇÃO DO CANDIDATO --- */}
       {isModalOpen && (
@@ -505,7 +608,6 @@ export const JobDetails: React.FC = () => {
                          </select>
                       </div>
                       
-                      {/* CAMPO DE MOTIVO DE REPROVAÇÃO (NOVO!) */}
                       {techForm.result === 'Reprovado' && (
                           <div className="animate-fadeIn">
                               <label className="block text-xs font-bold text-red-600 mb-1 flex items-center gap-1"><AlertTriangle size={10}/> Motivo da Reprovação</label>
@@ -544,6 +646,13 @@ export const JobDetails: React.FC = () => {
                  {candidateToHire && (
                     <>
                        <div><label className="block text-xs font-bold text-slate-500 mb-1">Salário Final</label><input className="w-full border p-2 rounded" value={hiringData.finalSalary} onChange={e => setHiringData({...hiringData, finalSalary: e.target.value})} placeholder="R$ 0,00" /></div>
+                       <div><label className="block text-xs font-bold text-slate-500 mb-1">Tipo de Contrato</label>
+                          <select className="w-full border p-2 rounded" value={hiringData.contractType} onChange={e => setHiringData({...hiringData, contractType: e.target.value as ContractType})}>
+                             <option value="CLT">CLT</option>
+                             <option value="PJ">PJ</option>
+                             <option value="Estágio">Estágio</option>
+                          </select>
+                       </div>
                        <div><label className="block text-xs font-bold text-slate-500 mb-1">Data de Início</label><input type="date" className="w-full border p-2 rounded" value={hiringData.startDate} onChange={e => setHiringData({...hiringData, startDate: e.target.value})} /></div>
                        <button onClick={handleHiringSubmit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg mt-2">Confirmar Contratação</button>
                     </>
@@ -551,21 +660,6 @@ export const JobDetails: React.FC = () => {
                  <button onClick={() => setIsHiringModalOpen(false)} className="w-full py-2 text-slate-400 font-bold hover:text-slate-600">Cancelar</button>
               </div>
            </div>
-        </div>
-      )}
-
-      {/* --- MODAL DE STATUS --- */}
-      {isStatusModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-             <h3 className="text-lg font-bold mb-4">{targetStatus} Vaga</h3>
-             <div className="space-y-4">
-                <div><label className="block text-xs font-bold text-slate-700 mb-1">Motivo</label><input className="w-full border p-2 rounded" value={statusFormData.reason} onChange={e => setStatusFormData({...statusFormData, reason: e.target.value})} /></div>
-                <div><label className="block text-xs font-bold text-slate-700 mb-1">Solicitante</label><input className="w-full border p-2 rounded" value={statusFormData.requester} onChange={e => setStatusFormData({...statusFormData, requester: e.target.value})} /></div>
-                <button onClick={handleStatusSubmit} className="w-full bg-slate-800 text-white font-bold py-2 rounded">Confirmar</button>
-                <button onClick={() => setIsStatusModalOpen(false)} className="w-full py-2 text-slate-500 font-bold">Cancelar</button>
-             </div>
-          </div>
         </div>
       )}
 
