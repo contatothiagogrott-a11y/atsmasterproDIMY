@@ -1,7 +1,6 @@
 import { neon } from '@neondatabase/serverless';
-import bcrypt from 'bcryptjs'; // Importação padrão do Node.js
+import bcrypt from 'bcryptjs';
 
-// Configuração para rodar como Node.js (evita erros de importação)
 export const config = {
   runtime: 'nodejs',
 };
@@ -30,7 +29,6 @@ async function initTables(sql: any) {
     );
   `;
 
-  // Cria o admin se não existir
   const hashedPassword = await bcrypt.hash('master.123', 10);
   
   await sql`
@@ -40,30 +38,38 @@ async function initTables(sql: any) {
   `;
 }
 
-export default async function handler(request: Request) {
-  const url = new URL(request.url);
-  const action = url.searchParams.get('action');
+export default async function handler(request: any, response: any) {
+  // CORS
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (request.method === 'OPTIONS') {
+    return response.status(200).end();
+  }
+
+  // Em Node.js, query params ficam em request.query
+  const { action } = request.query;
   
   if (!process.env.DATABASE_URL) {
-    return Response.json({ error: 'DATABASE_URL is not set.' }, { status: 500 });
+    return response.status(500).json({ error: 'DATABASE_URL is not set.' });
   }
 
   const sql = neon(process.env.DATABASE_URL);
 
   try {
     if (action === 'verify-password') {
-      const { userId, password } = await request.json();
+      const { userId, password } = request.body;
       const rows = await sql`SELECT password FROM users WHERE id = ${userId}::uuid AND deleted_at IS NULL`;
       if (rows.length > 0) {
         const isMatch = await bcrypt.compare(password, rows[0].password);
-        return Response.json({ valid: isMatch });
+        return response.status(200).json({ valid: isMatch });
       }
-      return Response.json({ valid: false });
+      return response.status(200).json({ valid: false });
     }
 
     if (action === 'save-user') {
-      const user = await request.json();
-      // Hash password if provided
+      const user = request.body;
       let hashedPassword = user.password;
       if (user.password && !user.password.startsWith('$2a$')) { 
         hashedPassword = await bcrypt.hash(user.password, 10);
@@ -75,46 +81,46 @@ export default async function handler(request: Request) {
         ON CONFLICT (id) DO UPDATE SET
         username = EXCLUDED.username, password = EXCLUDED.password, name = EXCLUDED.name, role = EXCLUDED.role
       `;
-      return Response.json({ success: true });
+      return response.status(200).json({ success: true });
     }
 
     if (action === 'get-data') {
       try {
         const entities = await sql`SELECT * FROM entities WHERE deleted_at IS NULL`;
         const users = await sql`SELECT id, username, name, role, created_by FROM users WHERE deleted_at IS NULL`;
-        return Response.json({ entities, users });
+        return response.status(200).json({ entities, users });
       } catch (err: any) {
         if (err.code === '42P01' || err.message?.includes('does not exist')) {
            await initTables(sql);
            const entities = await sql`SELECT * FROM entities WHERE deleted_at IS NULL`;
            const users = await sql`SELECT id, username, name, role, created_by FROM users WHERE deleted_at IS NULL`;
-           return Response.json({ entities, users });
+           return response.status(200).json({ entities, users });
         }
         throw err;
       }
     }
 
     if (action === 'save-entity') {
-      const { id, type, data } = await request.json();
+      const { id, type, data } = request.body;
       await sql`
         INSERT INTO entities (id, type, data)
         VALUES (${id}::uuid, ${type}, ${data})
         ON CONFLICT (id) DO UPDATE SET
         data = EXCLUDED.data, deleted_at = NULL
       `;
-      return Response.json({ success: true });
+      return response.status(200).json({ success: true });
     }
 
     if (action === 'delete-entity') {
-      const { id } = await request.json();
+      const { id } = request.body;
       await sql`UPDATE entities SET deleted_at = NOW() WHERE id = ${id}::uuid`;
-      return Response.json({ success: true });
+      return response.status(200).json({ success: true });
     }
 
-    return Response.json({ error: 'Action not found' }, { status: 404 });
+    return response.status(404).json({ error: 'Action not found' });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("API Error:", error);
-    return Response.json({ error: (error as Error).message }, { status: 500 });
+    return response.status(500).json({ error: error.message });
   }
 }
