@@ -188,30 +188,32 @@ export const exportJobsList = (jobs: Job[], candidates: Candidate[]) => {
   XLSX.writeFile(workbook, `ATS_Lista_Vagas.xlsx`);
 };
 
-// --- NOVO: EXPORT 4: RELATÓRIO ESTRATÉGICO (DASHBOARD) ---
+// --- EXPORT 4: RELATÓRIO ESTRATÉGICO (DASHBOARD/SLA) ---
 export const exportStrategicReport = (metrics: any, startDate: string, endDate: string) => {
     const wb = XLSX.utils.book_new();
   
-    // ABA 1: RESUMO GERAL
+    // --- ABA 1: RESUMO GERAL ---
     const summaryData = [
       ["RELATÓRIO ESTRATÉGICO DE RECRUTAMENTO"],
       [`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`],
       [""],
-      ["INDICADOR", "VALOR"],
+      ["INDICADOR DE FLUXO", "VALOR"],
       ["Vagas Abertas (Total)", metrics.opened.total],
       ["   - Aumento de Quadro", metrics.opened.expansion],
       ["   - Substituição", metrics.opened.replacement],
       ["Vagas Concluídas", metrics.closed.total],
       ["Entrevistas Realizadas", metrics.interviews],
-      ["Candidatos Reprovados/Desistentes", metrics.rejected.total]
+      [""],
+      ["INDICADOR DE PERDAS", "VALOR"],
+      ["Total de Reprovações (Empresa)", metrics.rejected.total],
+      ["Total de Desistências (Candidato)", metrics.withdrawn.total],
+      ["Taxa Total de Perda", metrics.rejected.total + metrics.withdrawn.total]
     ];
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-    // Ajuste de largura
-    wsSummary['!cols'] = [{ wch: 35 }, { wch: 15 }];
+    wsSummary['!cols'] = [{ wch: 40 }, { wch: 15 }];
     XLSX.utils.book_append_sheet(wb, wsSummary, "Resumo Executivo");
   
-    // ABA 2: POR SETOR
-    // Transforma o objeto de setores em array para o Excel
+    // --- ABA 2: POR SETOR ---
     const sectorRows = Object.entries(metrics.bySector).map(([sector, data]: any) => [
         sector, 
         data.opened, 
@@ -219,27 +221,34 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
     ]);
     const wsDataSector = [
         ["ANÁLISE POR SETOR"],
-        ["Setor", "Vagas Abertas no Período", "Vagas Fechadas no Período"],
+        ["Setor", "Vagas Abertas", "Vagas Fechadas"],
         ...sectorRows
     ];
     const wsSector = XLSX.utils.aoa_to_sheet(wsDataSector);
-    wsSector['!cols'] = [{ wch: 25 }, { wch: 20 }, { wch: 20 }];
+    wsSector['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }];
     XLSX.utils.book_append_sheet(wb, wsSector, "Por Setor");
   
-    // ABA 3: MOTIVOS DE PERDA
-    const reasonRows = Object.entries(metrics.rejected.reasons)
-        .sort((a: any, b: any) => b[1] - a[1]) // Ordena do maior para o menor
-        .map(([reason, count]: any) => [reason, count]);
-        
+    // --- ABA 3: MOTIVOS DE PERDA (SEPARADO) ---
+    // Prepara dados de Reprovação (Empresa)
+    const rejectionRows = Object.entries(metrics.rejected.reasons)
+        .sort((a: any, b: any) => b[1] - a[1])
+        .map(([reason, count]: any) => ["Reprovação (Empresa)", reason, count]);
+
+    // Prepara dados de Desistência (Candidato)
+    const withdrawalRows = Object.entries(metrics.withdrawn.reasons)
+        .sort((a: any, b: any) => b[1] - a[1])
+        .map(([reason, count]: any) => ["Desistência (Candidato)", reason, count]);
+
     const wsDataReasons = [
-        ["MOTIVOS DE PERDA (Reprovação e Desistência)"],
-        ["Motivo", "Quantidade"],
-        ...reasonRows
+        ["DETALHAMENTO DE PERDAS (MOTIVOS)"],
+        ["Tipo de Perda", "Motivo", "Quantidade"],
+        ...rejectionRows,
+        ...withdrawalRows
     ];
     const wsReasons = XLSX.utils.aoa_to_sheet(wsDataReasons);
-    wsReasons['!cols'] = [{ wch: 40 }, { wch: 15 }];
-    XLSX.utils.book_append_sheet(wb, wsReasons, "Motivos de Perda");
+    wsReasons['!cols'] = [{ wch: 25 }, { wch: 40 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, wsReasons, "Motivos Detalhados");
   
     // Salvar Arquivo
     XLSX.writeFile(wb, `ATS_Report_Estrategico_${startDate}_${endDate}.xlsx`);
-  };
+};
