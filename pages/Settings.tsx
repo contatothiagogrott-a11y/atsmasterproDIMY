@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Trash2, Plus, Download, Upload, Edit2, Check, X, Key, ShieldCheck, UserPlus, Users, Save } from 'lucide-react';
+// Adicionei RotateCcw e FileQuestion aos imports
+import { Trash2, Plus, Download, Upload, Edit2, Check, X, Key, ShieldCheck, UserPlus, Users, Save, RotateCcw, FileQuestion } from 'lucide-react';
 import { SettingItem, User, UserRole } from '../types';
 
 export const SettingsPage: React.FC = () => {
   const { 
     settings, addSetting, removeSetting, updateSetting, 
     users, addUser, user: currentUser, changePassword, adminResetPassword,
-    jobs, talents, candidates
+    jobs, talents, candidates,
+    trash, restoreItem // <--- PEGAMOS A LIXEIRA DO CONTEXTO AQUI
   } = useData();
   
   const [newSettingName, setNewSettingName] = useState('');
@@ -38,6 +40,30 @@ export const SettingsPage: React.FC = () => {
   // --- CORREÇÃO DO MASTER: Garante que lê maiúsculo ou minúsculo ---
   const isMaster = currentUser?.role?.toUpperCase() === 'MASTER';
 
+  // --- HELPERS DA LIXEIRA ---
+  const getTrashLabel = (item: any) => {
+    if (item.title) return item.title; // Vagas
+    if (item.name) return item.name;   // Candidatos/Talentos/Usuários
+    return "Item sem nome";
+  };
+
+  const getTrashTypeLabel = (type: string) => {
+    switch(type) {
+      case 'job': return 'Vaga';
+      case 'candidate': return 'Candidato';
+      case 'talent': return 'Talento';
+      case 'setting': return 'Configuração';
+      case 'user': return 'Usuário';
+      default: return type;
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    if(confirm("Deseja restaurar este item? Ele voltará para a lista original.")) {
+      await restoreItem(id);
+    }
+  };
+
   // --- LÓGICA DE SETORES/UNIDADES ---
   const startEditing = (item: SettingItem) => {
     setEditingId(item.id);
@@ -60,7 +86,6 @@ export const SettingsPage: React.FC = () => {
   const handleAddSetting = (e: React.FormEvent) => {
     e.preventDefault();
     if (newSettingName.trim()) {
-      // Gera ID temporário (o backend pode substituir se quiser, mas UUID funciona bem)
       addSetting({
         id: crypto.randomUUID(),
         name: newSettingName,
@@ -118,7 +143,6 @@ export const SettingsPage: React.FC = () => {
     e.preventDefault();
     if(!isMaster) return;
     
-    // Chama o DataContext (que chama a API save-user)
     await addUser({
       id: crypto.randomUUID(),
       name: newUser.name,
@@ -131,10 +155,9 @@ export const SettingsPage: React.FC = () => {
     alert('Usuário criado com sucesso!');
   };
 
-  // --- LÓGICA DE BACKUP & RESTORE (CONECTADO AO BACKEND) ---
+  // --- LÓGICA DE BACKUP & RESTORE ---
   
   const handleExportBackup = () => {
-    // Cria o JSON com tudo
     const backupData = {
       metadata: {
         version: "1.0",
@@ -142,11 +165,7 @@ export const SettingsPage: React.FC = () => {
         exportedBy: currentUser?.name
       },
       data: {
-        settings,
-        jobs,
-        talents,
-        candidates,
-        users // Exporta usuários também
+        settings, jobs, talents, candidates, users
       }
     };
 
@@ -174,7 +193,6 @@ export const SettingsPage: React.FC = () => {
         const jsonContent = JSON.parse(e.target?.result as string);
         const payload = jsonContent.data ? jsonContent.data : jsonContent;
 
-        // Chama a API direta para restaurar
         const response = await fetch('/api/main?action=restore-backup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -266,7 +284,6 @@ export const SettingsPage: React.FC = () => {
                     <span className="text-slate-700 font-medium">{item.name}</span>
                     <div className="flex gap-2">
                       <button onClick={() => startEditing(item)} className="text-slate-400 hover:text-blue-600"><Edit2 size={18} /></button>
-                      {/* Opcional: Só Admin pode apagar */}
                       <button onClick={() => removeSetting(item.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={18} /></button>
                     </div>
                    </>
@@ -339,6 +356,50 @@ export const SettingsPage: React.FC = () => {
                     <input type="file" accept=".json" className="hidden" onChange={handleImportBackup} />
                   </label>
                </div>
+            </div>
+
+            {/* 4. SEÇÃO NOVA: LIXEIRA (ITENS EXCLUÍDOS) */}
+            <div className="lg:col-span-2 bg-red-900/20 p-6 rounded-lg border border-red-900/50">
+              <div className="flex items-center gap-3 mb-6 border-b border-red-800/50 pb-4">
+                <Trash2 className="text-red-400" size={24} />
+                <div>
+                  <h2 className="text-xl font-bold text-red-50">Lixeira / Itens Excluídos</h2>
+                  <p className="text-sm text-red-200/70">Recupere vagas e candidatos apagados acidentalmente</p>
+                </div>
+              </div>
+
+              {trash && trash.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {trash.map((item) => (
+                    <div key={item.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-sm flex flex-col justify-between">
+                      <div>
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-300 bg-slate-700 px-2 py-1 rounded">
+                            {getTrashTypeLabel(item.originalType)}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            {item.deletedAt ? new Date(item.deletedAt).toLocaleDateString() : ''}
+                          </span>
+                        </div>
+                        <h4 className="font-bold text-white mb-1">{getTrashLabel(item)}</h4>
+                        <p className="text-xs text-slate-500 truncate" title={item.id}>ID: {item.id}</p>
+                      </div>
+                      
+                      <button 
+                        onClick={() => handleRestore(item.id)}
+                        className="mt-4 flex items-center justify-center gap-2 w-full py-2 bg-slate-700 hover:bg-blue-600 text-blue-200 hover:text-white font-bold rounded-lg transition-colors text-sm border border-slate-600 hover:border-blue-500"
+                      >
+                        <RotateCcw size={16} /> Restaurar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  <FileQuestion size={48} className="mx-auto mb-3 opacity-20" />
+                  <p>A lixeira está vazia.</p>
+                </div>
+              )}
             </div>
 
           </div>
