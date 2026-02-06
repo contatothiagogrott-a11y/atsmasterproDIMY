@@ -22,30 +22,34 @@ const ProtectedRoute = () => {
   );
 };
 
+// MUDANÇA 1: Tirei o <Router> daqui de dentro.
+// Agora esse componente só devolve as Rotas puras.
 const AppRoutes = () => {
   return (
-    <Router>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        
-        <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/jobs" element={<Jobs />} />
-          <Route path="/jobs/:id" element={<JobDetails />} />
-          <Route path="/talent" element={<TalentPool />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Route>
-      </Routes>
-    </Router>
+    <Routes>
+      <Route path="/login" element={<Login />} />
+      
+      <Route element={<ProtectedRoute />}>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/jobs" element={<Jobs />} />
+        <Route path="/jobs/:id" element={<JobDetails />} />
+        <Route path="/talent" element={<TalentPool />} />
+        <Route path="/reports" element={<Reports />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Route>
+    </Routes>
   );
 }
 
 const App: React.FC = () => {
   return (
-    <DataProvider>
-      <AppRoutes />
-    </DataProvider>
+    // MUDANÇA 2: O Router agora é o Pai de Todos!
+    // Ele precisa estar aqui fora para o DataProvider (que usa useLocation) funcionar.
+    <Router>
+      <DataProvider>
+        <AppRoutes />
+      </DataProvider>
+    </Router>
   );
 };
 
