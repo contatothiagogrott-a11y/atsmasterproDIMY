@@ -1,6 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { X, Download, Briefcase, CheckCircle, Users, XCircle, PieChart, TrendingUp, Filter, UserX, AlertTriangle, Search, Target } from 'lucide-react';
+// CORREÇÃO: Adicionado Calendar, Search e Target na importação
+import { 
+  X, 
+  Download, 
+  Briefcase, 
+  CheckCircle, 
+  Users, 
+  XCircle, 
+  PieChart, 
+  TrendingUp, 
+  Filter, 
+  UserX, 
+  AlertTriangle, 
+  Calendar,
+  Search, 
+  Target 
+} from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 
 interface ReportModalProps {
@@ -21,9 +37,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
   // --- CÁLCULO DAS MÉTRICAS ESTRATÉGICAS ---
   const metrics = useMemo(() => {
     const start = new Date(startDate).getTime();
-    const end = new Date(endDate).getTime() + (24 * 60 * 60 * 1000); // Inclui o dia final inteiro
+    const end = new Date(endDate).getTime() + (24 * 60 * 60 * 1000); 
 
-    // Helper para checar se a data está no intervalo selecionado
     const isWithin = (dateStr?: string) => {
         if (!dateStr) return false;
         const d = new Date(dateStr).getTime();
@@ -48,8 +63,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
     const interviews = candidates.filter(c => isWithin(c.interviewAt)).length;
 
     // 4. ANÁLISE DE PERDAS SEPARADA (EMPRESA VS CANDIDATO)
-    
-    // Perdas por Decisão da Empresa (Reprovações)
     const rejectedCandidates = candidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
     const rejectionReasons: Record<string, number> = {};
     rejectedCandidates.forEach(c => {
@@ -57,7 +70,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
         rejectionReasons[reason] = (rejectionReasons[reason] || 0) + 1;
     });
 
-    // Perdas por Decisão do Candidato (Desistências)
     const withdrawnCandidates = candidates.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate));
     const withdrawalReasons: Record<string, number> = {};
     withdrawnCandidates.forEach(c => {
@@ -78,7 +90,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
   if (!isOpen) return null;
 
   return (
-    // AJUSTE CRÍTICO: z-[9999] e fixed inset-0 para garantir que cubra a barra lateral
+    // FIX Z-INDEX: z-[9999] garante que cubra a barra lateral
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[9999] p-4 lg:p-8">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col animate-fadeIn border border-white/20">
         
@@ -200,7 +212,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
                     </div>
                 </div>
 
-                {/* Motivos de Perdas (Detalhamento Empresa vs Candidato) */}
+                {/* Motivos de Perdas */}
                 <div className="flex flex-col gap-8">
                     
                     {/* Reprovações Empresa */}
@@ -216,44 +228,4 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
                                         <span className="text-red-600">{count} perdas</span>
                                     </div>
                                     <div className="w-full h-2.5 bg-red-50 rounded-full overflow-hidden">
-                                        <div className="h-full bg-red-500 rounded-full shadow-inner shadow-black/10" style={{ width: `${(count / (metrics.rejected.total || 1)) * 100}%` }}></div>
-                                    </div>
-                                </div>
-                            ))}
-                            {metrics.rejected.total === 0 && <p className="text-slate-400 text-sm italic py-4">Nenhum registro encontrado.</p>}
-                        </div>
-                    </div>
-
-                    {/* Desistências Candidato */}
-                    <div className="bg-white p-8 rounded-3xl border border-orange-100 shadow-sm border-l-8 border-l-orange-500">
-                        <h3 className="text-sm font-black text-orange-800 uppercase mb-6 flex items-center gap-3 tracking-widest">
-                            <AlertTriangle size={18}/> Motivos de Desistência (Candidato)
-                        </h3>
-                        <div className="space-y-4">
-                            {Object.entries(metrics.withdrawn.reasons).sort((a,b) => b[1] - a[1]).map(([reason, count]) => (
-                                <div key={reason} className="flex flex-col gap-2">
-                                    <div className="flex justify-between text-[11px] font-bold text-slate-500">
-                                        <span className="truncate max-w-[250px] uppercase">{reason}</span>
-                                        <span className="text-orange-600">{count} perdas</span>
-                                    </div>
-                                    <div className="w-full h-2.5 bg-orange-50 rounded-full overflow-hidden">
-                                        <div className="h-full bg-orange-500 rounded-full shadow-inner shadow-black/10" style={{ width: `${(count / (metrics.withdrawn.total || 1)) * 100}%` }}></div>
-                                    </div>
-                                </div>
-                            ))}
-                            {metrics.withdrawn.total === 0 && <p className="text-slate-400 text-sm italic py-4">Nenhum registro encontrado.</p>}
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-        
-        {/* Rodapé Interno */}
-        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">ATS Master Pro &bull; Inteligência Estratégica &bull; 2026</span>
-        </div>
-      </div>
-    </div>
-  );
-};
+                                        <div className="h-full bg-red-500 rounded-full shadow-inner
