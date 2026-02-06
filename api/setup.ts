@@ -3,7 +3,7 @@ import { neon } from '@neondatabase/serverless';
 import { hash, compare } from 'bcryptjs';
 
 export const config = {
-  runtime: 'edge',
+  runtime: 'nodejs',
 };
 
 export default async function handler(request: Request) {
