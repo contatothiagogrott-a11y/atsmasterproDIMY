@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { exportToExcel } from '../services/excelService';
-import { Download, Activity, TrendingDown, UserX, Building, Filter, TrendingUp, UserMinus, LayoutList, Lock, Unlock, X } from 'lucide-react';
+import { Download, Activity, TrendingDown, UserX, Building, Filter, TrendingUp, UserMinus, LayoutList, Lock, Unlock, X, PieChart } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { isWithinInterval, parseISO, endOfDay, startOfDay } from 'date-fns';
+import { ReportModal } from '../components/ReportModal'; // <--- IMPORT NOVO
 
 export const Reports: React.FC = () => {
   const { jobs, candidates, settings, user, users } = useData();
@@ -21,6 +22,9 @@ export const Reports: React.FC = () => {
   const [isConfidentialUnlocked, setIsConfidentialUnlocked] = useState(false);
   const [isUnlockModalOpen, setIsUnlockModalOpen] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState('');
+
+  // NEW: Modal State
+  const [isReportOpen, setIsReportOpen] = useState(false); // <--- ESTADO NOVO
 
   const filteredData = useMemo(() => {
     // SECURITY: STRICT FILTER - ONLY SHOW CONFIDENTIAL IF UNLOCKED
@@ -118,59 +122,64 @@ export const Reports: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-           <h1 className="text-2xl font-bold text-slate-800">Relatórios Inteligentes</h1>
-           <p className="text-slate-500 text-sm">Filtre por período e unidade para métricas precisas.</p>
+            <h1 className="text-2xl font-bold text-slate-800">Relatórios Inteligentes</h1>
+            <p className="text-slate-500 text-sm">Filtre por período e unidade para métricas precisas.</p>
         </div>
         
         <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
-           {/* Confidential Mode Button */}
-           <button 
-             onClick={() => isConfidentialUnlocked ? setIsConfidentialUnlocked(false) : setIsUnlockModalOpen(true)}
-             className={`p-2 rounded-lg transition-colors border flex items-center gap-2 text-xs font-bold ${isConfidentialUnlocked ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-300 text-slate-400'}`}
-             title={isConfidentialUnlocked ? "Ocultar Dados Sigilosos" : "Exibir Dados Sigilosos"}
-           >
-             {isConfidentialUnlocked ? <Unlock size={16} /> : <Lock size={16} />}
-             <span className="hidden sm:inline">{isConfidentialUnlocked ? "Modo Sigiloso Ativo" : "Ativar Sigilo"}</span>
-           </button>
+            {/* Confidential Mode Button */}
+            <button 
+              onClick={() => isConfidentialUnlocked ? setIsConfidentialUnlocked(false) : setIsUnlockModalOpen(true)}
+              className={`p-2 rounded-lg transition-colors border flex items-center gap-2 text-xs font-bold ${isConfidentialUnlocked ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-300 text-slate-400'}`}
+              title={isConfidentialUnlocked ? "Ocultar Dados Sigilosos" : "Exibir Dados Sigilosos"}
+            >
+              {isConfidentialUnlocked ? <Unlock size={16} /> : <Lock size={16} />}
+              <span className="hidden sm:inline">{isConfidentialUnlocked ? "Modo Sigiloso Ativo" : "Ativar Sigilo"}</span>
+            </button>
 
-           <div className="w-px h-6 bg-slate-200 mx-1"></div>
+            <div className="w-px h-6 bg-slate-200 mx-1"></div>
 
-           <select 
-             className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none font-bold text-slate-700"
-             value={reportType}
-             onChange={e => setReportType(e.target.value as any)}
-           >
-             <option value="HYBRID">Visão Geral (Híbrido)</option>
-             <option value="BACKLOG">Em Aberto (Backlog)</option>
-             <option value="FLOW">Novas (Fluxo Entrada)</option>
-           </select>
+            <select 
+              className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none font-bold text-slate-700"
+              value={reportType}
+              onChange={e => setReportType(e.target.value as any)}
+            >
+              <option value="HYBRID">Visão Geral (Híbrido)</option>
+              <option value="BACKLOG">Em Aberto (Backlog)</option>
+              <option value="FLOW">Novas (Fluxo Entrada)</option>
+            </select>
 
-           <select 
-             className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none"
-             value={unitFilter}
-             onChange={e => setUnitFilter(e.target.value)}
-           >
-             <option value="">Todas Unidades</option>
-             {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-           </select>
-           <select 
-             className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none"
-             value={sectorFilter}
-             onChange={e => setSectorFilter(e.target.value)}
-           >
-             <option value="">Todos Setores</option>
-             {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-           </select>
-           <div className="flex items-center gap-1 bg-slate-50 rounded-lg border border-slate-200 px-2">
-             <span className="text-xs text-slate-400 font-bold">DE</span>
-             <input type="date" className="bg-transparent text-sm p-2 outline-none" value={startDate} onChange={e => setStartDate(e.target.value)} />
-             <span className="text-xs text-slate-400 font-bold">ATÉ</span>
-             <input type="date" className="bg-transparent text-sm p-2 outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
-           </div>
-           
-           <button onClick={() => exportToExcel(fJobs, fCandidates, users)} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-green-700 ml-2 shadow transition-all hover:scale-105 active:scale-95">
-             <Download size={18}/> Excel
-           </button>
+            <select 
+              className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none"
+              value={unitFilter}
+              onChange={e => setUnitFilter(e.target.value)}
+            >
+              <option value="">Todas Unidades</option>
+              {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            <select 
+              className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none"
+              value={sectorFilter}
+              onChange={e => setSectorFilter(e.target.value)}
+            >
+              <option value="">Todos Setores</option>
+              {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            <div className="flex items-center gap-1 bg-slate-50 rounded-lg border border-slate-200 px-2">
+              <span className="text-xs text-slate-400 font-bold">DE</span>
+              <input type="date" className="bg-transparent text-sm p-2 outline-none" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <span className="text-xs text-slate-400 font-bold">ATÉ</span>
+              <input type="date" className="bg-transparent text-sm p-2 outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+            
+            {/* NOVO BOTÃO ESTRATÉGICO */}
+            <button onClick={() => setIsReportOpen(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-indigo-700 ml-2 shadow transition-all">
+              <PieChart size={18}/> Análise Estratégica (BI)
+            </button>
+
+            <button onClick={() => exportToExcel(fJobs, fCandidates, users)} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-green-700 ml-2 shadow transition-all hover:scale-105 active:scale-95">
+              <Download size={18}/> Excel
+            </button>
         </div>
       </div>
 
@@ -331,6 +340,9 @@ export const Reports: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* REPORT MODAL INJECTION */}
+      <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} />
     </div>
   );
 };
