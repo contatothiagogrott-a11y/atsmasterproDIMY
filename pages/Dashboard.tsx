@@ -3,10 +3,11 @@ import { useData } from '../context/DataContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { Briefcase, Users, CheckCircle, XCircle, Clock, AlertCircle, Building2, TrendingUp, UserMinus, Lock, Unlock, X, PieChart as PieChartIcon } from 'lucide-react';
 import { isWithinInterval, parseISO } from 'date-fns';
-import { ReportModal } from '../components/ReportModal'; // <--- IMPORT NOVO
+import { useNavigate } from 'react-router-dom'; // <--- PASSO 3: IMPORTAÇÃO DO NAVIGATE
 
 export const Dashboard: React.FC = () => {
   const { jobs, candidates, settings, user } = useData();
+  const navigate = useNavigate(); // <--- PASSO 3: INICIALIZAÇÃO DO HOOK
   
   // Filters
   const [sectorFilter, setSectorFilter] = useState('');
@@ -16,9 +17,6 @@ export const Dashboard: React.FC = () => {
 
   // Confidential Visibility
   const [showConfidential, setShowConfidential] = useState(false);
-
-  // NEW: Report Modal State
-  const [isReportOpen, setIsReportOpen] = useState(false); // <--- ESTADO NOVO
 
   // PERMISSION CHECK
   const hasConfidentialAccess = useMemo(() => {
@@ -112,10 +110,10 @@ export const Dashboard: React.FC = () => {
         
         {/* Filters and Security Toggle */}
         <div className="flex flex-wrap gap-3 mt-4 md:mt-0 items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200">
-            {/* NEW REPORT BUTTON */}
+            {/* BOTÃO ATUALIZADO: AGORA NAVEGA PARA A SUBPÁGINA */}
             <button 
-                onClick={() => setIsReportOpen(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-bold shadow-md transition-all"
+                onClick={() => navigate('/strategic-report')}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm font-bold shadow-md transition-all active:scale-95"
             >
                 <PieChartIcon size={18} /> Relatório Estratégico
             </button>
@@ -306,9 +304,6 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* REPORT MODAL INJECTION */}
-      <ReportModal isOpen={isReportOpen} onClose={() => setIsReportOpen(false)} />
     </div>
   );
 };
