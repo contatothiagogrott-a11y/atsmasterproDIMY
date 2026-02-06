@@ -7,7 +7,7 @@ import {
   Globe, Users, UserPlus, MapPin, Briefcase, Filter,
   CheckCircle, Award, DollarSign, Activity, Lock, Download,
   Plus, Archive, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
-  Beaker, AlertTriangle // Adicionei Beaker (Teste) e Alert (Avisos)
+  Beaker, AlertTriangle, UserX // Adicionei UserX para desistência
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType, CandidateTimeline } from '../types';
 import { exportJobCandidates } from '../services/excelService';
@@ -15,7 +15,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 
 const generateId = () => crypto.randomUUID();
 
-// Helper de Data (UTC para não pular dia)
+// Helper de Data (UTC)
 const toInputDate = (isoString?: string) => {
   if (!isoString) return '';
   return isoString.split('T')[0];
@@ -56,14 +56,14 @@ export const JobDetails: React.FC = () => {
   const [hiringData, setHiringData] = useState({ contractType: 'CLT' as ContractType, finalSalary: '', startDate: '' });
 
   // --- ESTADOS DE CANDIDATO ---
-  const [isModalOpen, setIsModalOpen] = useState(false); // Edição
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Candidate>>({});
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
 
   // --- TESTE TÉCNICO ---
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [techCandidate, setTechCandidate] = useState<Candidate | null>(null);
-  const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado' });
+  const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado', rejectionDetail: '' });
 
   // --- BANCO DE TALENTOS ---
   const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
@@ -92,7 +92,6 @@ export const JobDetails: React.FC = () => {
         ? Math.ceil((new Date(job.closedAt).getTime() - new Date(job.openedAt).getTime()) / (1000 * 3600 * 24))
         : Math.ceil((new Date().getTime() - new Date(job?.openedAt || new Date()).getTime()) / (1000 * 3600 * 24));
 
-    // Contagem de Origens
     const origins: Record<string, number> = { 'LinkedIn': 0, 'Instagram': 0, 'Indicação': 0, 'Outros': 0 };
     jobCandidates.forEach(c => {
         const o = c.origin?.toLowerCase() || '';
@@ -120,7 +119,6 @@ export const JobDetails: React.FC = () => {
 
     if (newStatus === 'Fechada') {
         setIsHiringModalOpen(true);
-        // Tenta pré-selecionar alguém aprovado
         const likelyHire = jobCandidates.find(c => c.status === 'Aprovado' || c.status === 'Proposta Aceita');
         setCandidateToHire(likelyHire || null);
         return;
@@ -130,7 +128,6 @@ export const JobDetails: React.FC = () => {
         setIsStatusModalOpen(true);
         return;
     }
-    // Mudança direta (ex: Fechada -> Aberta)
     updateJob({ ...job, status: newStatus as any });
   };
 
@@ -138,14 +135,11 @@ export const JobDetails: React.FC = () => {
     e.preventDefault();
     if (!job || !targetStatus) return;
     const updatedJob = { ...job, status: targetStatus };
-    
     if (targetStatus === 'Congelada') {
         updatedJob.freezeHistory = [...(job.freezeHistory || []), { startDate: new Date().toISOString(), reason: statusFormData.reason, requester: statusFormData.requester }];
     } else if (targetStatus === 'Cancelada') {
         updatedJob.closedAt = new Date().toISOString();
         updatedJob.cancellationReason = statusFormData.reason;
-    } else if (targetStatus === 'Aberta') {
-        // Lógica de descongelamento se necessário
     }
     updateJob(updatedJob);
     setIsStatusModalOpen(false);
@@ -155,7 +149,6 @@ export const JobDetails: React.FC = () => {
     e.preventDefault();
     if (!candidateToHire || !job) return;
     
-    // Atualiza Candidato
     const updatedCandidate = {
         ...candidateToHire,
         status: 'Contratado',
@@ -165,13 +158,7 @@ export const JobDetails: React.FC = () => {
     } as Candidate;
     updateCandidate(updatedCandidate);
 
-    // Fecha Vaga
-    updateJob({ 
-        ...job, 
-        status: 'Fechada', 
-        closedAt: new Date().toISOString(), 
-        hiredCandidateIds: [candidateToHire.id] 
-    });
+    updateJob({ ...job, status: 'Fechada', closedAt: new Date().toISOString(), hiredCandidateIds: [candidateToHire.id] });
     setIsHiringModalOpen(false);
   };
 
@@ -189,10 +176,19 @@ export const JobDetails: React.FC = () => {
 
   const handleSaveChanges = async () => {
     const processedData = { ...formData };
-    // Normaliza datas para UTC (evita bug D-1)
     if (processedData.firstContactAt) processedData.firstContactAt = `${toInputDate(processedData.firstContactAt)}T12:00:00.000Z`;
     if (processedData.interviewAt) processedData.interviewAt = `${toInputDate(processedData.interviewAt)}T12:00:00.000Z`;
     if (processedData.lastInteractionAt) processedData.lastInteractionAt = `${toInputDate(processedData.lastInteractionAt)}T12:00:00.000Z`;
+
+    // Se mudou para perda, marca quem reprovou e data
+    if (processedData.status === 'Reprovado' || processedData.status === 'Desistência') {
+        if (!processedData.rejectionReason) {
+            alert("Por favor, selecione um motivo para a perda (Reprovação ou Desistência).");
+            return;
+        }
+        processedData.rejectedBy = user?.name || 'Sistema';
+        processedData.rejectionDate = new Date().toISOString();
+    }
 
     if (selectedCandidate) {
         await updateCandidate({ ...selectedCandidate, ...processedData } as Candidate);
@@ -209,7 +205,8 @@ export const JobDetails: React.FC = () => {
         didTest: c.techTest || false, 
         date: toInputDate(c.techTestDate || new Date().toISOString()), 
         evaluator: c.techTestEvaluator || '', 
-        result: c.techTestResult || 'Aprovado' 
+        result: c.techTestResult || 'Aprovado',
+        rejectionDetail: '' 
     });
     setIsTechModalOpen(true);
   };
@@ -224,10 +221,12 @@ export const JobDetails: React.FC = () => {
         techTestResult: techForm.didTest ? techForm.result : undefined
     };
     
-    // Se reprovado no teste, já muda status
+    // CORREÇÃO: Salva o motivo específico no rejectionReason para o Relatório
     if (techForm.didTest && techForm.result === 'Reprovado') {
         update.status = 'Reprovado';
-        update.rejectionReason = 'Reprovado no Teste Técnico';
+        update.rejectionReason = techForm.rejectionDetail || 'Reprovado no Teste Técnico';
+        update.rejectionDate = new Date().toISOString();
+        update.rejectedBy = user?.name || 'Sistema';
     }
 
     updateCandidate(update);
@@ -255,7 +254,6 @@ export const JobDetails: React.FC = () => {
                 <h1 className="text-2xl font-bold text-slate-800">{job.title}</h1>
                 <div className="text-sm text-slate-500 flex gap-2 items-center">
                     <span>{job.sector}</span> &bull; <span>{job.unit}</span> &bull; 
-                    {/* DROPDOWN DE STATUS DA VAGA */}
                     <select 
                         value={job.status} 
                         onChange={(e) => initiateStatusChange(e.target.value)}
@@ -284,9 +282,8 @@ export const JobDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* DASHBOARD DE MÉTRICAS (SLA + ORIGENS) */}
+      {/* DASHBOARD DE MÉTRICAS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* SLA */}
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 md:grid-cols-6 divide-x divide-slate-100 gap-y-4 md:gap-y-0">
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Dias Aberta</div><div className="text-xl font-bold text-blue-600">{metrics.daysOpen}</div></div>
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Inscritos</div><div className="text-xl font-bold text-slate-700">{metrics.enrolled}</div></div>
@@ -295,8 +292,6 @@ export const JobDetails: React.FC = () => {
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Reprovados</div><div className="text-xl font-bold text-red-600">{metrics.rejected}</div></div>
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Desistentes</div><div className="text-xl font-bold text-amber-500">{metrics.withdrawn}</div></div>
           </div>
-          
-          {/* ORIGENS */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex justify-around items-center">
              <div className="text-center"><Linkedin size={20} className="text-blue-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['LinkedIn']}</span></div>
              <div className="text-center"><Instagram size={20} className="text-pink-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['Instagram']}</span></div>
@@ -305,7 +300,7 @@ export const JobDetails: React.FC = () => {
           </div>
       </div>
 
-      {/* BANNER DE CONTRATAÇÃO (QUANDO FECHADA) */}
+      {/* BANNER DE CONTRATAÇÃO */}
       {job.status === 'Fechada' && hiredCandidate && (
         <div className="mb-8 bg-gradient-to-r from-emerald-600 to-emerald-800 rounded-2xl shadow-xl text-white p-6 relative overflow-hidden flex flex-col md:flex-row items-center gap-6">
            <div className="bg-white/20 p-4 rounded-full"><CheckCircle size={40} className="text-white"/></div>
@@ -331,13 +326,17 @@ export const JobDetails: React.FC = () => {
             <option value="Entrevista">Entrevista</option>
             <option value="Aprovado">Aprovado</option>
             <option value="Reprovado">Reprovado</option>
+            <option value="Desistência">Desistência</option>
          </select>
       </div>
 
       {/* LISTA DE CANDIDATOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredList.map(c => (
-          <div key={c.id} className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all group ${c.status === 'Reprovado' ? 'border-red-200 bg-red-50/20' : 'border-slate-200'}`}>
+          <div key={c.id} className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all group 
+                ${c.status === 'Reprovado' ? 'border-red-200 bg-red-50/20' : 
+                  c.status === 'Desistência' ? 'border-amber-200 bg-amber-50/20' : 
+                  'border-slate-200'}`}>
              <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-3">
                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold">{c.name.charAt(0)}</div>
@@ -350,7 +349,10 @@ export const JobDetails: React.FC = () => {
                    </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">
-                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${c.status === 'Reprovado' ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{c.status}</span>
+                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase 
+                        ${c.status === 'Reprovado' ? 'bg-red-100 text-red-700' : 
+                          c.status === 'Desistência' ? 'bg-amber-100 text-amber-700' :
+                          'bg-blue-50 text-blue-700'}`}>{c.status}</span>
                    {c.phone && <a href={`https://wa.me/55${c.phone.replace(/\D/g, '')}`} target="_blank" className="flex items-center gap-1 text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded hover:bg-green-100"><MessageCircle size={10}/> WhatsApp</a>}
                 </div>
              </div>
@@ -365,7 +367,6 @@ export const JobDetails: React.FC = () => {
                 <div className="flex justify-between"><span>Entrevista:</span><span className={`font-bold ${c.interviewAt ? 'text-blue-600' : 'text-slate-300'}`}>{formatDate(c.interviewAt)}</span></div>
              </div>
 
-             {/* BOTÕES DE AÇÃO */}
              <div className="flex gap-2 mt-auto">
                 <button onClick={() => handleOpenTechModal(c)} className={`flex-1 flex justify-center items-center gap-1 py-1.5 rounded text-xs font-bold border transition-colors ${c.techTest ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-white text-slate-500 border-slate-200'}`} title="Teste Técnico">
                    <Beaker size={12}/> {c.techTest ? c.techTestResult : 'Teste'}
@@ -390,7 +391,6 @@ export const JobDetails: React.FC = () => {
                <button onClick={() => setIsModalOpen(false)}><X size={24} className="text-slate-400"/></button>
              </div>
              
-             {/* CAMPOS COMPLETOS */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Nome</label><input className="w-full border p-2 rounded" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Telefone</label><input className="w-full border p-2 rounded" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
@@ -398,6 +398,8 @@ export const JobDetails: React.FC = () => {
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Cidade</label><input className="w-full border p-2 rounded" value={formData.city || ''} onChange={e => setFormData({...formData, city: e.target.value})} /></div>
                 
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Pretensão Salarial</label><input className="w-full border p-2 rounded" value={formData.salaryExpectation || ''} onChange={e => setFormData({...formData, salaryExpectation: e.target.value})} /></div>
+                
+                {/* STATUS COM LÓGICA DE PERDA */}
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Status</label>
                    <select className="w-full border p-2 rounded" value={formData.status || 'Aguardando Triagem'} onChange={e => setFormData({...formData, status: e.target.value})}>
                       <option value="Aguardando Triagem">Aguardando Triagem</option>
@@ -409,6 +411,7 @@ export const JobDetails: React.FC = () => {
                       <option value="Desistência">Desistência</option>
                    </select>
                 </div>
+
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Origem</label>
                    <select className="w-full border p-2 rounded" value={formData.origin || 'LinkedIn'} onChange={e => setFormData({...formData, origin: e.target.value})}>
                       <option value="LinkedIn">LinkedIn</option>
@@ -420,7 +423,40 @@ export const JobDetails: React.FC = () => {
                       <option value="Outros">Outros</option>
                    </select>
                 </div>
-                {/* DATAS (SOMENTE DATA) */}
+
+                {/* CAMPO DE MOTIVO DA PERDA (DINÂMICO) */}
+                {(formData.status === 'Reprovado' || formData.status === 'Desistência') && (
+                    <div className="md:col-span-2 bg-red-50 p-4 rounded-lg border border-red-200 animate-fadeIn">
+                        <label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1">
+                            <AlertTriangle size={12}/> Motivo da {formData.status} (Obrigatório)
+                        </label>
+                        <select 
+                            className="w-full border border-red-300 p-2 rounded bg-white text-slate-700" 
+                            value={formData.rejectionReason || ''} 
+                            onChange={e => setFormData({...formData, rejectionReason: e.target.value})}
+                        >
+                            <option value="">-- Selecione o Motivo --</option>
+                            {formData.status === 'Desistência' ? (
+                                <>
+                                    <option value="Aceitou outra proposta">Aceitou outra proposta</option>
+                                    <option value="Salário abaixo da pretensão">Salário abaixo da pretensão</option>
+                                    <option value="Distância / Localização">Distância / Localização</option>
+                                    <option value="Desinteresse na vaga">Desinteresse na vaga</option>
+                                    <option value="Outros">Outros</option>
+                                </>
+                            ) : (
+                                <>
+                                    <option value="Perfil Técnico Insuficiente">Perfil Técnico Insuficiente</option>
+                                    <option value="Sem Fit Cultural">Sem Fit Cultural</option>
+                                    <option value="Reprovado no Teste Técnico">Reprovado no Teste Técnico</option>
+                                    <option value="Salário acima do budget">Salário acima do budget</option>
+                                    <option value="Outros">Outros</option>
+                                </>
+                            )}
+                        </select>
+                    </div>
+                )}
+
                 <div className="md:col-span-2 bg-blue-50 p-4 rounded-lg grid grid-cols-3 gap-4 border border-blue-100">
                    <div><label className="block text-xs font-bold text-blue-800 mb-1">1º Contato</label><input type="date" className="w-full border p-1.5 rounded" value={toInputDate(formData.firstContactAt)} onChange={e => setFormData({...formData, firstContactAt: e.target.value})} /></div>
                    <div><label className="block text-xs font-bold text-blue-800 mb-1">Entrevista</label><input type="date" className="w-full border p-1.5 rounded" value={toInputDate(formData.interviewAt)} onChange={e => setFormData({...formData, interviewAt: e.target.value})} /></div>
@@ -456,6 +492,18 @@ export const JobDetails: React.FC = () => {
                             <option value="Reprovado">Reprovado</option>
                          </select>
                       </div>
+                      
+                      {techForm.result === 'Reprovado' && (
+                          <div className="animate-fadeIn">
+                              <label className="block text-xs font-bold text-red-600 mb-1 flex items-center gap-1"><AlertTriangle size={10}/> Motivo da Reprovação</label>
+                              <input 
+                                className="w-full border p-2 rounded border-red-200 bg-red-50 text-red-700 placeholder-red-300"
+                                placeholder="Ex: Não atingiu pontuação mínima..."
+                                value={techForm.rejectionDetail} 
+                                onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} 
+                              />
+                          </div>
+                      )}
                    </div>
                 )}
                 <div className="flex justify-end gap-2 pt-2">
@@ -467,7 +515,7 @@ export const JobDetails: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL DE CONTRATAÇÃO (CHECKOUT) --- */}
+      {/* --- MODAL DE CONTRATAÇÃO --- */}
       {isHiringModalOpen && (
         <div className="fixed inset-0 bg-emerald-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border-t-8 border-emerald-500">
@@ -493,7 +541,7 @@ export const JobDetails: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL DE STATUS (Congelar/Cancelar) --- */}
+      {/* --- MODAL DE STATUS --- */}
       {isStatusModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
