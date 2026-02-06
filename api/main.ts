@@ -3,8 +3,8 @@ import { neon } from '@neondatabase/serverless';
 import { hash, compare } from 'bcryptjs';
 
 export const config = {
-  runtime: 'edge',
-};
+  runtime: 'nodejs',
+};;
 
 async function initTables(sql: any) {
   await sql`
