@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-// IMPORTANTE: Importamos useLocation para saber quando a página muda
 import { useLocation } from 'react-router-dom'; 
 import { User, Job, Candidate, TalentProfile, SettingItem } from '../types';
 
@@ -7,6 +6,9 @@ interface DataContextType {
   user: User | null;
   login: (u: string, p: string) => Promise<boolean>;
   logout: () => void;
+  // --- CORREÇÃO: Adicionada de volta a função que faltava ---
+  verifyUserPassword: (password: string) => Promise<boolean>;
+  
   changePassword: (currentPass: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   adminResetPassword: (targetUserId: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   
@@ -51,12 +53,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [talents, setTalents] = useState<TalentProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Hook para saber em qual página estamos
   const location = useLocation();
 
   const refreshData = async () => {
     try {
-      // ?t=... evita cache do navegador
       const timestamp = Date.now();
       const response = await fetch(`/api/main?action=get-data&t=${timestamp}`, {
         headers: { 
@@ -83,7 +83,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 1. Efeito Inicial: Recupera Usuário Logado (Roda 1 vez)
   useEffect(() => {
     const savedUser = localStorage.getItem('ats_user');
     if (savedUser) {
@@ -91,11 +90,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // 2. Efeito de Navegação: Roda o Refresh TODA VEZ que mudar de página
   useEffect(() => {
-    // Só busca dados se tiver usuário logado ou se for a primeira carga
     refreshData();
-  }, [location.pathname]); // <--- O SEGREDO ESTÁ AQUI (monitora a rota)
+  }, [location.pathname]);
 
   // --- Funções de Autenticação ---
 
@@ -127,24 +124,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.location.href = '/'; 
   };
 
+  // --- CORREÇÃO: Implementação da função verifyUserPassword ---
+  const verifyUserPassword = async (password: string) => {
+    if (!user) return false;
+    try {
+        const response = await fetch('/api/main?action=verify-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id, password })
+        });
+        const data = await response.json();
+        return data.valid === true;
+    } catch (error) {
+        console.error("Erro ao verificar senha:", error);
+        return false;
+    }
+  };
+
   const changePassword = async (currentPass: string, newPass: string) => {
     if (!user) return { success: false, message: 'Não logado' };
     
-    try {
-      const verifyRes = await fetch('/api/main?action=verify-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, password: currentPass })
-      });
-      const verifyData = await verifyRes.json();
-      
-      if (!verifyData.valid) return { success: false, message: 'Senha atual incorreta' };
+    // Podemos reutilizar a função interna agora
+    const isValid = await verifyUserPassword(currentPass);
+    if (!isValid) return { success: false, message: 'Senha atual incorreta' };
 
-      await addUser({ ...user, password: newPass });
-      return { success: true, message: 'Senha alterada com sucesso!' };
-    } catch (e) {
-      return { success: false, message: 'Erro ao alterar senha' };
-    }
+    await addUser({ ...user, password: newPass });
+    return { success: true, message: 'Senha alterada com sucesso!' };
   };
 
   const adminResetPassword = async (targetUserId: string, newPass: string) => {
@@ -155,7 +160,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true, message: 'Senha resetada com sucesso!' };
   };
 
-  // --- Funções Auxiliares de Persistência ---
+  // --- Persistência ---
 
   const saveEntity = async (type: string, item: any) => {
     try {
@@ -263,7 +268,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   return (
     <DataContext.Provider value={{
-      user, login, logout, changePassword, adminResetPassword,
+      user, login, logout, 
+      verifyUserPassword, // Adicionado de volta ao export
+      changePassword, adminResetPassword,
       users, addUser, updateUser, removeUser,
       settings, addSetting, removeSetting, updateSetting, importSettings,
       jobs, addJob, updateJob, removeJob,
