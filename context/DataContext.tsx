@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+// IMPORTANTE: Importamos useLocation para saber quando a página muda
+import { useLocation } from 'react-router-dom'; 
 import { User, Job, Candidate, TalentProfile, SettingItem } from '../types';
 
 interface DataContextType {
@@ -49,10 +51,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [talents, setTalents] = useState<TalentProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // --- CORREÇÃO 2: Evitar Cache do Navegador ---
+  // Hook para saber em qual página estamos
+  const location = useLocation();
+
   const refreshData = async () => {
     try {
-      // Adicionamos ?t=... para forçar o navegador a entender que é uma requisição nova
+      // ?t=... evita cache do navegador
       const timestamp = Date.now();
       const response = await fetch(`/api/main?action=get-data&t=${timestamp}`, {
         headers: { 
@@ -79,13 +83,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // 1. Efeito Inicial: Recupera Usuário Logado (Roda 1 vez)
   useEffect(() => {
-    refreshData();
     const savedUser = localStorage.getItem('ats_user');
     if (savedUser) {
       setUser(JSON.parse(savedUser));
     }
   }, []);
+
+  // 2. Efeito de Navegação: Roda o Refresh TODA VEZ que mudar de página
+  useEffect(() => {
+    // Só busca dados se tiver usuário logado ou se for a primeira carga
+    refreshData();
+  }, [location.pathname]); // <--- O SEGREDO ESTÁ AQUI (monitora a rota)
+
+  // --- Funções de Autenticação ---
 
   const login = async (username: string, pass: string) => {
     try {
@@ -109,11 +121,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // --- CORREÇÃO 1: Redirecionar para '/' no Logout ---
   const logout = () => {
     setUser(null);
     localStorage.removeItem('ats_user');
-    // Manda para a raiz (Home) em vez de /login que não existe
     window.location.href = '/'; 
   };
 
@@ -145,7 +155,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true, message: 'Senha resetada com sucesso!' };
   };
 
-  // --- PERSISTÊNCIA E ATUALIZAÇÃO ---
+  // --- Funções Auxiliares de Persistência ---
+
   const saveEntity = async (type: string, item: any) => {
     try {
       await fetch('/api/main?action=save-entity', {
@@ -153,7 +164,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: item.id, type, data: item }),
       });
-      // Chama o refresh logo após salvar para atualizar a tela
       await refreshData();
     } catch (error) {
       console.error(`Erro ao salvar ${type}:`, error);
@@ -173,7 +183,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // --- CRUD WRAPPERS (Com Atualização Otimista + Refresh Real) ---
+  // --- CRUD WRAPPERS ---
 
   const addUser = async (u: User) => {
     try {
