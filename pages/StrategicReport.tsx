@@ -4,21 +4,22 @@ import { useData } from '../context/DataContext';
 import { 
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, PieChart, TrendingUp, Filter, UserX, 
-  AlertTriangle, Calendar 
+  AlertTriangle, Calendar, Building2
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 
 export const StrategicReport: React.FC = () => {
   const navigate = useNavigate();
-  const { jobs, candidates } = useData();
+  const { jobs, candidates, settings } = useData();
   
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
   
   const [startDate, setStartDate] = useState(firstDay.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
+  const [unitFilter, setUnitFilter] = useState(''); // <--- NOVO ESTADO DE FILTRO
 
-  // --- CÁLCULO DAS MÉTRICAS ---
+  // --- CÁLCULO DAS MÉTRICAS FILTRADAS ---
   const metrics = useMemo(() => {
     const start = new Date(startDate).getTime();
     const end = new Date(endDate).getTime() + (24 * 60 * 60 * 1000);
@@ -29,26 +30,50 @@ export const StrategicReport: React.FC = () => {
         return d >= start && d <= end;
     };
 
-    const jobsOpened = jobs.filter(j => isWithin(j.openedAt));
+    // Filtro Base de Vagas (Data + Unidade)
+    let fJobs = jobs.filter(j => isWithin(j.openedAt));
+    if (unitFilter) {
+        fJobs = fJobs.filter(j => j.unit === unitFilter);
+    }
+
+    const jobsOpened = fJobs;
     const expansion = jobsOpened.filter(j => j.openingDetails?.reason === 'Aumento de Quadro').length;
     const replacement = jobsOpened.filter(j => j.openingDetails?.reason === 'Substituição').length;
-    const jobsClosed = jobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
+    
+    // Vagas fechadas no período e unidade
+    const jobsClosed = jobs.filter(j => 
+        j.status === 'Fechada' && 
+        isWithin(j.closedAt) && 
+        (unitFilter ? j.unit === unitFilter : true)
+    );
 
+    // Relação por Área (Setores)
     const bySector: Record<string, { opened: number, closed: number }> = {};
-    jobs.forEach(j => { if (!bySector[j.sector]) bySector[j.sector] = { opened: 0, closed: 0 }; });
-    jobsOpened.forEach(j => bySector[j.sector].opened++);
-    jobsClosed.forEach(j => bySector[j.sector].closed++);
+    jobsOpened.forEach(j => { 
+        if (!bySector[j.sector]) bySector[j.sector] = { opened: 0, closed: 0 };
+        bySector[j.sector].opened++;
+    });
+    jobsClosed.forEach(j => {
+        if (!bySector[j.sector]) bySector[j.sector] = { opened: 0, closed: 0 };
+        bySector[j.sector].closed++;
+    });
 
-    const interviews = candidates.filter(c => isWithin(c.interviewAt)).length;
+    // Filtro de Candidatos baseado nas vagas filtradas
+    const jobIds = new Set(fJobs.map(j => j.id));
+    const fCandidates = candidates.filter(c => jobIds.has(c.jobId));
 
-    const rejectedCandidates = candidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
+    const interviews = fCandidates.filter(c => isWithin(c.interviewAt)).length;
+
+    // Perdas Empresa
+    const rejectedCandidates = fCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
     const rejectionReasons: Record<string, number> = {};
     rejectedCandidates.forEach(c => {
         const reason = c.rejectionReason || 'Não informado';
         rejectionReasons[reason] = (rejectionReasons[reason] || 0) + 1;
     });
 
-    const withdrawnCandidates = candidates.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate));
+    // Perdas Candidato
+    const withdrawnCandidates = fCandidates.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate));
     const withdrawalReasons: Record<string, number> = {};
     withdrawnCandidates.forEach(c => {
         const reason = c.rejectionReason || 'Não informado';
@@ -63,17 +88,16 @@ export const StrategicReport: React.FC = () => {
         rejected: { total: rejectedCandidates.length, reasons: rejectionReasons },
         withdrawn: { total: withdrawnCandidates.length, reasons: withdrawalReasons }
     };
-  }, [jobs, candidates, startDate, endDate]);
+  }, [jobs, candidates, startDate, endDate, unitFilter]);
 
   return (
-    <div className="space-y-8 animate-fadeIn">
-      {/* HEADER DA PÁGINA COM BOTÃO VOLTAR */}
+    <div className="space-y-8 animate-fadeIn pb-12">
+      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex items-center gap-4">
           <button 
             onClick={() => navigate(-1)} 
             className="p-2.5 hover:bg-white rounded-xl text-slate-500 hover:text-indigo-600 transition-all border border-transparent hover:border-slate-200 shadow-sm"
-            title="Voltar para a página anterior"
           >
             <ArrowLeft size={24} />
           </button>
@@ -93,8 +117,8 @@ export const StrategicReport: React.FC = () => {
         </button>
       </div>
 
-      {/* BARRA DE FILTROS */}
-      <div className="flex items-center gap-6 bg-white p-4 rounded-2xl shadow-sm border border-slate-200 w-fit">
+      {/* BARRA DE FILTROS APRIMORADA */}
+      <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-3xl shadow-sm border border-slate-200 w-full md:w-fit">
           <div className="flex items-center gap-3 px-3">
               <Calendar size={18} className="text-indigo-500" />
               <div className="flex flex-col">
@@ -102,7 +126,7 @@ export const StrategicReport: React.FC = () => {
                   <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-sm font-bold text-slate-700 outline-none" />
               </div>
           </div>
-          <div className="w-px h-8 bg-slate-200"></div>
+          <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
           <div className="flex items-center gap-3 px-3">
               <Calendar size={18} className="text-rose-500" />
               <div className="flex flex-col">
@@ -110,12 +134,31 @@ export const StrategicReport: React.FC = () => {
                   <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="text-sm font-bold text-slate-700 outline-none" />
               </div>
           </div>
+          <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
+          
+          {/* SELETOR DE UNIDADE */}
+          <div className="flex items-center gap-3 px-3">
+              <Building2 size={18} className="text-slate-400" />
+              <div className="flex flex-col">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Unidade</span>
+                  <select 
+                    className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer"
+                    value={unitFilter}
+                    onChange={e => setUnitFilter(e.target.value)}
+                  >
+                      <option value="">Todas as Unidades</option>
+                      {settings.filter(s => s.type === 'UNIT').map(u => (
+                          <option key={u.id} value={u.name}>{u.name}</option>
+                      ))}
+                  </select>
+              </div>
+          </div>
       </div>
 
-      {/* CARDS PRINCIPAIS (ÍCONES CORRIGIDOS) */}
+      {/* CARDS PRINCIPAIS */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           <div className="bg-white p-6 rounded-3xl border border-blue-100 relative overflow-hidden group shadow-sm">
-              <Briefcase className="absolute -right-2 -bottom-2 text-blue-500/5 size-24 transform group-hover:scale-110 transition-transform" />
+              <Briefcase className="absolute -right-2 -bottom-2 text-blue-500/10 size-24 transform group-hover:translate-x-2 transition-transform" />
               <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest block mb-2 relative z-10">Vagas Abertas</span>
               <div className="text-4xl font-black text-slate-800 relative z-10">{metrics.opened.total}</div>
               <div className="flex gap-2 mt-4 text-[9px] font-bold relative z-10">
@@ -125,28 +168,28 @@ export const StrategicReport: React.FC = () => {
           </div>
 
           <div className="bg-white p-6 rounded-3xl border border-emerald-100 relative overflow-hidden group shadow-sm">
-              <CheckCircle className="absolute -right-2 -bottom-2 text-emerald-500/5 size-24 transform group-hover:scale-110 transition-transform" />
+              <CheckCircle className="absolute -right-2 -bottom-2 text-emerald-500/10 size-24 transform group-hover:translate-x-2 transition-transform" />
               <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest block mb-2 relative z-10">Concluídas</span>
               <div className="text-4xl font-black text-slate-800 relative z-10">{metrics.closed.total}</div>
               <p className="mt-4 text-[10px] text-emerald-600 font-bold uppercase relative z-10">Sucesso no período</p>
           </div>
 
           <div className="bg-white p-6 rounded-3xl border border-amber-100 relative overflow-hidden group shadow-sm">
-              <Users className="absolute -right-2 -bottom-2 text-amber-500/5 size-24 transform group-hover:scale-110 transition-transform" />
+              <Users className="absolute -right-2 -bottom-2 text-amber-500/10 size-24 transform group-hover:translate-x-2 transition-transform" />
               <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest block mb-2 relative z-10">Entrevistas</span>
               <div className="text-4xl font-black text-slate-800 relative z-10">{metrics.interviews}</div>
               <p className="mt-4 text-[10px] text-amber-600 font-bold uppercase relative z-10">Total realizadas</p>
           </div>
 
           <div className="bg-white p-6 rounded-3xl border border-red-100 relative overflow-hidden group shadow-sm">
-              <XCircle className="absolute -right-2 -bottom-2 text-red-500/5 size-24 transform group-hover:scale-110 transition-transform" />
+              <XCircle className="absolute -right-2 -bottom-2 text-red-500/10 size-24 transform group-hover:translate-x-2 transition-transform" />
               <span className="text-[10px] font-black text-red-600 uppercase tracking-widest block mb-2 relative z-10">Reprovações</span>
               <div className="text-4xl font-black text-slate-800 relative z-10">{metrics.rejected.total}</div>
               <p className="mt-4 text-[10px] text-red-600 font-bold uppercase relative z-10">Decisão Empresa</p>
           </div>
 
           <div className="bg-white p-6 rounded-3xl border border-orange-100 relative overflow-hidden group shadow-sm">
-              <UserX className="absolute -right-2 -bottom-2 text-orange-500/5 size-24 transform group-hover:scale-110 transition-transform" />
+              <UserX className="absolute -right-2 -bottom-2 text-orange-500/10 size-24 transform group-hover:translate-x-2 transition-transform" />
               <span className="text-[10px] font-black text-orange-600 uppercase tracking-widest block mb-2 relative z-10">Desistências</span>
               <div className="text-4xl font-black text-slate-800 relative z-10">{metrics.withdrawn.total}</div>
               <p className="mt-4 text-[10px] text-orange-600 font-bold uppercase relative z-10">Decisão Candidato</p>
@@ -154,10 +197,10 @@ export const StrategicReport: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Movimentação por Setor */}
+          {/* RELAÇÃO POR ÁREA */}
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
               <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-3 uppercase tracking-tighter">
-                  <TrendingUp size={22} className="text-indigo-600"/> Movimentação por Área
+                  <TrendingUp size={22} className="text-indigo-600"/> Relação por Área
               </h3>
               <div className="space-y-4">
                   {Object.entries(metrics.bySector)
@@ -177,10 +220,11 @@ export const StrategicReport: React.FC = () => {
                           </div>
                       </div>
                   ))}
+                  {Object.keys(metrics.bySector).length === 0 && <p className="text-slate-400 italic text-sm">Nenhum dado para os filtros aplicados.</p>}
               </div>
           </div>
 
-          {/* Inteligência de Perdas */}
+          {/* INTELIGÊNCIA DE PERDAS */}
           <div className="flex flex-col gap-8">
               <div className="bg-white p-8 rounded-3xl border border-red-100 shadow-sm border-l-8 border-l-red-500">
                   <h3 className="text-sm font-black text-red-800 uppercase mb-6 flex items-center gap-3 tracking-widest">
@@ -193,11 +237,12 @@ export const StrategicReport: React.FC = () => {
                                   <span className="uppercase">{reason}</span>
                                   <span className="text-red-600">{count} perdas</span>
                               </div>
-                              <div className="w-full h-2 bg-red-50 rounded-full">
+                              <div className="w-full h-2 bg-red-50 rounded-full overflow-hidden">
                                   <div className="h-full bg-red-500 rounded-full" style={{ width: `${(count / (metrics.rejected.total || 1)) * 100}%` }}></div>
                               </div>
                           </div>
                       ))}
+                      {metrics.rejected.total === 0 && <p className="text-slate-400 italic text-sm">Sem reprovações.</p>}
                   </div>
               </div>
 
@@ -212,11 +257,12 @@ export const StrategicReport: React.FC = () => {
                                   <span className="uppercase">{reason}</span>
                                   <span className="text-orange-600">{count} perdas</span>
                               </div>
-                              <div className="w-full h-2 bg-orange-50 rounded-full">
+                              <div className="w-full h-2 bg-orange-50 rounded-full overflow-hidden">
                                   <div className="h-full bg-orange-500 rounded-full" style={{ width: `${(count / (metrics.withdrawn.total || 1)) * 100}%` }}></div>
                               </div>
                           </div>
                       ))}
+                      {metrics.withdrawn.total === 0 && <p className="text-slate-400 italic text-sm">Sem desistências.</p>}
                   </div>
               </div>
           </div>
