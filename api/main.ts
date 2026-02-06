@@ -1,6 +1,7 @@
 
 import { neon } from '@neondatabase/serverless';
-import * as bcrypt from 'bcryptjs';
+// @ts-ignore
+const bcrypt = require('bcryptjs');
 
 export const config = {
   runtime: 'edge',
