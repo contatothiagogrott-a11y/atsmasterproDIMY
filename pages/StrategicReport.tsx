@@ -4,22 +4,46 @@ import { useData } from '../context/DataContext';
 import { 
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, PieChart, TrendingUp, Filter, UserX, 
-  AlertTriangle, Calendar, Building2
+  AlertTriangle, Calendar, Building2, Lock, Unlock, X
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 
 export const StrategicReport: React.FC = () => {
   const navigate = useNavigate();
-  const { jobs, candidates, settings } = useData();
+  const { jobs, candidates, settings, user } = useData();
   
+  // Datas padrão: Início do mês atual até hoje
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
   
   const [startDate, setStartDate] = useState(firstDay.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
-  const [unitFilter, setUnitFilter] = useState(''); // <--- NOVO ESTADO DE FILTRO
+  const [unitFilter, setUnitFilter] = useState('');
+  
+  // --- ESTADOS DE SEGURANÇA (SIGILO) ---
+  const [isConfidentialUnlocked, setIsConfidentialUnlocked] = useState(false);
+  const [isUnlockModalOpen, setIsUnlockModalOpen] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState('');
 
-  // --- CÁLCULO DAS MÉTRICAS FILTRADAS ---
+  // Verifica se o usuário tem permissão para ao menos tentar desbloquear dados sigilosos
+  const hasConfidentialAccess = useMemo(() => {
+    if (!user) return false;
+    if (user.role === 'MASTER') return true;
+    return jobs.some(j => j.isConfidential && (j.createdBy === user.id || j.allowedUserIds?.includes(user.id)));
+  }, [jobs, user]);
+
+  const handleUnlockSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (unlockPassword === user?.password || user?.role === 'MASTER') {
+      setIsConfidentialUnlocked(true);
+      setIsUnlockModalOpen(false);
+      setUnlockPassword('');
+    } else {
+      alert('Senha incorreta.');
+    }
+  };
+
+  // --- CÁLCULO DAS MÉTRICAS COM FILTRO DE SEGURANÇA ---
   const metrics = useMemo(() => {
     const start = new Date(startDate).getTime();
     const end = new Date(endDate).getTime() + (24 * 60 * 60 * 1000);
@@ -30,26 +54,31 @@ export const StrategicReport: React.FC = () => {
         return d >= start && d <= end;
     };
 
-    // Filtro Base de Vagas (Data + Unidade)
-    let fJobs = jobs.filter(j => isWithin(j.openedAt));
-    if (unitFilter) {
-        fJobs = fJobs.filter(j => j.unit === unitFilter);
-    }
+    // FILTRO DE SEGURANÇA: Só conta sigilosas se estiver desbloqueado e tiver permissão
+    let accessibleJobs = jobs.filter(j => {
+        if (!j.isConfidential) return true; // Vaga pública sempre entra
+        if (!isConfidentialUnlocked) return false; // Se o cadeado tá fechado, sigilosa não entra
+        
+        // Se o cadeado tá aberto, checa permissão individual
+        return user?.role === 'MASTER' || j.createdBy === user?.id || j.allowedUserIds?.includes(user?.id || '');
+    });
 
-    const jobsOpened = fJobs;
-    const expansion = jobsOpened.filter(j => j.openingDetails?.reason === 'Aumento de Quadro').length;
-    const replacement = jobsOpened.filter(j => j.openingDetails?.reason === 'Substituição').length;
+    // Filtros de Data e Unidade sobre as vagas acessíveis
+    let fJobs = accessibleJobs.filter(j => isWithin(j.openedAt));
+    if (unitFilter) fJobs = fJobs.filter(j => j.unit === unitFilter);
+
+    const expansion = fJobs.filter(j => j.openingDetails?.reason === 'Aumento de Quadro').length;
+    const replacement = fJobs.filter(j => j.openingDetails?.reason === 'Substituição').length;
     
-    // Vagas fechadas no período e unidade
-    const jobsClosed = jobs.filter(j => 
-        j.status === 'Fechada' && 
-        isWithin(j.closedAt) && 
+    // Vagas fechadas (respeitando acessibilidade)
+    const jobsClosed = accessibleJobs.filter(j => 
+        j.status === 'Fechada' && isWithin(j.closedAt) && 
         (unitFilter ? j.unit === unitFilter : true)
     );
 
-    // Relação por Área (Setores)
+    // Relação por Área
     const bySector: Record<string, { opened: number, closed: number }> = {};
-    jobsOpened.forEach(j => { 
+    fJobs.forEach(j => { 
         if (!bySector[j.sector]) bySector[j.sector] = { opened: 0, closed: 0 };
         bySector[j.sector].opened++;
     });
@@ -58,13 +87,13 @@ export const StrategicReport: React.FC = () => {
         bySector[j.sector].closed++;
     });
 
-    // Filtro de Candidatos baseado nas vagas filtradas
-    const jobIds = new Set(fJobs.map(j => j.id));
+    // Filtro de Candidatos baseado nas vagas acessíveis
+    const jobIds = new Set(accessibleJobs.map(j => j.id));
     const fCandidates = candidates.filter(c => jobIds.has(c.jobId));
 
     const interviews = fCandidates.filter(c => isWithin(c.interviewAt)).length;
 
-    // Perdas Empresa
+    // Perdas Empresa (Reprovações)
     const rejectedCandidates = fCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
     const rejectionReasons: Record<string, number> = {};
     rejectedCandidates.forEach(c => {
@@ -72,7 +101,7 @@ export const StrategicReport: React.FC = () => {
         rejectionReasons[reason] = (rejectionReasons[reason] || 0) + 1;
     });
 
-    // Perdas Candidato
+    // Perdas Candidato (Desistências)
     const withdrawnCandidates = fCandidates.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate));
     const withdrawalReasons: Record<string, number> = {};
     withdrawnCandidates.forEach(c => {
@@ -81,14 +110,14 @@ export const StrategicReport: React.FC = () => {
     });
 
     return {
-        opened: { total: jobsOpened.length, expansion, replacement },
+        opened: { total: fJobs.length, expansion, replacement },
         closed: { total: jobsClosed.length },
         bySector,
         interviews,
         rejected: { total: rejectedCandidates.length, reasons: rejectionReasons },
         withdrawn: { total: withdrawnCandidates.length, reasons: withdrawalReasons }
     };
-  }, [jobs, candidates, startDate, endDate, unitFilter]);
+  }, [jobs, candidates, startDate, endDate, unitFilter, isConfidentialUnlocked, user]);
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
@@ -105,19 +134,36 @@ export const StrategicReport: React.FC = () => {
             <h1 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3">
                Relatório Estratégico <PieChart className="text-indigo-600" size={28} />
             </h1>
-            <p className="text-slate-500 font-medium italic">Indicadores de Desempenho e Inteligência de Perdas</p>
+            <p className="text-slate-500 font-medium italic">Indicadores de Desempenho {isConfidentialUnlocked && " (Incluindo Sigilosas)"}</p>
           </div>
         </div>
 
-        <button 
-            onClick={() => exportStrategicReport(metrics, startDate, endDate)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3.5 rounded-2xl font-black flex items-center gap-3 shadow-xl shadow-emerald-100 transition-all active:scale-95 uppercase text-xs tracking-widest"
-        >
-            <Download size={20} /> Exportar Excel
-        </button>
+        <div className="flex gap-3">
+            {/* BOTÃO DE CONTROLE DE SIGILO */}
+            {hasConfidentialAccess && (
+              <button 
+                onClick={() => isConfidentialUnlocked ? setIsConfidentialUnlocked(false) : setIsUnlockModalOpen(true)}
+                className={`flex items-center gap-2 px-6 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${
+                    isConfidentialUnlocked 
+                    ? 'bg-amber-100 border-amber-300 text-amber-700' 
+                    : 'bg-white border-slate-300 text-slate-400 hover:border-slate-400'
+                }`}
+              >
+                {isConfidentialUnlocked ? <Unlock size={18} /> : <Lock size={18} />}
+                {isConfidentialUnlocked ? "Sigilo Aberto" : "Ativar Sigilo"}
+              </button>
+            )}
+
+            <button 
+                onClick={() => exportStrategicReport(metrics, startDate, endDate)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3.5 rounded-2xl font-black flex items-center gap-3 shadow-xl shadow-emerald-100 transition-all active:scale-95 uppercase text-xs tracking-widest"
+            >
+                <Download size={20} /> Exportar Excel
+            </button>
+        </div>
       </div>
 
-      {/* BARRA DE FILTROS APRIMORADA */}
+      {/* BARRA DE FILTROS */}
       <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-3xl shadow-sm border border-slate-200 w-full md:w-fit">
           <div className="flex items-center gap-3 px-3">
               <Calendar size={18} className="text-indigo-500" />
@@ -136,7 +182,6 @@ export const StrategicReport: React.FC = () => {
           </div>
           <div className="w-px h-8 bg-slate-200 hidden md:block"></div>
           
-          {/* SELETOR DE UNIDADE */}
           <div className="flex items-center gap-3 px-3">
               <Building2 size={18} className="text-slate-400" />
               <div className="flex flex-col">
@@ -196,8 +241,8 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
+      {/* BLOCO DE RELAÇÃO POR ÁREA E PERDAS */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* RELAÇÃO POR ÁREA */}
           <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
               <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-3 uppercase tracking-tighter">
                   <TrendingUp size={22} className="text-indigo-600"/> Relação por Área
@@ -224,7 +269,6 @@ export const StrategicReport: React.FC = () => {
               </div>
           </div>
 
-          {/* INTELIGÊNCIA DE PERDAS */}
           <div className="flex flex-col gap-8">
               <div className="bg-white p-8 rounded-3xl border border-red-100 shadow-sm border-l-8 border-l-red-500">
                   <h3 className="text-sm font-black text-red-800 uppercase mb-6 flex items-center gap-3 tracking-widest">
@@ -257,7 +301,7 @@ export const StrategicReport: React.FC = () => {
                                   <span className="uppercase">{reason}</span>
                                   <span className="text-orange-600">{count} perdas</span>
                               </div>
-                              <div className="w-full h-2 bg-orange-50 rounded-full overflow-hidden">
+                              <div className="w-full h-2 bg-orange-50 rounded-full">
                                   <div className="h-full bg-orange-500 rounded-full" style={{ width: `${(count / (metrics.withdrawn.total || 1)) * 100}%` }}></div>
                               </div>
                           </div>
@@ -267,6 +311,35 @@ export const StrategicReport: React.FC = () => {
               </div>
           </div>
       </div>
+
+      {/* MODAL DE DESBLOQUEIO (SEGURANÇA) */}
+      {isUnlockModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[10000] p-4">
+              <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm border-t-8 border-amber-500 animate-fadeIn">
+                  <div className="flex justify-center mb-6 bg-amber-100 w-20 h-20 rounded-full items-center mx-auto text-amber-600">
+                      <Lock size={40} />
+                  </div>
+                  <h3 className="text-xl font-bold text-center mb-2">Segurança de Dados</h3>
+                  <p className="text-center text-slate-500 text-sm mb-6">
+                      Você está solicitando acesso a relatórios sigilosos. Confirme sua senha administrativa.
+                  </p>
+                  <form onSubmit={handleUnlockSubmit}>
+                      <input 
+                        type="password" 
+                        autoFocus
+                        placeholder="Sua senha Master" 
+                        className="w-full border border-slate-200 p-4 rounded-2xl mb-4 outline-none focus:ring-4 focus:ring-amber-100 transition-all text-center font-bold"
+                        value={unlockPassword}
+                        onChange={e => setUnlockPassword(e.target.value)}
+                      />
+                      <div className="flex flex-col gap-2">
+                          <button type="submit" className="w-full bg-amber-600 text-white font-black py-4 rounded-2xl hover:bg-amber-700 shadow-lg shadow-amber-100 transition-all active:scale-95 uppercase text-xs tracking-widest">Desbloquear Dados</button>
+                          <button type="button" onClick={() => { setIsUnlockModalOpen(false); setUnlockPassword(''); }} className="w-full py-3 text-slate-400 text-xs font-bold hover:text-slate-600">Cancelar</button>
+                      </div>
+                  </form>
+              </div>
+          </div>
+      )}
     </div>
   );
 };
