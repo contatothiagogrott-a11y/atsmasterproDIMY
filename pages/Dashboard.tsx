@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { 
   Briefcase, Users, CheckCircle, XCircle, Clock, AlertCircle, 
   Building2, TrendingUp, UserMinus, Lock, Unlock, X, 
-  PieChart as PieChartIcon, ChevronRight, ExternalLink 
+  PieChart as PieChartIcon, ChevronRight, ExternalLink, Target 
 } from 'lucide-react';
 import { isWithinInterval, parseISO } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -72,18 +72,18 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
             <h1 className="text-3xl font-black text-slate-800 tracking-tight">Dashboard</h1>
-            <p className="text-slate-500 font-medium">Gestão operacional de recrutamento</p>
+            <p className="text-slate-500 font-medium">Gestão tática e operacional</p>
         </div>
         <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
-            <button onClick={() => navigate('/strategic-report')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-sm transition-all"><PieChartIcon size={18} /> Relatório Estratégico</button>
+            <button onClick={() => navigate('/strategic-report')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-sm transition-all active:scale-95"><PieChartIcon size={18} /> Relatório Estratégico</button>
             <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
             {hasConfidentialAccess && (
               <button onClick={() => setShowConfidential(!showConfidential)} className={`p-2 rounded-xl transition-all border flex items-center gap-2 text-sm font-bold ${showConfidential ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>
                 {showConfidential ? <Unlock size={18} /> : <Lock size={18} />} <span className="hidden sm:inline">{showConfidential ? "Sigilo Aberto" : "Ativar Sigilo"}</span>
               </button>
             )}
-            <select className="bg-slate-50 border-none rounded-xl text-sm p-2 font-bold outline-none" value={sectorFilter} onChange={e => setSectorFilter(e.target.value)}><option value="">Todos Setores</option>{settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
-            <select className="bg-slate-50 border-none rounded-xl text-sm p-2 font-bold outline-none" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
+            <select className="bg-slate-50 border-none rounded-xl text-sm p-2 font-bold outline-none cursor-pointer" value={sectorFilter} onChange={e => setSectorFilter(e.target.value)}><option value="">Todos Setores</option>{settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
+            <select className="bg-slate-50 border-none rounded-xl text-sm p-2 font-bold outline-none cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
             <div className="flex items-center gap-1 bg-slate-50 rounded-xl px-2">
                 <input type="date" className="bg-transparent border-none text-xs p-2 outline-none font-bold" value={startDate} onChange={e => setStartDate(e.target.value)} />
                 <span className="text-slate-300">-</span>
@@ -92,20 +92,20 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Cards CORRIGIDOS: overflow-hidden e z-index para ícones decorativos */}
+      {/* KPI Cards: ÍCONES GRANDES E MAIS COLORIDOS NO FUNDO */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
-        <KPICard title="Abertas" value={kpis.open} icon={<Briefcase size={20} />} color="text-blue-600 bg-blue-50 border-blue-100" bgIcon={Briefcase} />
-        <KPICard title="Fechadas" value={kpis.closed} icon={<CheckCircle size={20} />} color="text-emerald-600 bg-emerald-50 border-emerald-100" bgIcon={CheckCircle} />
-        <KPICard title="Congeladas" value={kpis.frozen} icon={<Clock size={20} />} color="text-amber-600 bg-amber-50 border-amber-100" bgIcon={Clock} />
-        <KPICard title="Canceladas" value={kpis.canceled} icon={<XCircle size={20} />} color="text-red-600 bg-red-50 border-red-100" bgIcon={XCircle} />
-        <KPICard title="Candidatos" value={kpis.totalCandidates} icon={<Users size={20} />} color="text-slate-700 bg-slate-50 border-slate-200" bgIcon={Users} />
-        <KPICard title="Em Teste" value={kpis.inTest} icon={<AlertCircle size={20} />} color="text-indigo-600 bg-indigo-50 border-indigo-100" bgIcon={Beaker} />
-        <KPICard title="Aprovados" value={kpis.approved} icon={<CheckCircle size={20} />} color="text-green-700 bg-green-50 border-green-100" bgIcon={Target} />
-        <KPICard title="Rec. Interno" value={kpis.internalRecruitment} icon={<Building2 size={20} />} color="text-purple-700 bg-purple-50 border-purple-100" bgIcon={Building2} />
+        <KPICard title="Abertas" value={kpis.open} color="text-blue-600" bgIcon={Briefcase} />
+        <KPICard title="Fechadas" value={kpis.closed} color="text-emerald-600" bgIcon={CheckCircle} />
+        <KPICard title="Congeladas" value={kpis.frozen} color="text-amber-600" bgIcon={Clock} />
+        <KPICard title="Canceladas" value={kpis.canceled} color="text-red-600" bgIcon={XCircle} />
+        <KPICard title="Candidatos" value={kpis.totalCandidates} color="text-slate-700" bgIcon={Users} />
+        <KPICard title="Em Teste" value={kpis.inTest} color="text-indigo-600" bgIcon={Search} />
+        <KPICard title="Aprovados" value={kpis.approved} color="text-green-700" bgIcon={Target} />
+        <KPICard title="Rec. Interno" value={kpis.internalRecruitment} color="text-purple-700" bgIcon={Building2} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Classificação (Sem Pizza) */}
+        {/* Classificação */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col h-full">
             <h2 className="text-xl font-black text-slate-800 flex items-center gap-2 uppercase tracking-tighter mb-8"><TrendingUp size={22} className="text-indigo-600" /> Classificação</h2>
             <div className="space-y-4">
@@ -128,7 +128,7 @@ export const Dashboard: React.FC = () => {
             </div>
         </div>
 
-        {/* Gráfico de Status Geral ao Lado */}
+        {/* Status Geral */}
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm lg:col-span-2">
             <h3 className="text-xl font-black text-slate-800 mb-6 uppercase tracking-tighter">Status Geral das Vagas</h3>
             <div className="h-64 w-full" style={{ minHeight: '320px' }}>
@@ -146,13 +146,13 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Candidatos Ativos */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-              <div><h3 className="text-lg font-black text-slate-800 flex items-center gap-2 uppercase tracking-tighter"><Users size={20} className="text-blue-600"/> Candidatos Ativos</h3><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Foco em processos seletivos abertos</p></div>
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div><h3 className="text-lg font-black text-slate-800 flex items-center gap-2 uppercase tracking-tighter"><Users size={20} className="text-blue-600"/> Candidatos Ativos</h3><p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Monitoramento de processos abertos</p></div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
-              <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-black tracking-widest"><tr><th className="px-6 py-4">Candidato</th><th className="px-6 py-4">Vaga</th><th className="px-6 py-4">Status</th><th className="px-6 py-4">Entrada</th></tr></thead>
+              <thead className="bg-slate-50/80 text-[10px] uppercase text-slate-400 font-black tracking-widest"><tr><th className="px-6 py-4">Candidato</th><th className="px-6 py-4">Vaga</th><th className="px-6 py-4">Status</th><th className="px-6 py-4">Entrada</th></tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {fCandidates.filter(c => { const job = fJobs.find(j => j.id === c.jobId); return (job && job.status === 'Aberta' && !['Reprovado', 'Desistência', 'Contratado'].includes(c.status)); }).slice(0, 10).map(c => {
                   const job = fJobs.find(j => j.id === c.jobId);
@@ -163,16 +163,16 @@ export const Dashboard: React.FC = () => {
           </div>
       </div>
 
-      {/* Janela de Detalhamento (Drill-Down) */}
+      {/* Janela de Drill-Down */}
       {drillDownType && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[10000] p-4">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20 animate-fadeIn">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[10000] p-4 animate-fadeIn">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                       <div className="flex items-center gap-3">
                           <div className={`p-2.5 rounded-xl text-white shadow-lg ${drillDownType === 'Substituição' ? 'bg-rose-500' : 'bg-indigo-600'}`}>{drillDownType === 'Substituição' ? <UserMinus size={22} /> : <TrendingUp size={22} />}</div>
                           <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Vagas: {drillDownType}</h2><p className="text-xs text-slate-400 font-black uppercase tracking-widest">Resumo operacional por categoria</p></div>
                       </div>
-                      <button onClick={() => setDrillDownType(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={24} /></button>
+                      <button onClick={() => setDrillDownType(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all shadow-sm"><X size={24} /></button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                       <table className="w-full text-left text-xs">
@@ -191,23 +191,23 @@ export const Dashboard: React.FC = () => {
   );
 };
 
-// KPICard Refatorado para evitar sobreposição e transbordamento
-const KPICard = ({ title, value, icon, color, bgIcon: BgIcon }: any) => (
-  <div className="relative p-4 rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col justify-between min-h-[110px] overflow-hidden group transition-all hover:shadow-md hover:-translate-y-1">
-    {/* Ícone Decorativo de Fundo: overflow-hidden e z-index garantem que fique atrás do texto */}
-    <div className="absolute -right-4 -bottom-4 opacity-[0.03] group-hover:opacity-[0.07] transition-opacity pointer-events-none z-0">
-        <BgIcon size={90} />
+// KPICard CORRIGIDO: SEM ÍCONES NO TEXTO, ÍCONE DE FUNDO COM COR E OVERFLOW
+const KPICard = ({ title, value, color, bgIcon: BgIcon }: any) => (
+  <div className="relative p-5 rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col justify-between min-h-[115px] overflow-hidden group transition-all hover:shadow-md hover:-translate-y-1">
+    {/* Ícone Decorativo de Fundo: Com cor temática e opacidade ajustada */}
+    <div className={`absolute -right-4 -bottom-4 opacity-[0.12] group-hover:opacity-[0.18] transition-opacity pointer-events-none z-0 ${color}`}>
+        <BgIcon size={100} strokeWidth={1.5} />
     </div>
     
-    <div className="relative z-10 flex justify-between items-start gap-2">
-      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 leading-tight">{title}</span>
-      <div className={`p-1.5 rounded-lg shrink-0 ${color.split(' ')[1]} ${color.split(' ')[0]}`}>{icon}</div>
+    <div className="relative z-10">
+      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 leading-tight block mb-1">
+        {title}
+      </span>
     </div>
     <div className="relative z-10">
-        <span className={`text-3xl font-black tracking-tighter ${color.split(' ')[0]}`}>{value}</span>
+        <span className={`text-4xl font-black tracking-tighter ${color}`}>
+          {value}
+        </span>
     </div>
   </div>
 );
-
-const Beaker = ({ size, className }: any) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M4.5 3h15"/><path d="M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3"/><path d="M6 14h12"/></svg> );
-const Target = ({ size, className }: any) => ( <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg> );
