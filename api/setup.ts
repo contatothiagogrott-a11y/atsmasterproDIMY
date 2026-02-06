@@ -1,6 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-// Importa APENAS as funções específicas
-import { hash, compare } from 'bcryptjs';
+import bcrypt from 'bcryptjs'; // Importação Padrão do Node.js
 
 export const config = {
   runtime: 'nodejs',
@@ -39,8 +38,8 @@ export default async function handler(request: Request) {
     const masterExists = await sql`SELECT * FROM users WHERE username = 'masteraccount'`;
      
     if (masterExists.length === 0) {
-      // CORREÇÃO AQUI: Removemos o "bcrypt."
-      const hashedPassword = await hash('master.123', 10);
+      // Volta a usar bcrypt.hash
+      const hashedPassword = await bcrypt.hash('master.123', 10);
       
       await sql`
         INSERT INTO users (username, password, name, role)
