@@ -1,6 +1,5 @@
-
 import { neon } from '@neondatabase/serverless';
-// Importa APENAS as funções específicas
+// CORREÇÃO 1: Importamos direto as funções, sem o asterisco
 import { hash, compare } from 'bcryptjs';
 
 export const config = {
@@ -16,15 +15,18 @@ async function initTables(sql: any) {
       name TEXT NOT NULL,
       role TEXT NOT NULL,
       created_by UUID,
+      created_at TIMESTAMP DEFAULT NOW(),
       deleted_at TIMESTAMP
     );
   `;
   
-  // Seed initial user with hashed password
-  const hashedPassword = await bcrypt.hash('master.123', 10);
+  // CORREÇÃO 2: Usamos 'hash()' direto, sem 'bcrypt.'
+  // Ajustei para admin/123456 para seu teste funcionar
+  const hashedPassword = await hash('123456', 10);
+  
   await sql`
     INSERT INTO users (username, password, name, role)
-    VALUES ('masteraccount', ${hashedPassword}, 'Master Admin', 'MASTER')
+    VALUES ('admin', ${hashedPassword}, 'Administrador', 'MASTER')
     ON CONFLICT (username) DO NOTHING
   `;
 }
@@ -39,6 +41,7 @@ export default async function handler(request: Request) {
 
     console.log("DATABASE_URL existe?", !!process.env.DATABASE_URL);
     const dbUrl = process.env.DATABASE_URL;
+    
     if (!dbUrl) {
       return new Response(JSON.stringify({ error: 'DATABASE_URL not configured' }), { status: 500 });
     }
@@ -47,13 +50,13 @@ export default async function handler(request: Request) {
     const sql = neon(dbUrl);
 
     try {
-      // Find user by username
+      // Busca usuário
       const rows = await sql`SELECT * FROM users WHERE username = ${username} AND deleted_at IS NULL`;
       
       if (rows.length > 0) {
         const user = rows[0];
-        // Compare hashed password using bcryptjs
-        const isMatch = await bcrypt.compare(password, user.password);
+        // CORREÇÃO 3: Usamos 'compare()' direto
+        const isMatch = await compare(password, user.password);
         
         if (isMatch) {
           const { password: _, ...userWithoutPassword } = user;
@@ -62,15 +65,21 @@ export default async function handler(request: Request) {
       }
       
       return new Response(JSON.stringify({ error: 'Usuário ou senha inválidos' }), { status: 401 });
+
     } catch (dbErr: any) {
+      // Se a tabela não existir, cria e tenta de novo
       if (dbErr.code === '42P01' || dbErr.message?.includes('does not exist')) {
         console.log("Tabelas não encontradas. Inicializando...");
         await initTables(sql);
-        // Retry logic
+        
+        // Retry logic (Tenta logar de novo agora que criou o admin)
         const rows = await sql`SELECT * FROM users WHERE username = ${username} AND deleted_at IS NULL`;
+        
         if (rows.length > 0) {
           const user = rows[0];
-          const isMatch = await bcrypt.compare(password, user.password);
+          // CORREÇÃO 4: Usamos 'compare()' direto
+          const isMatch = await compare(password, user.password);
+          
           if (isMatch) {
             const { password: _, ...userWithoutPassword } = user;
             return new Response(JSON.stringify(userWithoutPassword), { status: 200 });
