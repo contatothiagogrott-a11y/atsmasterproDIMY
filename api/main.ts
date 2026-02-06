@@ -6,7 +6,6 @@ export const config = {
 };
 
 async function initTables(sql: any) {
-  // Tabela de Usuários (ID Texto para aceitar u-master)
   await sql`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -20,7 +19,6 @@ async function initTables(sql: any) {
     );
   `;
 
-  // Tabela de Entidades (Genérica)
   await sql`
     CREATE TABLE IF NOT EXISTS entities (
       id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -58,19 +56,14 @@ export default async function handler(request: any, response: any) {
   const sql = neon(process.env.DATABASE_URL);
 
   try {
-    // --- 1. RESTAURAR BACKUP ---
     if (action === 'restore-backup') {
       const { data } = request.body;
-      
-      if (!data) {
-        return response.status(400).json({ error: 'Dados inválidos ou vazios' });
-      }
+      if (!data) return response.status(400).json({ error: 'Dados inválidos' });
 
-      // A. Restaurar Usuários
+      // Restaurar Usuários
       if (data.users && Array.isArray(data.users)) {
         for (const user of data.users) {
           let finalPassword = user.password;
-          // Se a senha não estiver criptografada, criptografa
           if (!user.password.startsWith('$2a$')) {
              finalPassword = await bcrypt.hash(user.password, 10);
           }
@@ -80,17 +73,13 @@ export default async function handler(request: any, response: any) {
             INSERT INTO users (id, username, password, name, role, created_by)
             VALUES (${user.id}, ${user.username}, ${finalPassword}, ${user.name}, ${finalRole}, ${user.createdBy || null})
             ON CONFLICT (username) DO UPDATE SET
-            password = EXCLUDED.password,
-            name = EXCLUDED.name,
-            role = EXCLUDED.role,
-            id = EXCLUDED.id
+            password = EXCLUDED.password, role = EXCLUDED.role
           `;
         }
       }
 
-      // B. Restaurar Entidades (Setores, Vagas, etc)
+      // Restaurar Entidades
       const insertEntity = async (type: string, item: any) => {
-        // Salva o item inteiro dentro da coluna 'data'
         await sql`
           INSERT INTO entities (id, type, data)
           VALUES (${item.id}, ${type}, ${item})
@@ -104,41 +93,49 @@ export default async function handler(request: any, response: any) {
       if (data.talents) for (const item of data.talents) await insertEntity('talent', item);
       if (data.candidates) for (const item of data.candidates) await insertEntity('candidate', item);
 
-      return response.status(200).json({ success: true, message: 'Backup restaurado com sucesso!' });
+      return response.status(200).json({ success: true });
     }
 
-    // --- 2. BUSCAR DADOS (GET-DATA) ---
-    // AQUI ESTAVA O PROBLEMA: Agora vamos separar os dados antes de enviar
+    // --- CORREÇÃO AQUI: GET DATA BUSCA TUDO E SEPARA O LIXO ---
     if (action === 'get-data') {
       try {
-        const rawEntities = await sql`SELECT * FROM entities WHERE deleted_at IS NULL`;
+        // Removemos o "WHERE deleted_at IS NULL" para pegar tudo
+        const rawEntities = await sql`SELECT * FROM entities`;
         const users = await sql`SELECT id, username, name, role, created_by FROM users WHERE deleted_at IS NULL`;
 
-        // Separa a "massaroca" de entities em listas organizadas
-        const settings = rawEntities.filter((e: any) => e.type === 'setting').map((e: any) => e.data);
-        const jobs = rawEntities.filter((e: any) => e.type === 'job').map((e: any) => e.data);
-        const talents = rawEntities.filter((e: any) => e.type === 'talent').map((e: any) => e.data);
-        const candidates = rawEntities.filter((e: any) => e.type === 'candidate').map((e: any) => e.data);
+        // Função auxiliar para filtrar ativos
+        const active = (type: string) => rawEntities
+          .filter((e: any) => e.type === type && !e.deleted_at)
+          .map((e: any) => e.data);
 
-        // Retorna tudo separado para o Frontend entender
+        // Separação dos ativos
+        const settings = active('setting');
+        const jobs = active('job');
+        const talents = active('talent');
+        const candidates = active('candidate');
+
+        // Criação da Lixeira (Tudo que tem deleted_at)
+        const trash = rawEntities
+          .filter((e: any) => e.deleted_at !== null)
+          .map((e: any) => ({
+            ...e.data,
+            id: e.id,
+            deletedAt: e.deleted_at, // Adiciona a data de exclusão
+            originalType: e.type // Importante para saber o tipo ao restaurar
+          }));
+
         return response.status(200).json({ 
-          users, 
-          settings, 
-          jobs, 
-          talents, 
-          candidates 
+          users, settings, jobs, talents, candidates, trash 
         });
 
       } catch (err: any) {
         if (err.code === '42P01' || err.message?.includes('does not exist')) {
            await initTables(sql);
-           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [] });
+           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], trash: [] });
         }
         throw err;
       }
     }
-
-    // --- 3. OUTRAS AÇÕES ---
 
     if (action === 'verify-password') {
       const { userId, password } = request.body;
@@ -181,6 +178,13 @@ export default async function handler(request: any, response: any) {
     if (action === 'delete-entity') {
       const { id } = request.body;
       await sql`UPDATE entities SET deleted_at = NOW() WHERE id = ${id}`;
+      return response.status(200).json({ success: true });
+    }
+
+    // --- NOVO: AÇÃO PARA RESTAURAR DA LIXEIRA ---
+    if (action === 'restore-entity') {
+      const { id } = request.body;
+      await sql`UPDATE entities SET deleted_at = NULL WHERE id = ${id}`;
       return response.status(200).json({ success: true });
     }
 
