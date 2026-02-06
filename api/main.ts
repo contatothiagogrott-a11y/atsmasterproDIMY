@@ -1,4 +1,3 @@
-
 import { neon } from '@neondatabase/serverless';
 // Importa APENAS as funções específicas
 import { hash, compare } from 'bcryptjs';
@@ -30,7 +29,9 @@ async function initTables(sql: any) {
     );
   `;
 
-  const hashedPassword = await bcrypt.hash('master.123', 10);
+  // CORREÇÃO 1: Removemos o "bcrypt." e usamos direto "hash"
+  const hashedPassword = await hash('master.123', 10);
+  
   await sql`
     INSERT INTO users (username, password, name, role)
     VALUES ('masteraccount', ${hashedPassword}, 'Master Admin', 'MASTER')
@@ -53,7 +54,8 @@ export default async function handler(request: Request) {
       const { userId, password } = await request.json();
       const rows = await sql`SELECT password FROM users WHERE id = ${userId}::uuid AND deleted_at IS NULL`;
       if (rows.length > 0) {
-        const isMatch = await bcrypt.compare(password, rows[0].password);
+        // CORREÇÃO 2: Removemos "bcrypt." e usamos direto "compare"
+        const isMatch = await compare(password, rows[0].password);
         return Response.json({ valid: isMatch });
       }
       return Response.json({ valid: false });
@@ -64,7 +66,8 @@ export default async function handler(request: Request) {
       // Hash password if provided (for new users or password changes)
       let hashedPassword = user.password;
       if (user.password && !user.password.startsWith('$2a$')) { // Simple check to see if it's already hashed
-        hashedPassword = await bcrypt.hash(user.password, 10);
+        // CORREÇÃO 3: Removemos "bcrypt." e usamos direto "hash"
+        hashedPassword = await hash(user.password, 10);
       }
 
       await sql`
