@@ -1,18 +1,3 @@
-Com certeza! Agora vamos fechar o ciclo.
-
-Como alteramos o **Backend** para separar o lixo (`trash`) das vagas ativas, a lógica antiga de "ShowHidden" (que apenas filtrava a lista local) parou de funcionar direito.
-
-Agora, vamos fazer do jeito certo:
-
-1. O botão de Lixeira vai abrir um **Modal Exclusivo**.
-2. Esse modal vai ler direto da lista `trash` do Contexto.
-3. Você poderá **Restaurar** ou **Excluir Permanentemente** (se for Master) direto dali.
-
-Aqui está o seu `Jobs.tsx` completo e atualizado.
-
-### `src/pages/Jobs.tsx`
-
-```tsx
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Link } from 'react-router-dom';
@@ -780,5 +765,3 @@ export const Jobs: React.FC = () => {
     </div>
   );
 };
-
-```
