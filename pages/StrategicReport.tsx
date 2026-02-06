@@ -42,7 +42,6 @@ export const StrategicReport: React.FC = () => {
     }
   };
 
-  // --- MÉTODOS DE FILTRO ---
   const start = new Date(startDate).getTime();
   const end = new Date(endDate).getTime() + (24 * 60 * 60 * 1000);
   const isWithin = (dateStr?: string) => {
@@ -51,7 +50,6 @@ export const StrategicReport: React.FC = () => {
       return d >= start && d <= end;
   };
 
-  // Vagas acessíveis baseadas no sigilo e unidade
   const accessibleJobs = useMemo(() => jobs.filter(j => {
       const matchesUnit = unitFilter ? j.unit === unitFilter : true;
       const isPublic = !j.isConfidential;
@@ -62,7 +60,6 @@ export const StrategicReport: React.FC = () => {
   const jobIds = useMemo(() => new Set(accessibleJobs.map(j => j.id)), [accessibleJobs]);
   const accessibleCandidates = useMemo(() => candidates.filter(c => jobIds.has(c.jobId)), [candidates, jobIds]);
 
-  // --- MÉTRICAS GERAIS ---
   const metrics = useMemo(() => {
     const jobsOpened = accessibleJobs.filter(j => isWithin(j.openedAt));
     const expansion = jobsOpened.filter(j => j.openingDetails?.reason === 'Aumento de Quadro').length;
@@ -73,7 +70,6 @@ export const StrategicReport: React.FC = () => {
     const rejectedCount = accessibleCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate)).length;
     const withdrawnCount = accessibleCandidates.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate)).length;
 
-    // Resumo por Setor
     const bySector: Record<string, any> = {};
     accessibleJobs.forEach(j => {
         if (!bySector[j.sector]) bySector[j.sector] = { opened: 0, closed: 0, frozen: 0, canceled: 0 };
@@ -89,13 +85,10 @@ export const StrategicReport: React.FC = () => {
         interviews: interviewsCount,
         rejected: { total: rejectedCount },
         withdrawn: { total: withdrawnCount },
-        bySector,
-        rejectedReasons: {}, // Simplificado para focar na tabela
-        withdrawnReasons: {}
+        bySector
     };
   }, [accessibleJobs, accessibleCandidates, startDate, endDate]);
 
-  // --- DADOS DA BRANCH ---
   const sectorBranchData = useMemo(() => {
     if (!selectedSector) return [];
     return accessibleJobs
@@ -122,7 +115,7 @@ export const StrategicReport: React.FC = () => {
           <button onClick={() => navigate(-1)} className="p-2.5 hover:bg-white rounded-xl text-slate-500 hover:text-indigo-600 transition-all border border-transparent hover:border-slate-200 shadow-sm"><ArrowLeft size={24} /></button>
           <div>
             <h1 className="text-3xl font-black text-slate-800 tracking-tight flex items-center gap-3">Relatório Estratégico <PieChart className="text-indigo-600" size={28} /></h1>
-            <p className="text-slate-500 font-medium italic uppercase text-[10px] tracking-widest">Analytics de performance e movimentação</p>
+            <p className="text-slate-500 font-medium italic uppercase text-[10px] tracking-widest text-left">Analytics de performance e movimentação</p>
           </div>
         </div>
         <div className="flex gap-3">
@@ -144,7 +137,7 @@ export const StrategicReport: React.FC = () => {
           <div className="flex items-center gap-3 px-3"><Building2 size={18} className="text-slate-400" /><div className="flex flex-col"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Unidade</span><select className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas as Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div></div>
       </div>
 
-      {/* CARDS PRINCIPAIS COM ÍCONES NO FUNDO */}
+      {/* CARDS PRINCIPAIS */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           <StrategicCard title="Vagas Abertas" value={metrics.opened.total} color="blue" icon={Briefcase} subtitle={`+${metrics.opened.expansion} Novo | +${metrics.opened.replacement} Subst.`} />
           <StrategicCard title="Concluídas" value={metrics.closed.total} color="emerald" icon={CheckCircle} subtitle="Sucesso no período" />
@@ -153,7 +146,7 @@ export const StrategicReport: React.FC = () => {
           <StrategicCard title="Desistências" value={metrics.withdrawn.total} color="orange" icon={UserX} subtitle="Decisão Candidato" />
       </div>
 
-      {/* RELAÇÃO POR ÁREA - FILTRADA PARA MOSTRAR SOMENTE MOVIMENTAÇÃO */}
+      {/* RELAÇÃO POR ÁREA */}
       <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
           <h3 className="text-lg font-black text-slate-800 mb-6 flex items-center gap-3 uppercase tracking-tighter"><TrendingUp size={22} className="text-indigo-600"/> Relação por Área</h3>
           <div className="overflow-x-auto">
@@ -170,11 +163,10 @@ export const StrategicReport: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                       {Object.entries(metrics.bySector)
-                        // FILTRO: Só mostra se houver alguma movimentação no setor
                         .filter(([_, data]: [string, any]) => data.opened > 0 || data.closed > 0 || data.frozen > 0 || data.canceled > 0)
                         .map(([sector, data]: [string, any]) => (
                           <tr key={sector} onClick={() => setSelectedSector(sector)} className="group cursor-pointer hover:bg-slate-50 transition-colors">
-                              <td className="py-4 pl-2 font-black text-slate-700 text-sm group-hover:text-indigo-600">{sector}</td>
+                              <td className="py-4 pl-2 font-black text-slate-700 text-sm group-hover:text-indigo-600 text-left">{sector}</td>
                               <td className="py-4 text-center"><span className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-lg font-black">{data.opened}</span></td>
                               <td className="py-4 text-center"><span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg font-black">{data.closed}</span></td>
                               <td className="py-4 text-center"><span className="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-lg font-black">{data.frozen}</span></td>
@@ -184,22 +176,19 @@ export const StrategicReport: React.FC = () => {
                       ))}
                   </tbody>
               </table>
-              {Object.entries(metrics.bySector).filter(([_, d]: any) => d.opened > 0 || d.closed > 0 || d.frozen > 0 || d.canceled > 0).length === 0 && (
-                  <p className="text-center py-12 text-slate-400 italic">Nenhuma movimentação de vagas detectada para os filtros aplicados.</p>
-              )}
           </div>
       </div>
 
-      {/* JANELA DE BRANCH (DETALHAMENTO) */}
+      {/* JANELA DE BRANCH (DETALHAMENTO) - AJUSTADA PARA SER MENOR */}
       {selectedSector && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[10000] p-4 lg:p-8 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[10001] p-4 lg:p-8 animate-fadeIn">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                       <div className="flex items-center gap-3">
                           <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-indigo-100"><TrendingUp size={22} /></div>
                           <div>
-                              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Vagas em: {selectedSector}</h2>
-                              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Funil operacional detalhado por solicitação</p>
+                              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Área: {selectedSector}</h2>
+                              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest text-left">Funil operacional detalhado por vaga</p>
                           </div>
                       </div>
                       <button onClick={() => setSelectedSector(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={24} /></button>
@@ -211,17 +200,17 @@ export const StrategicReport: React.FC = () => {
                               <tr>
                                   <th className="p-4 rounded-l-xl">Título da Vaga</th>
                                   <th className="p-4 text-center">Status</th>
-                                  <th className="p-4 text-center bg-indigo-50/50">Entrevistas</th>
-                                  <th className="p-4 text-center bg-indigo-50/50">Testes</th>
-                                  <th className="p-4 text-center bg-red-50/50">Reprovados</th>
-                                  <th className="p-4 text-center bg-orange-50/50">Desistentes</th>
-                                  <th className="p-4 text-right rounded-r-xl">Navegar</th>
+                                  <th className="p-4 text-center bg-indigo-50/50">Ent.</th>
+                                  <th className="p-4 text-center bg-indigo-50/50">Test.</th>
+                                  <th className="p-4 text-center bg-red-50/50">Rep.</th>
+                                  <th className="p-4 text-center bg-orange-50/50">Des.</th>
+                                  <th className="p-4 text-right rounded-r-xl">Ação</th>
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100">
                               {sectorBranchData.map(vaga => (
                                   <tr key={vaga.id} className="hover:bg-slate-50 transition-colors">
-                                      <td className="p-4 font-black text-slate-700 text-sm">{vaga.title}</td>
+                                      <td className="p-4 font-black text-slate-700 text-sm text-left">{vaga.title}</td>
                                       <td className="p-4 text-center">
                                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                                               vaga.status === 'Aberta' ? 'bg-blue-100 text-blue-700' : 
@@ -246,11 +235,11 @@ export const StrategicReport: React.FC = () => {
 
       {/* MODAL DE SEGURANÇA */}
       {isUnlockModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[10001] p-4">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[10002] p-4">
               <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm border-t-8 border-amber-500">
                   <div className="flex justify-center mb-6 bg-amber-100 w-20 h-20 rounded-full items-center mx-auto text-amber-600"><Lock size={40} /></div>
                   <h3 className="text-xl font-bold text-center mb-2 uppercase tracking-tighter">Acesso Restrito</h3>
-                  <p className="text-center text-slate-500 text-xs mb-6 font-bold uppercase tracking-widest">Confirme sua senha Master para ver dados sigilosos.</p>
+                  <p className="text-center text-slate-500 text-xs mb-6 font-bold uppercase tracking-widest text-left">Confirme sua senha Master para ver dados sigilosos.</p>
                   <form onSubmit={handleUnlockSubmit}>
                       <input type="password" autoFocus placeholder="Senha Master" className="w-full border border-slate-200 p-4 rounded-2xl mb-4 text-center font-bold outline-none focus:ring-4 focus:ring-amber-100" value={unlockPassword} onChange={e => setUnlockPassword(e.target.value)} />
                       <button type="submit" className="w-full bg-amber-600 text-white font-black py-4 rounded-2xl hover:bg-amber-700 shadow-lg uppercase text-[10px] tracking-[0.2em]">Desbloquear</button>
@@ -263,7 +252,6 @@ export const StrategicReport: React.FC = () => {
   );
 };
 
-// COMPONENTE DE CARD INTERNO COM ÍCONE NO FUNDO
 const StrategicCard = ({ title, value, color, icon: Icon, subtitle }: any) => {
     const colorClasses: any = {
         blue: "border-blue-100 text-blue-600 bg-blue-50/50",
@@ -275,12 +263,10 @@ const StrategicCard = ({ title, value, color, icon: Icon, subtitle }: any) => {
 
     return (
         <div className={`p-6 rounded-3xl border relative overflow-hidden group shadow-sm bg-white`}>
-            {/* Ícone no fundo com baixa opacidade para não atrapalhar o texto */}
-            <Icon className={`absolute -right-2 -bottom-2 opacity-[0.05] size-24 transform group-hover:scale-110 transition-transform ${colorClasses[color].split(' ')[1]}`} />
-            
-            <span className={`text-[10px] font-black uppercase tracking-widest block mb-2 relative z-10 ${colorClasses[color].split(' ')[1]}`}>{title}</span>
-            <div className="text-4xl font-black text-slate-800 relative z-10">{value}</div>
-            <p className={`mt-4 text-[9px] font-black uppercase tracking-wide relative z-10 ${colorClasses[color].split(' ')[1]}`}>{subtitle}</p>
+            <Icon className={`absolute -right-2 -bottom-2 opacity-[0.08] size-24 transform group-hover:scale-110 transition-transform ${colorClasses[color].split(' ')[1]}`} />
+            <span className={`text-[10px] font-black uppercase tracking-widest block mb-2 relative z-10 text-left ${colorClasses[color].split(' ')[1]}`}>{title}</span>
+            <div className="text-4xl font-black text-slate-800 relative z-10 text-left">{value}</div>
+            <p className={`mt-4 text-[9px] font-black uppercase tracking-wide relative z-10 text-left ${colorClasses[color].split(' ')[1]}`}>{subtitle}</p>
         </div>
     );
 };
