@@ -8,7 +8,7 @@ export const SettingsPage: React.FC = () => {
     settings, addSetting, removeSetting, updateSetting, 
     users, addUser, user: currentUser, changePassword, adminResetPassword,
     jobs, talents, candidates,
-    trash, restoreItem, permanentlyDeleteItem // <--- Agora temos essa função
+    trash, restoreItem, permanentlyDeleteItem // <--- Trazendo a lixeira
   } = useData();
   
   const [newSettingName, setNewSettingName] = useState('');
@@ -49,27 +49,83 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  // Nova função de Exclusão Permanente
   const handlePermanentDelete = async (id: string) => {
     if(confirm("TEM CERTEZA? Essa ação é irreversível e apagará o item para sempre.")) {
       await permanentlyDeleteItem(id);
     }
   };
 
-  // ... (Resto das funções iguais: startEditing, saveEditing, handleCreateUser, handleExportBackup, etc.)
-  // VOU RESUMIR AS FUNÇÕES REPETIDAS PARA CABER NA RESPOSTA, MAS VOCÊ PODE MANTER O QUE JÁ TINHA
-  // OU COPIAR TUDO SE PREFERIR O ARQUIVO COMPLETO (RECOMENDADO)
-  
   const startEditing = (item: SettingItem) => { setEditingId(item.id); setEditingName(item.name); };
   const cancelEditing = () => { setEditingId(null); setEditingName(''); };
   const saveEditing = (item: SettingItem) => { if (editingName.trim()) { updateSetting({ ...item, name: editingName }); setEditingId(null); setEditingName(''); } };
   const handleAddSetting = (e: React.FormEvent) => { e.preventDefault(); if (newSettingName.trim()) { addSetting({ id: crypto.randomUUID(), name: newSettingName, type: activeTab }); setNewSettingName(''); } };
+  
   const handlePasswordChange = async (e: React.FormEvent) => { e.preventDefault(); if (passwordData.new !== passwordData.confirm) { setPasswordMsg({ type: 'error', text: 'A confirmação de senha não coincide.' }); return; } const result = await changePassword(passwordData.current, passwordData.new); if (result.success) { setPasswordMsg({ type: 'success', text: result.message }); setPasswordData({ current: '', new: '', confirm: '' }); } else { setPasswordMsg({ type: 'error', text: result.message }); } };
   const handleAdminReset = async (e: React.FormEvent) => { e.preventDefault(); if (!userToReset) return; if (resetData.new !== resetData.confirm) { setResetMsg({ type: 'error', text: 'As senhas não coincidem.' }); return; } const result = await adminResetPassword(userToReset.id, resetData.new); if (result.success) { setResetMsg({ type: 'success', text: result.message }); setTimeout(() => { setIsResetModalOpen(false); setUserToReset(null); setResetData({ new: '', confirm: '' }); setResetMsg(null); }, 2000); } else { setResetMsg({ type: 'error', text: result.message }); } };
   const openResetModal = (u: User) => { setUserToReset(u); setResetData({ new: '', confirm: '' }); setResetMsg(null); setIsResetModalOpen(true); };
   const handleCreateUser = async (e: React.FormEvent) => { e.preventDefault(); if(!isMaster) return; await addUser({ id: crypto.randomUUID(), name: newUser.name, username: newUser.username, password: newUser.password, role: newUser.role, createdBy: currentUser?.id }); setNewUser({ name: '', username: '', password: '', role: 'RECRUITER' }); alert('Usuário criado com sucesso!'); };
-  const handleExportBackup = () => { const backupData = { metadata: { version: "1.0", exportedAt: new Date().toISOString(), exportedBy: currentUser?.name }, data: { settings, jobs, talents, candidates, users } }; const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `ATS_FULL_BACKUP_${new Date().toISOString().split('T')[0]}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); };
-  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (!file) return; if (!confirm("ATENÇÃO: Isso irá adicionar todos os dados do arquivo ao sistema atual. Deseja continuar?")) return; const reader = new FileReader(); reader.onload = async (e) => { try { const jsonContent = JSON.parse(e.target?.result as string); const payload = jsonContent.data ? jsonContent.data : jsonContent; const response = await fetch('/api/main?action=restore-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: payload }), }); const result = await response.json(); if (response.ok) { alert('✅ Backup importado com sucesso! A página será recarregada.'); window.location.reload(); } else { alert('❌ Erro ao importar: ' + (result.error || 'Erro desconhecido')); } } catch (error) { console.error(error); alert('Erro ao processar arquivo. Verifique se é um JSON válido.'); } }; reader.readAsText(file); };
+
+  // --- LÓGICA DE BACKUP & RESTORE ATUALIZADA ---
+  const handleExportBackup = () => {
+    // Agora incluímos TUDO: Ativos + Lixeira + Usuários
+    const backupData = {
+      metadata: {
+        version: "1.1", // Versão atualizada
+        exportedAt: new Date().toISOString(),
+        exportedBy: currentUser?.name
+      },
+      data: {
+        settings,
+        jobs,
+        talents,
+        candidates,
+        users,
+        trash // <--- O PULO DO GATO: Agora o lixo é salvo também!
+      }
+    };
+
+    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ATS_FULL_BACKUP_${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!confirm("ATENÇÃO: Isso irá adicionar/restaurar todos os dados do arquivo ao sistema atual. Deseja continuar?")) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const jsonContent = JSON.parse(e.target?.result as string);
+        const payload = jsonContent.data ? jsonContent.data : jsonContent;
+
+        const response = await fetch('/api/main?action=restore-backup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: payload }),
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          alert('✅ Backup importado com sucesso! A página será recarregada.');
+          window.location.reload();
+        } else {
+          alert('❌ Erro ao importar: ' + (result.error || 'Erro desconhecido'));
+        }
+      } catch (error) {
+        console.error(error);
+        alert('Erro ao processar arquivo. Verifique se é um JSON válido.');
+      }
+    };
+    reader.readAsText(file);
+  };
 
   return (
     <div className="space-y-8 pb-12">
@@ -78,8 +134,8 @@ export const SettingsPage: React.FC = () => {
          <p className="text-slate-500 mt-1">Gestão do sistema, acessos e segurança</p>
       </div>
 
-      {/* ... (Cards de Senha e Setores IGUAIS ao anterior) ... */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Senha */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Key size={20} className="text-blue-600" /> Minha Senha</h3>
            <form onSubmit={handlePasswordChange} className="space-y-4">
@@ -92,6 +148,7 @@ export const SettingsPage: React.FC = () => {
               <button type="submit" className="bg-slate-800 text-white font-bold py-2.5 px-6 rounded-lg w-full md:w-auto">Atualizar Senha</button>
            </form>
         </div>
+        {/* Setores */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
            <div className="flex gap-6 mb-6 border-b border-slate-100 pb-2">
              <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'SECTOR' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('SECTOR')}>Setores</button>
@@ -126,7 +183,6 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Usuários e Backup (Mantidos Iguais) */}
             <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><UserPlus size={18}/> Novo Usuário</h3>
               <form onSubmit={handleCreateUser} className="space-y-4">
@@ -139,15 +195,17 @@ export const SettingsPage: React.FC = () => {
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Users size={18}/> Usuários</h3>
               <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">{users.map(u => (<div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600"><div><div className="font-bold text-slate-200">{u.name}</div><div className="text-xs text-slate-400">@{u.username} • {u.role}</div></div><button onClick={() => openResetModal(u)} className="text-xs bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-white">Resetar</button></div>))}</div>
             </div>
-            <div className="lg:col-span-2 bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4"><div><h3 className="text-lg font-bold text-white flex items-center gap-2"><Save size={18}/> Backup & Dados</h3><p className="text-sm text-slate-400">Exporte ou importe todos os dados do sistema.</p></div><div className="flex gap-4"><button onClick={handleExportBackup} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-medium"><Download size={18} /> Exportar</button><label className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium cursor-pointer"><Upload size={18} /> Restaurar<input type="file" accept=".json" className="hidden" onChange={handleImportBackup} /></label></div></div>
+            
+            {/* BACKUP - AGORA SALVA TUDO */}
+            <div className="lg:col-span-2 bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4"><div><h3 className="text-lg font-bold text-white flex items-center gap-2"><Save size={18}/> Backup & Dados</h3><p className="text-sm text-slate-400">Exporte ou importe todos os dados (Vagas, Talentos, Candidatos, Lixeira e Usuários).</p></div><div className="flex gap-4"><button onClick={handleExportBackup} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-medium"><Download size={18} /> Exportar Completo</button><label className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium cursor-pointer"><Upload size={18} /> Restaurar<input type="file" accept=".json" className="hidden" onChange={handleImportBackup} /></label></div></div>
 
-            {/* --- SEÇÃO LIXEIRA ATUALIZADA COM BOTÃO DE EXCLUSÃO PERMANENTE --- */}
+            {/* SEÇÃO LIXEIRA */}
             <div className="lg:col-span-2 bg-red-900/20 p-6 rounded-lg border border-red-900/50">
               <div className="flex items-center gap-3 mb-6 border-b border-red-800/50 pb-4">
                 <Trash2 className="text-red-400" size={24} />
                 <div>
                   <h2 className="text-xl font-bold text-red-50">Lixeira / Itens Excluídos</h2>
-                  <p className="text-sm text-red-200/70">Recupere ou apague definitivamente</p>
+                  <p className="text-sm text-red-200/70">Recupere itens apagados ou exclua permanentemente.</p>
                 </div>
               </div>
 
@@ -173,17 +231,15 @@ export const SettingsPage: React.FC = () => {
                         <button 
                           onClick={() => handleRestore(item.id)}
                           className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-700 hover:bg-blue-600 text-blue-200 hover:text-white font-bold rounded-lg transition-colors text-sm border border-slate-600 hover:border-blue-500"
-                          title="Restaurar este item"
                         >
                           <RotateCcw size={16} /> Restaurar
                         </button>
                         
-                        {/* BOTÃO DE EXCLUSÃO PERMANENTE (SÓ MASTER) */}
                         {isMaster && (
                           <button 
                             onClick={() => handlePermanentDelete(item.id)}
                             className="flex items-center justify-center px-3 py-2 bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white font-bold rounded-lg transition-colors border border-red-900/50 hover:border-red-500"
-                            title="Excluir para sempre (Irreversível)"
+                            title="Excluir para sempre"
                           >
                             <XCircle size={18} />
                           </button>
@@ -204,7 +260,7 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Reset de Senha (Mantido Igual) */}
+      {/* Modal de Reset */}
       {isResetModalOpen && userToReset && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
