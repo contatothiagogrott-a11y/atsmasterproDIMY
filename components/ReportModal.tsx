@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-// CORREÇÃO: Adicionado Calendar, Search e Target na importação
 import { 
   X, 
   Download, 
@@ -90,7 +89,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
   if (!isOpen) return null;
 
   return (
-    // FIX Z-INDEX: z-[9999] garante que cubra a barra lateral
     <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-[9999] p-4 lg:p-8">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[95vh] overflow-hidden flex flex-col animate-fadeIn border border-white/20">
         
@@ -110,7 +108,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
            </button>
         </div>
 
-        {/* Barra de Filtros e Exportação */}
+        {/* Filtros */}
         <div className="px-8 py-6 bg-slate-50 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex items-center gap-6 bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
                 <div className="flex items-center gap-3 px-3">
@@ -182,9 +180,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
                 </div>
             </div>
 
-            {/* Bloco 2: Gráficos e Tabelas */}
+            {/* Bloco 2: Detalhamento */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                
                 {/* Movimentação por Setor */}
                 <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm h-full">
                     <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-3 uppercase tracking-tighter">
@@ -214,7 +211,6 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
 
                 {/* Motivos de Perdas */}
                 <div className="flex flex-col gap-8">
-                    
                     {/* Reprovações Empresa */}
                     <div className="bg-white p-8 rounded-3xl border border-red-100 shadow-sm border-l-8 border-l-red-500">
                         <h3 className="text-sm font-black text-red-800 uppercase mb-6 flex items-center gap-3 tracking-widest">
@@ -228,4 +224,49 @@ export const ReportModal: React.FC<ReportModalProps> = ({ isOpen, onClose }) => 
                                         <span className="text-red-600">{count} perdas</span>
                                     </div>
                                     <div className="w-full h-2.5 bg-red-50 rounded-full overflow-hidden">
-                                        <div className="h-full bg-red-500 rounded-full shadow-inner
+                                        <div 
+                                          className="h-full bg-red-500 rounded-full shadow-inner" 
+                                          style={{ width: `${(count / (metrics.rejected.total || 1)) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            ))}
+                            {metrics.rejected.total === 0 && <p className="text-slate-400 text-sm italic py-4">Nenhum registro encontrado.</p>}
+                        </div>
+                    </div>
+
+                    {/* Desistências Candidato */}
+                    <div className="bg-white p-8 rounded-3xl border border-orange-100 shadow-sm border-l-8 border-l-orange-500">
+                        <h3 className="text-sm font-black text-orange-800 uppercase mb-6 flex items-center gap-3 tracking-widest">
+                            <AlertTriangle size={18}/> Motivos de Desistência (Candidato)
+                        </h3>
+                        <div className="space-y-4">
+                            {Object.entries(metrics.withdrawn.reasons).sort((a,b) => b[1] - a[1]).map(([reason, count]) => (
+                                <div key={reason} className="flex flex-col gap-2">
+                                    <div className="flex justify-between text-[11px] font-bold text-slate-500">
+                                        <span className="truncate max-w-[250px] uppercase">{reason}</span>
+                                        <span className="text-orange-600">{count} perdas</span>
+                                    </div>
+                                    <div className="w-full h-2.5 bg-orange-50 rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full bg-orange-500 rounded-full shadow-inner" 
+                                          style={{ width: `${(count / (metrics.withdrawn.total || 1)) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            ))}
+                            {metrics.withdrawn.total === 0 && <p className="text-slate-400 text-sm italic py-4">Nenhum registro encontrado.</p>}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {/* Rodapé Interno */}
+        <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">ATS Master Pro &bull; Inteligência Estratégica &bull; 2026</span>
+        </div>
+      </div>
+    </div>
+  );
+};
