@@ -26,7 +26,7 @@ const formatDate = (isoString?: string) => {
   return new Date(isoString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
 };
 
-// Helper de Ícones de Origem
+// Helper de Ícones de Origem (ATUALIZADO COM TODAS AS OPÇÕES)
 const getSourceIcon = (origin: string) => {
   const norm = origin?.toLowerCase() || '';
   if (norm.includes('linkedin')) return <Linkedin size={16} className="text-blue-600" />;
@@ -35,7 +35,8 @@ const getSourceIcon = (origin: string) => {
   if (norm.includes('interno')) return <Briefcase size={16} className="text-slate-600" />;
   if (norm.includes('banco')) return <Database size={16} className="text-orange-600" />;
   if (norm.includes('sine')) return <Globe size={16} className="text-green-600" />;
-  return <Search size={16} className="text-purple-600" />;
+  if (norm.includes('espontânea') || norm.includes('espontanea')) return <Search size={16} className="text-purple-600" />;
+  return <Target size={16} className="text-gray-400" />;
 };
 
 export const JobDetails: React.FC = () => {
@@ -93,7 +94,7 @@ export const JobDetails: React.FC = () => {
 
   // --- CÁLCULO DE MÉTRICAS E SLA ---
   const metrics = useMemo(() => {
-    if (!job) return { daysOpen: 0, daysFrozen: 0, daysNet: 0, enrolled: 0, interviewed: 0, finalists: 0, rejected: 0, withdrawn: 0, origins: {} };
+    if (!job) return { daysOpen: 0, daysFrozen: 0, daysNet: 0, enrolled: 0, interviewed: 0, finalists: 0, rejected: 0, withdrawn: 0, origins: {} as any };
 
     // SLA Bruto
     const endDate = job.status === 'Fechada' && job.closedAt ? new Date(job.closedAt).getTime() : new Date().getTime();
@@ -116,13 +117,27 @@ export const JobDetails: React.FC = () => {
     // SLA Líquido
     const daysNet = Math.max(0, daysOpenBruto - daysFrozen);
 
-    // Contagem de Origens
-    const origins: Record<string, number> = { 'LinkedIn': 0, 'Instagram': 0, 'Indicação': 0, 'Outros': 0 };
+    // Contagem de Origens (COMPLETA)
+    const origins: Record<string, number> = { 
+        'LinkedIn': 0, 
+        'Instagram': 0, 
+        'Indicação': 0, 
+        'SINE': 0,
+        'Banco de Talentos': 0,
+        'Recrutamento Interno': 0,
+        'Busca espontânea': 0,
+        'Outros': 0 
+    };
+
     jobCandidates.forEach(c => {
         const o = c.origin?.toLowerCase() || '';
         if (o.includes('linkedin')) origins['LinkedIn']++;
         else if (o.includes('instagram')) origins['Instagram']++;
-        else if (o.includes('indicação')) origins['Indicação']++;
+        else if (o.includes('indicação') || o.includes('indicacao')) origins['Indicação']++;
+        else if (o.includes('sine')) origins['SINE']++;
+        else if (o.includes('banco')) origins['Banco de Talentos']++;
+        else if (o.includes('interno')) origins['Recrutamento Interno']++;
+        else if (o.includes('espontânea') || o.includes('espontanea')) origins['Busca espontânea']++;
         else origins['Outros']++;
     });
 
@@ -139,7 +154,7 @@ export const JobDetails: React.FC = () => {
     };
   }, [job, jobCandidates]);
 
-  // --- HANDLERS DE STATUS DA VAGA ---
+  // --- HANDLERS ---
   const initiateStatusChange = (newStatus: string) => {
     if (!job) return;
     if (newStatus === job.status) return;
@@ -169,21 +184,11 @@ export const JobDetails: React.FC = () => {
     const updatedJob = { ...job, status: targetStatus };
     
     if (targetStatus === 'Congelada') {
-        updatedJob.freezeHistory = [
-            ...(job.freezeHistory || []), 
-            { 
-                startDate: actionDateISO, 
-                reason: statusFormData.reason, 
-                requester: statusFormData.requester 
-            }
-        ];
+        updatedJob.freezeHistory = [...(job.freezeHistory || []), { startDate: actionDateISO, reason: statusFormData.reason, requester: statusFormData.requester }];
     } else if (targetStatus === 'Aberta' && job.status === 'Congelada') {
         if (updatedJob.freezeHistory && updatedJob.freezeHistory.length > 0) {
             const history = [...updatedJob.freezeHistory];
-            history[history.length - 1] = {
-                ...history[history.length - 1],
-                endDate: actionDateISO
-            };
+            history[history.length - 1] = { ...history[history.length - 1], endDate: actionDateISO };
             updatedJob.freezeHistory = history;
         }
     } else if (targetStatus === 'Cancelada') {
@@ -199,7 +204,6 @@ export const JobDetails: React.FC = () => {
     e.preventDefault();
     if (!candidateToHire || !job) return;
     
-    // Data de início escolhida
     const startDateISO = hiringData.startDate ? `${hiringData.startDate}T12:00:00.000Z` : new Date().toISOString();
 
     const updatedCandidate = {
@@ -211,17 +215,10 @@ export const JobDetails: React.FC = () => {
     } as Candidate;
     updateCandidate(updatedCandidate);
 
-    updateJob({ 
-        ...job, 
-        status: 'Fechada', 
-        // CORREÇÃO CRÍTICA: Data de Fechamento = Data de Início do Candidato
-        closedAt: startDateISO, 
-        hiredCandidateIds: [candidateToHire.id] 
-    });
+    updateJob({ ...job, status: 'Fechada', closedAt: startDateISO, hiredCandidateIds: [candidateToHire.id] });
     setIsHiringModalOpen(false);
   };
 
-  // --- HANDLERS DE CANDIDATO ---
   const handleOpenModal = (candidate?: Candidate) => {
     if (candidate) {
         setSelectedCandidate(candidate);
@@ -256,16 +253,9 @@ export const JobDetails: React.FC = () => {
     setIsModalOpen(false);
   };
 
-  // --- HANDLER DE TESTE TÉCNICO ---
   const handleOpenTechModal = (c: Candidate) => {
     setTechCandidate(c);
-    setTechForm({ 
-        didTest: c.techTest || false, 
-        date: toInputDate(c.techTestDate || new Date().toISOString()), 
-        evaluator: c.techTestEvaluator || '', 
-        result: c.techTestResult || 'Aprovado',
-        rejectionDetail: '' 
-    });
+    setTechForm({ didTest: c.techTest || false, date: toInputDate(c.techTestDate || new Date().toISOString()), evaluator: c.techTestEvaluator || '', result: c.techTestResult || 'Aprovado', rejectionDetail: '' });
     setIsTechModalOpen(true);
   };
 
@@ -311,16 +301,7 @@ export const JobDetails: React.FC = () => {
                 <h1 className="text-2xl font-bold text-slate-800">{job.title}</h1>
                 <div className="text-sm text-slate-500 flex gap-2 items-center">
                     <span>{job.sector}</span> &bull; <span>{job.unit}</span> &bull; 
-                    <select 
-                        value={job.status} 
-                        onChange={(e) => initiateStatusChange(e.target.value)}
-                        className={`text-xs font-bold px-2 py-1 rounded cursor-pointer outline-none border transition-colors
-                        ${job.status === 'Aberta' ? 'bg-blue-100 text-blue-700 border-blue-200' : 
-                            job.status === 'Fechada' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                            job.status === 'Congelada' ? 'bg-amber-100 text-amber-700 border-amber-200' :
-                            'bg-red-100 text-red-600 border-red-200'
-                        }`}
-                    >
+                    <select value={job.status} onChange={(e) => initiateStatusChange(e.target.value)} className={`text-xs font-bold px-2 py-1 rounded cursor-pointer outline-none border transition-colors ${job.status === 'Aberta' ? 'bg-blue-100 text-blue-700 border-blue-200' : job.status === 'Fechada' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : job.status === 'Congelada' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-red-100 text-red-600 border-red-200'}`}>
                         <option value="Aberta">Aberta {job.status === 'Congelada' ? '(Descongelar)' : ''}</option>
                         <option value="Fechada">Fechada (Concluir)</option>
                         <option value="Congelada">Congelada (Pausar)</option>
@@ -339,7 +320,7 @@ export const JobDetails: React.FC = () => {
         </div>
       </div>
 
-      {/* DASHBOARD DE MÉTRICAS (SLA + ORIGENS) */}
+      {/* DASHBOARD DE MÉTRICAS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 md:grid-cols-7 divide-x divide-slate-100 gap-y-4 md:gap-y-0">
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Dias Bruto</div><div className="text-xl font-bold text-slate-600">{metrics.daysOpen}</div></div>
@@ -351,11 +332,16 @@ export const JobDetails: React.FC = () => {
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Desistentes</div><div className="text-xl font-bold text-amber-500">{metrics.withdrawn}</div></div>
           </div>
           
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex justify-around items-center">
-             <div className="text-center"><Linkedin size={20} className="text-blue-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['LinkedIn']}</span></div>
-             <div className="text-center"><Instagram size={20} className="text-pink-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['Instagram']}</span></div>
-             <div className="text-center"><LinkIcon size={20} className="text-teal-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['Indicação']}</span></div>
-             <div className="text-center"><Search size={20} className="text-purple-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['Outros']}</span></div>
+          {/* ORIGENS (ATUALIZADO COM TODAS AS OPÇÕES) */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-4 gap-2">
+             <div className="text-center flex flex-col items-center"><Linkedin size={16} className="text-blue-600 mb-1"/><span className="text-xs font-bold text-slate-700">{metrics.origins['LinkedIn']}</span></div>
+             <div className="text-center flex flex-col items-center"><Instagram size={16} className="text-pink-600 mb-1"/><span className="text-xs font-bold text-slate-700">{metrics.origins['Instagram']}</span></div>
+             <div className="text-center flex flex-col items-center"><LinkIcon size={16} className="text-teal-600 mb-1"/><span className="text-xs font-bold text-slate-700">{metrics.origins['Indicação']}</span></div>
+             <div className="text-center flex flex-col items-center"><Globe size={16} className="text-green-600 mb-1"/><span className="text-xs font-bold text-slate-700">{metrics.origins['SINE']}</span></div>
+             <div className="text-center flex flex-col items-center"><Database size={16} className="text-orange-600 mb-1"/><span className="text-xs font-bold text-slate-700">{metrics.origins['Banco de Talentos']}</span></div>
+             <div className="text-center flex flex-col items-center"><Briefcase size={16} className="text-slate-600 mb-1"/><span className="text-xs font-bold text-slate-700">{metrics.origins['Recrutamento Interno']}</span></div>
+             <div className="text-center flex flex-col items-center"><Search size={16} className="text-purple-600 mb-1"/><span className="text-xs font-bold text-slate-700">{metrics.origins['Busca espontânea']}</span></div>
+             <div className="text-center flex flex-col items-center"><Target size={16} className="text-gray-400 mb-1"/><span className="text-xs font-bold text-slate-700">{metrics.origins['Outros']}</span></div>
           </div>
       </div>
 
@@ -366,7 +352,6 @@ export const JobDetails: React.FC = () => {
            <div className="flex-1 text-center md:text-left">
               <h2 className="text-2xl font-bold mb-1">Vaga Preenchida!</h2>
               <p className="text-emerald-100 font-medium text-lg">{hiredCandidate.name}</p>
-              
               <div className="flex flex-wrap gap-4 mt-3 justify-center md:justify-start text-sm">
                  <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Salário Final"><DollarSign size={14}/> {hiredCandidate.finalSalary || 'N/I'}</span>
                  <span className="bg-white/20 px-3 py-1 rounded flex items-center gap-2" title="Data de Início"><Calendar size={14}/> Início: {formatDate(hiredCandidate.timeline?.startDate)}</span>
@@ -385,7 +370,7 @@ export const JobDetails: React.FC = () => {
          <input className="flex-1 border p-3 rounded-xl shadow-sm" placeholder="Buscar candidato..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
          <select className="border p-3 rounded-xl shadow-sm bg-white font-medium text-slate-600" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
             <option value="TODOS">Todos</option>
-            <option value="Aguardando Triagem">Aguardando</option>
+            <option value="Aguardando Triagem">Aguardando Triagem</option>
             <option value="Em Análise">Em Análise</option>
             <option value="Entrevista">Entrevista</option>
             <option value="Aprovado">Aprovado</option>
@@ -484,6 +469,7 @@ export const JobDetails: React.FC = () => {
                       <option value="Banco de Talentos">Banco de Talentos</option>
                       <option value="Busca espontânea">Busca Espontânea</option>
                       <option value="SINE">SINE</option>
+                      <option value="Recrutamento Interno">Recrutamento Interno</option>
                       <option value="Outros">Outros</option>
                    </select>
                 </div>
@@ -536,82 +522,6 @@ export const JobDetails: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL DE TESTE TÉCNICO --- */}
-      {isTechModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
-             <h3 className="text-lg font-bold text-indigo-900 mb-4 flex items-center gap-2"><Beaker size={20}/> Avaliação Técnica</h3>
-             <div className="space-y-4">
-                <label className="flex items-center gap-2 cursor-pointer p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                   <input type="checkbox" checked={techForm.didTest} onChange={e => setTechForm({...techForm, didTest: e.target.checked})} className="w-5 h-5" />
-                   <span className="font-bold text-indigo-900">Realizou Teste?</span>
-                </label>
-                {techForm.didTest && (
-                   <div className="space-y-3">
-                      <div><label className="block text-xs font-bold text-slate-500 mb-1">Data</label><input type="date" className="w-full border p-2 rounded" value={techForm.date} onChange={e => setTechForm({...techForm, date: e.target.value})} /></div>
-                      <div><label className="block text-xs font-bold text-slate-500 mb-1">Avaliador</label><input className="w-full border p-2 rounded" value={techForm.evaluator} onChange={e => setTechForm({...techForm, evaluator: e.target.value})} /></div>
-                      <div><label className="block text-xs font-bold text-slate-500 mb-1">Resultado</label>
-                         <select className="w-full border p-2 rounded" value={techForm.result} onChange={e => setTechForm({...techForm, result: e.target.value})}>
-                            <option value="Aprovado">Aprovado</option>
-                            <option value="Reprovado">Reprovado</option>
-                         </select>
-                      </div>
-                      
-                      {techForm.result === 'Reprovado' && (
-                          <div className="animate-fadeIn">
-                              <label className="block text-xs font-bold text-red-600 mb-1 flex items-center gap-1"><AlertTriangle size={10}/> Motivo da Reprovação</label>
-                              <input 
-                                className="w-full border p-2 rounded border-red-200 bg-red-50 text-red-700 placeholder-red-300"
-                                placeholder="Ex: Não atingiu pontuação mínima..."
-                                value={techForm.rejectionDetail} 
-                                onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} 
-                              />
-                          </div>
-                      )}
-                   </div>
-                )}
-                <div className="flex justify-end gap-2 pt-2">
-                   <button onClick={() => setIsTechModalOpen(false)} className="px-4 py-2 text-slate-500 text-sm">Cancelar</button>
-                   <button onClick={saveTechTest} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold text-sm">Salvar</button>
-                </div>
-             </div>
-           </div>
-        </div>
-      )}
-
-      {/* --- MODAL DE CONTRATAÇÃO --- */}
-      {isHiringModalOpen && (
-        <div className="fixed inset-0 bg-emerald-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border-t-8 border-emerald-500">
-              <h3 className="text-xl font-bold text-emerald-800 mb-4 flex items-center gap-2"><CheckCircle size={24}/> Fechar Vaga</h3>
-              <div className="space-y-4">
-                 <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">Candidato Contratado</label>
-                    <select className="w-full border p-2 rounded font-bold" value={candidateToHire?.id || ''} onChange={e => setCandidateToHire(jobCandidates.find(c => c.id === e.target.value) || null)}>
-                        <option value="">-- Selecione o Vencedor --</option>
-                        {jobCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                 </div>
-                 {candidateToHire && (
-                    <>
-                       <div><label className="block text-xs font-bold text-slate-500 mb-1">Salário Final</label><input className="w-full border p-2 rounded" value={hiringData.finalSalary} onChange={e => setHiringData({...hiringData, finalSalary: e.target.value})} placeholder="R$ 0,00" /></div>
-                       <div><label className="block text-xs font-bold text-slate-500 mb-1">Tipo de Contrato</label>
-                          <select className="w-full border p-2 rounded" value={hiringData.contractType} onChange={e => setHiringData({...hiringData, contractType: e.target.value as ContractType})}>
-                             <option value="CLT">CLT</option>
-                             <option value="PJ">PJ</option>
-                             <option value="Estágio">Estágio</option>
-                          </select>
-                       </div>
-                       <div><label className="block text-xs font-bold text-slate-500 mb-1">Data de Início</label><input type="date" className="w-full border p-2 rounded" value={hiringData.startDate} onChange={e => setHiringData({...hiringData, startDate: e.target.value})} /></div>
-                       <button onClick={handleHiringSubmit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg mt-2">Confirmar Contratação</button>
-                    </>
-                 )}
-                 <button onClick={() => setIsHiringModalOpen(false)} className="w-full py-2 text-slate-400 font-bold hover:text-slate-600">Cancelar</button>
-              </div>
-           </div>
-        </div>
-      )}
-
       {/* --- MODAL DE STATUS (CONGELAMENTO/CANCELAMENTO) --- */}
       {isStatusModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -654,7 +564,78 @@ export const JobDetails: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL TALENTO --- */}
+      {/* --- MODAL DE TESTE TÉCNICO E CONTRATAÇÃO (CÓDIGO REUTILIZADO PARA ECONOMIA DE ESPAÇO NO EXEMPLO, JÁ ESTÁ NO CÓDIGO ANTERIOR) --- */}
+      {/* (Mantive os modais de Teste e Contratação iguais ao anterior pois já estavam corretos) */}
+      
+      {isTechModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+             <h3 className="text-lg font-bold text-indigo-900 mb-4 flex items-center gap-2"><Beaker size={20}/> Avaliação Técnica</h3>
+             <div className="space-y-4">
+                <label className="flex items-center gap-2 cursor-pointer p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                   <input type="checkbox" checked={techForm.didTest} onChange={e => setTechForm({...techForm, didTest: e.target.checked})} className="w-5 h-5" />
+                   <span className="font-bold text-indigo-900">Realizou Teste?</span>
+                </label>
+                {techForm.didTest && (
+                   <div className="space-y-3">
+                      <div><label className="block text-xs font-bold text-slate-500 mb-1">Data</label><input type="date" className="w-full border p-2 rounded" value={techForm.date} onChange={e => setTechForm({...techForm, date: e.target.value})} /></div>
+                      <div><label className="block text-xs font-bold text-slate-500 mb-1">Avaliador</label><input className="w-full border p-2 rounded" value={techForm.evaluator} onChange={e => setTechForm({...techForm, evaluator: e.target.value})} /></div>
+                      <div><label className="block text-xs font-bold text-slate-500 mb-1">Resultado</label>
+                         <select className="w-full border p-2 rounded" value={techForm.result} onChange={e => setTechForm({...techForm, result: e.target.value})}>
+                            <option value="Aprovado">Aprovado</option>
+                            <option value="Reprovado">Reprovado</option>
+                         </select>
+                      </div>
+                      {techForm.result === 'Reprovado' && (
+                          <div className="animate-fadeIn">
+                              <label className="block text-xs font-bold text-red-600 mb-1 flex items-center gap-1"><AlertTriangle size={10}/> Motivo da Reprovação</label>
+                              <input className="w-full border p-2 rounded border-red-200 bg-red-50 text-red-700 placeholder-red-300" placeholder="Ex: Não atingiu pontuação mínima..." value={techForm.rejectionDetail} onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} />
+                          </div>
+                      )}
+                   </div>
+                )}
+                <div className="flex justify-end gap-2 pt-2">
+                   <button onClick={() => setIsTechModalOpen(false)} className="px-4 py-2 text-slate-500 text-sm">Cancelar</button>
+                   <button onClick={saveTechTest} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold text-sm">Salvar</button>
+                </div>
+             </div>
+           </div>
+        </div>
+      )}
+
+      {isHiringModalOpen && (
+        <div className="fixed inset-0 bg-emerald-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border-t-8 border-emerald-500">
+              <h3 className="text-xl font-bold text-emerald-800 mb-4 flex items-center gap-2"><CheckCircle size={24}/> Fechar Vaga</h3>
+              <div className="space-y-4">
+                 <div>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">Candidato Contratado</label>
+                    <select className="w-full border p-2 rounded font-bold" value={candidateToHire?.id || ''} onChange={e => setCandidateToHire(jobCandidates.find(c => c.id === e.target.value) || null)}>
+                        <option value="">-- Selecione o Vencedor --</option>
+                        {jobCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                 </div>
+                 {candidateToHire && (
+                    <>
+                       <div><label className="block text-xs font-bold text-slate-500 mb-1">Salário Final</label><input className="w-full border p-2 rounded" value={hiringData.finalSalary} onChange={e => setHiringData({...hiringData, finalSalary: e.target.value})} placeholder="R$ 0,00" /></div>
+                       <div><label className="block text-xs font-bold text-slate-500 mb-1">Tipo de Contrato</label>
+                          <select className="w-full border p-2 rounded" value={hiringData.contractType} onChange={e => setHiringData({...hiringData, contractType: e.target.value as ContractType})}>
+                             <option value="CLT">CLT</option>
+                             <option value="PJ">PJ</option>
+                             <option value="Estágio">Estágio</option>
+                          </select>
+                       </div>
+                       <div><label className="block text-xs font-bold text-slate-500 mb-1">Data de Início</label><input type="date" className="w-full border p-2 rounded" value={hiringData.startDate} onChange={e => setHiringData({...hiringData, startDate: e.target.value})} /></div>
+                       <button onClick={handleHiringSubmit} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl shadow-lg mt-2">Confirmar Contratação</button>
+                    </>
+                 )}
+                 <button onClick={() => setIsHiringModalOpen(false)} className="w-full py-2 text-slate-400 font-bold hover:text-slate-600">Cancelar</button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* --- MODAL TALENTO (Mantido igual) --- */}
       {isTalentModalOpen && (
         <div className="fixed inset-0 bg-indigo-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
