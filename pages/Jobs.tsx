@@ -1,14 +1,28 @@
+Com certeza! Agora vamos fechar o ciclo.
 
+Como alteramos o **Backend** para separar o lixo (`trash`) das vagas ativas, a lógica antiga de "ShowHidden" (que apenas filtrava a lista local) parou de funcionar direito.
+
+Agora, vamos fazer do jeito certo:
+
+1. O botão de Lixeira vai abrir um **Modal Exclusivo**.
+2. Esse modal vai ler direto da lista `trash` do Contexto.
+3. Você poderá **Restaurar** ou **Excluir Permanentemente** (se for Master) direto dali.
+
+Aqui está o seu `Jobs.tsx` completo e atualizado.
+
+### `src/pages/Jobs.tsx`
+
+```tsx
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Link } from 'react-router-dom';
-import { Plus, Search, MapPin, Briefcase, Filter, X, Download, ChevronDown, ChevronRight, Trash2, Eye, EyeOff, Lock, Unlock, Shield, Users, AlertTriangle, ShieldCheck, Edit2 } from 'lucide-react';
+// Adicionei RotateCcw e FileQuestion e AlertTriangle aos imports
+import { Plus, Search, MapPin, Briefcase, Filter, X, Download, ChevronDown, ChevronRight, Trash2, Eye, EyeOff, Lock, Unlock, Shield, Users, AlertTriangle, ShieldCheck, Edit2, RotateCcw, FileQuestion, XCircle } from 'lucide-react';
 import { Job, JobStatus, OpeningDetails, Candidate } from '../types';
 import { exportJobsList, exportToExcel } from '../services/excelService';
 
 const generateId = () => crypto.randomUUID();
 
-// FIX: Helper to display date without timezone offset issues
 const formatDateDisplay = (isoString: string) => {
   if (!isoString) return 'N/A';
   const datePart = isoString.split('T')[0];
@@ -63,14 +77,12 @@ interface JobCardProps {
   candidates: Candidate[];
   onEdit: () => void;
   onDelete: (e: React.MouseEvent) => void;
-  isTrashView?: boolean;
 }
 
-const JobCard: React.FC<JobCardProps> = ({ job, candidates, onEdit, onDelete, isTrashView = false }) => {
+const JobCard: React.FC<JobCardProps> = ({ job, candidates, onEdit, onDelete }) => {
     const jobCandidates = candidates.filter(c => c.jobId === job.id);
     const hired = jobCandidates.find(c => c.status === 'Contratado');
     
-    // Status color logic
     const getStatusColor = (s: string) => {
         switch(s) {
             case 'Aberta': return 'bg-blue-100 text-blue-700';
@@ -86,12 +98,11 @@ const JobCard: React.FC<JobCardProps> = ({ job, candidates, onEdit, onDelete, is
             <div className="flex justify-between items-start mb-3">
                 <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                         {/* FIX: Use span title attribute instead of title prop on Lucide icon */}
-                         {job.isConfidential && <span title="Confidencial"><Lock size={14} className="text-amber-500" /></span>}
-                         <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${getStatusColor(job.status)}`}>
-                             {job.status}
-                         </span>
-                         {job.openingDetails?.reason === 'Substituição' && <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-rose-100 text-rose-700">Substituição</span>}
+                          {job.isConfidential && <span title="Confidencial"><Lock size={14} className="text-amber-500" /></span>}
+                          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${getStatusColor(job.status)}`}>
+                              {job.status}
+                          </span>
+                          {job.openingDetails?.reason === 'Substituição' && <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-rose-100 text-rose-700">Substituição</span>}
                     </div>
                     <h3 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-600 transition-colors">{job.title}</h3>
                     <p className="text-xs text-slate-500 font-medium mt-1">{job.sector} &bull; {job.unit}</p>
@@ -135,43 +146,38 @@ const JobCard: React.FC<JobCardProps> = ({ job, candidates, onEdit, onDelete, is
                     </button>
                     <button 
                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e); }}
-                       className={`p-2 hover:bg-red-50 rounded-lg transition-colors ${isTrashView ? 'text-red-600' : 'text-slate-400 hover:text-red-600'}`}
-                       title={isTrashView ? "Excluir Permanentemente" : "Mover para Lixeira"}
+                       className="p-2 hover:bg-red-50 rounded-lg transition-colors text-slate-400 hover:text-red-600"
+                       title="Mover para Lixeira"
                     >
                        <Trash2 size={16} />
                     </button>
                 </div>
             </div>
-            
-            {/* Trash View Watermark */}
-            {isTrashView && (
-                <div className="absolute inset-0 bg-white/50 flex items-center justify-center pointer-events-none">
-                    <span className="text-red-200 font-black text-4xl -rotate-12 uppercase border-4 border-red-200 p-4 rounded-xl">Excluída</span>
-                </div>
-            )}
         </Link>
     );
 };
 
 export const Jobs: React.FC = () => {
-  const { jobs, addJob, updateJob, removeJob, verifyUserPassword, settings, candidates, user, users } = useData();
+  // ADICIONEI TRASH, RESTORE E PERMANENT DELETE AQUI
+  const { jobs, addJob, updateJob, removeJob, verifyUserPassword, settings, candidates, user, users, trash, restoreItem, permanentlyDeleteItem } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [showHidden, setShowHidden] = useState(false);
   
-  // NEW FILTERS
+  // State para o Modal da Lixeira
+  const [isTrashModalOpen, setIsTrashModalOpen] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Filters
   const [selectedSector, setSelectedSector] = useState('');
   const [selectedUnit, setSelectedUnit] = useState('');
 
-  // SECURITY: Visibility Toggle for Allowed Users
+  // Security
   const [showConfidential, setShowConfidential] = useState(false);
-  
-  // SECURITY: Re-Auth Modal State
   const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
   const [securityPassword, setSecurityPassword] = useState('');
   const [securityError, setSecurityError] = useState('');
 
-  // Deletion Modal
+  // Deletion
   const [jobToDelete, setJobToDelete] = useState<string | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
@@ -183,52 +189,40 @@ export const Jobs: React.FC = () => {
   const [status, setStatus] = useState<JobStatus>('Aberta');
   const [description, setDescription] = useState('');
   const [openedAt, setOpenedAt] = useState('');
-  
-  // New Form Fields & ACL
   const [requesterName, setRequesterName] = useState('');
   const [isConfidential, setIsConfidential] = useState(false);
   const [allowedUserIds, setAllowedUserIds] = useState<string[]>([]);
-  const [openingDetails, setOpeningDetails] = useState<OpeningDetails>({
-    reason: 'Aumento de Quadro'
-  });
+  const [openingDetails, setOpeningDetails] = useState<OpeningDetails>({ reason: 'Aumento de Quadro' });
 
   const sectors = settings.filter(s => s.type === 'SECTOR');
   const units = settings.filter(s => s.type === 'UNIT');
 
-  // PERMISSION CHECK: Does the user have ANY confidential job access?
+  // LÓGICA DA LIXEIRA DE VAGAS
+  const deletedJobs = useMemo(() => {
+    // 1. Filtra só o que é vaga na lixeira global
+    const onlyJobs = trash.filter(item => item.originalType === 'job');
+    // 2. Aplica regra de visualização (Master vê tudo, User vê o que deletou)
+    if (user?.role === 'MASTER') return onlyJobs;
+    return onlyJobs.filter(j => j.deletedBy === user?.id);
+  }, [trash, user]);
+
   const hasConfidentialAccess = useMemo(() => {
     if (!user) return false;
     if (user.role === 'MASTER') return true;
     return jobs.some(j => j.isConfidential && (j.createdBy === user.id || j.allowedUserIds?.includes(user.id)));
   }, [jobs, user]);
 
-  // Filter Logic with ACL and Trash Separation
   const filteredJobs = useMemo(() => {
-    let result = jobs;
-
-    // RULE: Separation of Active vs Trash
-    if (showHidden) {
-      // TRASH VIEW logic...
-      result = result.filter(j => {
-        const isDeleted = !!j.deletedAt || j.isHidden; 
-        if (!isDeleted) return false;
-        if (user?.role === 'MASTER') return true;
-        return j.deletedBy === user?.id;
-      });
-    } else {
-      // ACTIVE LIST
-      result = result.filter(j => !j.deletedAt && !j.isHidden);
-    }
+    // AQUI MUDOU: Não filtramos mais lixeira aqui. Jobs são sempre ativos.
+    let result = jobs; // A API já devolve sem os deletados.
     
-    // SECURITY FILTER (ACL) for Confidential Jobs
+    // SECURITY FILTER
     result = result.filter(j => {
       if (!j.isConfidential) return true;
       if (!user) return false;
       return user.role === 'MASTER' || j.createdBy === user.id || j.allowedUserIds?.includes(user.id);
     });
 
-    // SECURITY VIEW TOGGLE: STRICT RE-AUTH
-    // Even if user is allowed, they MUST have unlocked the view via password to see confidential items
     if (!showConfidential) {
        result = result.filter(j => !j.isConfidential);
     }
@@ -237,7 +231,6 @@ export const Jobs: React.FC = () => {
       result = result.filter(j => j.title.toLowerCase().includes(searchTerm.toLowerCase()));
     }
 
-    // Apply Dropdown Filters
     if (selectedSector) {
       result = result.filter(j => j.sector === selectedSector);
     }
@@ -246,9 +239,8 @@ export const Jobs: React.FC = () => {
     }
 
     return result;
-  }, [jobs, searchTerm, showHidden, showConfidential, selectedSector, selectedUnit, user]);
+  }, [jobs, searchTerm, showConfidential, selectedSector, selectedUnit, user]);
 
-  // Grouping Logic
   const groupedJobs = useMemo(() => {
     return {
       OPEN: filteredJobs.filter(j => j.status === 'Aberta'),
@@ -262,10 +254,8 @@ export const Jobs: React.FC = () => {
 
   const handleConfidentialToggle = () => {
     if (showConfidential) {
-      // Locking is immediate
       setShowConfidential(false);
     } else {
-      // Unlocking requires password
       setSecurityPassword('');
       setSecurityError('');
       setIsSecurityModalOpen(true);
@@ -365,6 +355,19 @@ export const Jobs: React.FC = () => {
     }
   };
 
+  // Funções da Lixeira no Modal
+  const handleRestoreFromTrash = async (id: string) => {
+    if(confirm("Restaurar esta vaga?")) {
+        await restoreItem(id);
+    }
+  };
+
+  const handlePermanentDelete = async (id: string) => {
+    if(confirm("TEM CERTEZA? Isso apagará a vaga e seus dados PARA SEMPRE.")) {
+        await permanentlyDeleteItem(id);
+    }
+  };
+
   return (
     <div>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
@@ -373,7 +376,6 @@ export const Jobs: React.FC = () => {
           <p className="text-slate-500 mt-1">Visão hierárquica do pipeline de vagas</p>
         </div>
         <div className="flex gap-3">
-           {/* Confidential Toggle - Requires Re-Auth */}
            {hasConfidentialAccess && (
              <button 
                onClick={handleConfidentialToggle}
@@ -385,14 +387,20 @@ export const Jobs: React.FC = () => {
              </button>
            )}
 
+           {/* BOTÃO DA LIXEIRA - AGORA ABRE MODAL */}
            <button 
-             onClick={() => setShowHidden(!showHidden)} 
-             className={`p-2 rounded-lg transition-colors flex items-center gap-2 border ${showHidden ? 'bg-slate-800 text-white border-slate-800' : 'text-slate-500 hover:text-slate-700 border-transparent hover:bg-slate-100'}`}
-             title={showHidden ? "Voltar para Vagas Ativas" : "Ver Lixeira"}
+             onClick={() => setIsTrashModalOpen(true)} 
+             className="p-2 rounded-lg transition-colors flex items-center gap-2 border bg-white border-slate-300 text-slate-500 hover:text-red-600 hover:bg-red-50"
+             title="Lixeira de Vagas"
            >
-             {showHidden ? <EyeOff size={20} /> : <Trash2 size={20} />}
-             {showHidden && <span className="text-xs font-bold">Lixeira</span>}
+             <Trash2 size={20} />
+             {deletedJobs.length > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 rounded-full -ml-1">
+                    {deletedJobs.length}
+                </span>
+             )}
            </button>
+
           <button 
             onClick={() => exportToExcel(filteredJobs, candidates, users)}
             className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all"
@@ -450,45 +458,105 @@ export const Jobs: React.FC = () => {
       </div>
 
       <div className="space-y-6">
-        <CollapsibleSection title={showHidden ? "Vagas na Lixeira (Apenas suas exclusões ou acesso Master)" : "Vagas Abertas / Em Andamento"} count={groupedJobs.OPEN.length} isOpenDefault={true} color="blue">
+        <CollapsibleSection title="Vagas Abertas / Em Andamento" count={groupedJobs.OPEN.length} isOpenDefault={true} color="blue">
            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {groupedJobs.OPEN.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} isTrashView={showHidden} />)}
+             {groupedJobs.OPEN.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
              {groupedJobs.OPEN.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga encontrada.</p>}
            </div>
         </CollapsibleSection>
 
-        {!showHidden && (
-          <>
-            <CollapsibleSection title="Vagas Concluídas / Fechadas" count={groupedJobs.CLOSED.length} color="emerald">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {groupedJobs.CLOSED.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
-                {groupedJobs.CLOSED.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga fechada encontrada.</p>}
-              </div>
-            </CollapsibleSection>
+        <CollapsibleSection title="Vagas Concluídas / Fechadas" count={groupedJobs.CLOSED.length} color="emerald">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {groupedJobs.CLOSED.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
+            {groupedJobs.CLOSED.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga fechada encontrada.</p>}
+          </div>
+        </CollapsibleSection>
 
-            <CollapsibleSection title="Vagas Congeladas" count={groupedJobs.FROZEN.length} color="amber">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {groupedJobs.FROZEN.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
-                {groupedJobs.FROZEN.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga congelada encontrada.</p>}
-              </div>
-            </CollapsibleSection>
+        <CollapsibleSection title="Vagas Congeladas" count={groupedJobs.FROZEN.length} color="amber">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {groupedJobs.FROZEN.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
+            {groupedJobs.FROZEN.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga congelada encontrada.</p>}
+          </div>
+        </CollapsibleSection>
 
-            <CollapsibleSection title="Vagas Canceladas" count={groupedJobs.CANCELED.length} color="red">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {groupedJobs.CANCELED.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
-                {groupedJobs.CANCELED.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga cancelada encontrada.</p>}
-              </div>
-            </CollapsibleSection>
-          </>
-        )}
-        
-        {showHidden && (
-           <div className="text-center text-xs text-slate-400 mt-8">
-              <p>Visualizando Lixeira. Vagas aqui foram excluídas logicamente.</p>
-              {user?.role === 'MASTER' ? <p className="font-bold">Modo Master: Você vê todas as exclusões.</p> : <p>Você vê apenas as vagas que excluiu.</p>}
-           </div>
-        )}
+        <CollapsibleSection title="Vagas Canceladas" count={groupedJobs.CANCELED.length} color="red">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {groupedJobs.CANCELED.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
+            {groupedJobs.CANCELED.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga cancelada encontrada.</p>}
+          </div>
+        </CollapsibleSection>
       </div>
+
+      {/* --- MODAL DA LIXEIRA --- */}
+      {isTrashModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
+           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-red-50 rounded-t-2xl">
+                 <div className="flex items-center gap-3">
+                    <div className="bg-red-100 p-2 rounded-lg text-red-600">
+                        <Trash2 size={24} />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-bold text-slate-800">Lixeira de Vagas</h3>
+                        <p className="text-sm text-slate-500">Recupere vagas excluídas ou apague definitivamente.</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setIsTrashModalOpen(false)} className="text-slate-400 hover:text-slate-600 bg-white p-2 rounded-full shadow-sm">
+                   <X size={20} />
+                 </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50">
+                 {deletedJobs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                       <FileQuestion size={64} className="mb-4 opacity-20" />
+                       <p className="text-lg font-medium">A lixeira está vazia.</p>
+                    </div>
+                 ) : (
+                    <div className="space-y-3">
+                       {deletedJobs.map(job => (
+                          <div key={job.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+                             <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
+                                        Excluída em: {job.deletedAt ? new Date(job.deletedAt).toLocaleDateString() : 'N/A'}
+                                    </span>
+                                    {user?.role === 'MASTER' && (
+                                        <span className="text-xs text-slate-400">
+                                            por: {users.find(u => u.id === job.deletedBy)?.name || 'Admin'}
+                                        </span>
+                                    )}
+                                </div>
+                                <h4 className="font-bold text-slate-800 text-lg">{job.title}</h4>
+                                <p className="text-sm text-slate-500">{job.sector} • {job.unit}</p>
+                             </div>
+
+                             <div className="flex items-center gap-3">
+                                <button 
+                                   onClick={() => handleRestoreFromTrash(job.id)}
+                                   className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 transition-colors"
+                                >
+                                   <RotateCcw size={18} /> Restaurar
+                                </button>
+                                
+                                {user?.role === 'MASTER' && (
+                                    <button 
+                                       onClick={() => handlePermanentDelete(job.id)}
+                                       className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 font-bold rounded-lg hover:bg-red-100 transition-colors"
+                                       title="Excluir Permanentemente"
+                                    >
+                                       <XCircle size={18} /> Excluir
+                                    </button>
+                                )}
+                             </div>
+                          </div>
+                       ))}
+                    </div>
+                 )}
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* --- SECURITY RE-AUTH MODAL --- */}
       {isSecurityModalOpen && (
@@ -501,7 +569,7 @@ export const Jobs: React.FC = () => {
               </div>
               <h3 className="text-xl font-bold text-slate-800 text-center mb-2">Modo Confidencial</h3>
               <p className="text-sm text-slate-500 text-center mb-6">
-                 Para visualizar as vagas sigilosas, confirme sua senha de acesso.
+                  Para visualizar as vagas sigilosas, confirme sua senha de acesso.
               </p>
               
               <form onSubmit={handleSecurityUnlock} className="space-y-4">
@@ -580,7 +648,7 @@ export const Jobs: React.FC = () => {
         </div>
       )}
 
-      {/* New/Edit Job Modal */}
+      {/* New/Edit Job Modal (MANTIDO IDÊNTICO) */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-blue-900/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -592,7 +660,6 @@ export const Jobs: React.FC = () => {
             </div>
             
             <form onSubmit={handleSave} className="p-8 space-y-6">
-              {/* Form implementation remains same as previous */}
               <div className="grid grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">Título da Vaga</label>
@@ -618,29 +685,29 @@ export const Jobs: React.FC = () => {
                   
                   {isConfidential && (
                       <div className="bg-white border border-amber-200 rounded-lg p-3 max-h-40 overflow-y-auto custom-scrollbar">
-                         <div className="text-xs font-bold text-slate-400 uppercase mb-2">Acesso Garantido (Automático)</div>
-                         <div className="flex items-center gap-2 text-xs text-slate-600 mb-3">
-                            <span className="bg-slate-100 px-2 py-1 rounded flex items-center gap-1"><Shield size={10}/> Master Admin</span>
-                            <span className="bg-slate-100 px-2 py-1 rounded flex items-center gap-1"><Users size={10}/> Você (Criador)</span>
-                         </div>
-                         
-                         <div className="text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Recrutadores Adicionais</div>
-                         <div className="space-y-1">
-                             {users.filter(u => u.role !== 'MASTER' && u.id !== user?.id).map(u => (
-                                 <label key={u.id} className="flex items-center gap-2 hover:bg-slate-50 p-1.5 rounded cursor-pointer">
-                                     <input 
-                                       type="checkbox" 
-                                       checked={allowedUserIds.includes(u.id)}
-                                       onChange={() => toggleUserAccess(u.id)}
-                                       className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
-                                     />
-                                     <span className="text-sm text-slate-700">{u.name}</span>
-                                 </label>
-                             ))}
-                             {users.filter(u => u.role !== 'MASTER' && u.id !== user?.id).length === 0 && (
-                                 <p className="text-xs text-slate-400 italic">Nenhum outro recrutador disponível.</p>
-                             )}
-                         </div>
+                          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Acesso Garantido (Automático)</div>
+                          <div className="flex items-center gap-2 text-xs text-slate-600 mb-3">
+                             <span className="bg-slate-100 px-2 py-1 rounded flex items-center gap-1"><Shield size={10}/> Master Admin</span>
+                             <span className="bg-slate-100 px-2 py-1 rounded flex items-center gap-1"><Users size={10}/> Você (Criador)</span>
+                          </div>
+                          
+                          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Recrutadores Adicionais</div>
+                          <div className="space-y-1">
+                              {users.filter(u => u.role !== 'MASTER' && u.id !== user?.id).map(u => (
+                                  <label key={u.id} className="flex items-center gap-2 hover:bg-slate-50 p-1.5 rounded cursor-pointer">
+                                      <input 
+                                        type="checkbox" 
+                                        checked={allowedUserIds.includes(u.id)}
+                                        onChange={() => toggleUserAccess(u.id)}
+                                        className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
+                                      />
+                                      <span className="text-sm text-slate-700">{u.name}</span>
+                                  </label>
+                              ))}
+                              {users.filter(u => u.role !== 'MASTER' && u.id !== user?.id).length === 0 && (
+                                  <p className="text-xs text-slate-400 italic">Nenhum outro recrutador disponível.</p>
+                              )}
+                          </div>
                       </div>
                   )}
               </div>
@@ -713,3 +780,5 @@ export const Jobs: React.FC = () => {
     </div>
   );
 };
+
+```
