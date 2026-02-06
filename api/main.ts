@@ -4,7 +4,7 @@ import { hash, compare } from 'bcryptjs';
 
 export const config = {
   runtime: 'nodejs',
-};;
+};
 
 async function initTables(sql: any) {
   await sql`
