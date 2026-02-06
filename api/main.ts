@@ -60,7 +60,6 @@ export default async function handler(request: any, response: any) {
       const { data } = request.body;
       if (!data) return response.status(400).json({ error: 'Dados inválidos' });
 
-      // Restaurar Usuários
       if (data.users && Array.isArray(data.users)) {
         for (const user of data.users) {
           let finalPassword = user.password;
@@ -68,7 +67,6 @@ export default async function handler(request: any, response: any) {
              finalPassword = await bcrypt.hash(user.password, 10);
           }
           const finalRole = user.role ? user.role.toUpperCase() : 'USER';
-
           await sql`
             INSERT INTO users (id, username, password, name, role, created_by)
             VALUES (${user.id}, ${user.username}, ${finalPassword}, ${user.name}, ${finalRole}, ${user.createdBy || null})
@@ -78,7 +76,6 @@ export default async function handler(request: any, response: any) {
         }
       }
 
-      // Restaurar Entidades
       const insertEntity = async (type: string, item: any) => {
         await sql`
           INSERT INTO entities (id, type, data)
@@ -96,32 +93,27 @@ export default async function handler(request: any, response: any) {
       return response.status(200).json({ success: true });
     }
 
-    // --- CORREÇÃO AQUI: GET DATA BUSCA TUDO E SEPARA O LIXO ---
     if (action === 'get-data') {
       try {
-        // Removemos o "WHERE deleted_at IS NULL" para pegar tudo
         const rawEntities = await sql`SELECT * FROM entities`;
         const users = await sql`SELECT id, username, name, role, created_by FROM users WHERE deleted_at IS NULL`;
 
-        // Função auxiliar para filtrar ativos
         const active = (type: string) => rawEntities
           .filter((e: any) => e.type === type && !e.deleted_at)
           .map((e: any) => e.data);
 
-        // Separação dos ativos
         const settings = active('setting');
         const jobs = active('job');
         const talents = active('talent');
         const candidates = active('candidate');
 
-        // Criação da Lixeira (Tudo que tem deleted_at)
         const trash = rawEntities
           .filter((e: any) => e.deleted_at !== null)
           .map((e: any) => ({
             ...e.data,
             id: e.id,
-            deletedAt: e.deleted_at, // Adiciona a data de exclusão
-            originalType: e.type // Importante para saber o tipo ao restaurar
+            deletedAt: e.deleted_at,
+            originalType: e.type
           }));
 
         return response.status(200).json({ 
@@ -176,15 +168,36 @@ export default async function handler(request: any, response: any) {
     }
 
     if (action === 'delete-entity') {
-      const { id } = request.body;
-      await sql`UPDATE entities SET deleted_at = NOW() WHERE id = ${id}`;
+      const { id, userId } = request.body;
+      
+      // Tenta salvar quem deletou dentro do JSON antes de apagar
+      try {
+        const current = await sql`SELECT data FROM entities WHERE id = ${id}`;
+        if (current.length > 0) {
+           const newData = { ...current[0].data, deletedBy: userId };
+           await sql`UPDATE entities SET deleted_at = NOW(), data = ${newData} WHERE id = ${id}`;
+        } else {
+           await sql`UPDATE entities SET deleted_at = NOW() WHERE id = ${id}`;
+        }
+      } catch (e) {
+        await sql`UPDATE entities SET deleted_at = NOW() WHERE id = ${id}`;
+      }
+      
       return response.status(200).json({ success: true });
     }
 
-    // --- NOVO: AÇÃO PARA RESTAURAR DA LIXEIRA ---
     if (action === 'restore-entity') {
       const { id } = request.body;
       await sql`UPDATE entities SET deleted_at = NULL WHERE id = ${id}`;
+      return response.status(200).json({ success: true });
+    }
+
+    // --- NOVO: EXCLUSÃO PERMANENTE ---
+    if (action === 'permanently-delete-entity') {
+      const { id } = request.body;
+      // Apaga de users E entities para garantir
+      await sql`DELETE FROM entities WHERE id = ${id}`;
+      await sql`DELETE FROM users WHERE id = ${id}`;
       return response.status(200).json({ success: true });
     }
 
