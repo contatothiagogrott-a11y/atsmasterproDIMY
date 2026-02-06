@@ -1,34 +1,33 @@
 
 import { User, Job, Candidate, TalentProfile, SettingItem } from '../types';
 
-// --- MOCK DATA FOR FALLBACK ---
+// --- MOCK DATA FOR FALLBACK (Using valid UUIDs) ---
 const MOCK_DATA = {
   users: [
-    { id: 'u-admin', username: 'admin', password: '123', name: 'Admin User', role: 'MASTER' as const },
-    { id: 'u-recruiter', username: 'recruiter', password: '123', name: 'Recruiter User', role: 'RECRUITER' as const }
+    { id: '550e8400-e29b-41d4-a716-446655440000', username: 'admin', password: '123', name: 'Admin User', role: 'MASTER' as const },
+    { id: '6ba7b810-9dad-11d1-80b4-00c04fd430c8', username: 'recruiter', password: '123', name: 'Recruiter User', role: 'RECRUITER' as const }
   ],
   jobs: [
     { 
-      id: 'j-1', title: 'Desenvolvedor Senior React', sector: 'Tecnologia', unit: 'Matriz SP', status: 'Aberta' as const, 
+      id: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', title: 'Desenvolvedor Senior React', sector: 'Tecnologia', unit: 'Matriz SP', status: 'Aberta' as const, 
       openedAt: new Date().toISOString(), description: 'Vaga para liderança técnica.',
-      isConfidential: false, createdBy: 'u-admin', openingDetails: { reason: 'Aumento de Quadro' as const }
+      isConfidential: false, createdBy: '550e8400-e29b-41d4-a716-446655440000', openingDetails: { reason: 'Aumento de Quadro' as const }
     }
   ],
   candidates: [
     { 
-      id: 'c-1', jobId: 'j-1', name: 'Maria Souza', age: 28, phone: '11999999999', email: 'maria@test.com', 
+      id: '9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d', jobId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', name: 'Maria Souza', age: 28, phone: '11999999999', email: 'maria@test.com', 
       origin: 'LinkedIn' as const, status: 'Entrevista' as const, createdAt: new Date().toISOString(), 
       timeline: { interview: new Date().toISOString() }, salaryExpectation: 'R$ 8.000'
     }
   ],
   talents: [],
   settings: [
-    { id: 's-1', name: 'Tecnologia', type: 'SECTOR' as const },
-    { id: 's-2', name: 'Matriz SP', type: 'UNIT' as const }
+    { id: '1b671a64-40d5-491e-99b0-da01ff1f3341', name: 'Tecnologia', type: 'SECTOR' as const },
+    { id: '2c671a64-40d5-491e-99b0-da01ff1f3342', name: 'Matriz SP', type: 'UNIT' as const }
   ]
 };
 
-// Client-side helper to make API requests safely
 const apiRequest = async (action: string, method: string = 'GET', body?: any) => {
   try {
     const url = action.startsWith('/') ? action : `/api/main?action=${action}`;
@@ -40,7 +39,6 @@ const apiRequest = async (action: string, method: string = 'GET', body?: any) =>
     if (!response.ok) throw new Error(`API Error: ${response.status}`);
     return await response.json();
   } catch (e) {
-    console.warn(`⚠️ API Request [${action}] failed. Using fallback logic.`, e);
     throw e;
   }
 };
@@ -49,7 +47,6 @@ export const db = {
   loadAll: async () => {
     try {
       const data = await apiRequest('get-data');
-      // Format backend response to match frontend expectations
       const entities = data.entities || [];
       return {
         users: data.users as User[],
@@ -95,7 +92,6 @@ export const db = {
     return stored ? JSON.parse(stored) : null;
   },
 
-  // Persisting changes via API
   saveUser: async (user: User) => apiRequest('save-user', 'POST', user).catch(() => {}),
   saveEntity: async (id: string, type: string, data: any) => apiRequest('save-entity', 'POST', { id, type, data }).catch(() => {}),
   deleteEntity: async (id: string) => apiRequest('delete-entity', 'POST', { id }).catch(() => {}),

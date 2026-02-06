@@ -8,19 +8,20 @@ export const config = {
 async function initTables(sql: any) {
   await sql`
     CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       name TEXT NOT NULL,
       role TEXT NOT NULL,
-      created_by TEXT,
+      created_by UUID,
       deleted_at TIMESTAMP
     );
   `;
+  // Seed initial user without forcing a hardcoded ID string
   await sql`
-    INSERT INTO users (id, username, password, name, role)
-    VALUES ('u-master', 'masteraccount', 'master.123', 'Master Admin', 'MASTER')
-    ON CONFLICT (id) DO NOTHING
+    INSERT INTO users (username, password, name, role)
+    VALUES ('masteraccount', 'master.123', 'Master Admin', 'MASTER')
+    ON CONFLICT (username) DO NOTHING
   `;
 }
 
@@ -31,7 +32,7 @@ export default async function handler(request: Request) {
 
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) {
-    return new Response(JSON.stringify({ error: 'DATABASE_URL is not configured on the server.' }), { status: 500 });
+    return new Response(JSON.stringify({ error: 'DATABASE_URL not configured' }), { status: 500 });
   }
 
   try {
@@ -45,7 +46,6 @@ export default async function handler(request: Request) {
       }
       return new Response(JSON.stringify({ error: 'Usuário ou senha inválidos' }), { status: 401 });
     } catch (dbErr: any) {
-      // If table doesn't exist, init and retry once
       if (dbErr.code === '42P01' || dbErr.message?.includes('does not exist')) {
         await initTables(sql);
         const rows = await sql`SELECT * FROM users WHERE username = ${username} AND password = ${password} AND deleted_at IS NULL`;

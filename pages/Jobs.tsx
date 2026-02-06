@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Link } from 'react-router-dom';
@@ -5,7 +6,7 @@ import { Plus, Search, MapPin, Briefcase, Filter, X, Download, ChevronDown, Chev
 import { Job, JobStatus, OpeningDetails, Candidate } from '../types';
 import { exportJobsList, exportToExcel } from '../services/excelService';
 
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const generateId = () => crypto.randomUUID();
 
 // FIX: Helper to display date without timezone offset issues
 const formatDateDisplay = (isoString: string) => {

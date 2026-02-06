@@ -9,42 +9,41 @@ export default async function handler(request: Request) {
   try {
     const sql = neon(process.env.DATABASE_URL!);
 
-    // Tabela de Usuários
+    // Tabela de Usuários com UUID real
     await sql`
       CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         username TEXT UNIQUE NOT NULL,
         password TEXT NOT NULL,
         name TEXT NOT NULL,
         role TEXT NOT NULL,
-        created_by TEXT,
+        created_by UUID,
         deleted_at TIMESTAMP
       );
     `;
 
-    // Tabela Genérica para Dados (Jobs, Candidates, Talents, Settings)
+    // Tabela Genérica para Dados com UUID real
     await sql`
       CREATE TABLE IF NOT EXISTS entities (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL, -- 'JOB', 'CANDIDATE', 'TALENT', 'SETTING'
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        type TEXT NOT NULL, 
         data JSONB NOT NULL,
         created_at TIMESTAMP DEFAULT NOW(),
         deleted_at TIMESTAMP
       );
     `;
 
-    // Criar usuário Master padrão se não existir
-    // Nota: O driver do Neon retorna um array de linhas diretamente
+    // Criar usuário Master padrão se não existir (Deixando o banco gerar o ID)
     const masterExists = await sql`SELECT * FROM users WHERE username = 'masteraccount'`;
     
     if (masterExists.length === 0) {
       await sql`
-        INSERT INTO users (id, username, password, name, role)
-        VALUES ('u-master', 'masteraccount', 'master.123', 'Master Admin', 'MASTER')
+        INSERT INTO users (username, password, name, role)
+        VALUES ('masteraccount', 'master.123', 'Master Admin', 'MASTER')
       `;
     }
 
-    return new Response(JSON.stringify({ message: 'Database tables created successfully (Neon)' }), {
+    return new Response(JSON.stringify({ message: 'Database tables updated to UUID successfully' }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });

@@ -1,9 +1,10 @@
+
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Plus, Search, Trash2, GraduationCap, Briefcase, DollarSign, AlertTriangle, FileText, Link as LinkIcon, History, Phone, AlertCircle, ArrowDownAZ, ArrowUpAZ, Calendar } from 'lucide-react';
 import { TalentProfile, Education, Experience, TransportType, Candidate } from '../types';
 
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const generateId = () => crypto.randomUUID();
 
 export const TalentPool: React.FC = () => {
   const { talents, addTalent, removeTalent, jobs, addCandidate, candidates } = useData();

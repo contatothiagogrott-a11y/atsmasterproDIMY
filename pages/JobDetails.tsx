@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
@@ -6,7 +7,7 @@ import { Candidate, CandidateOrigin, TalentProfile, ContractType, CandidateTimel
 import { differenceInDays, parseISO } from 'date-fns';
 import { exportJobCandidates } from '../services/excelService';
 
-const generateId = () => Math.random().toString(36).substr(2, 9);
+const generateId = () => crypto.randomUUID();
 
 export const JobDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -967,7 +968,7 @@ export const JobDetails: React.FC = () => {
 
       {candidateToDelete && (
           <div className="fixed inset-0 bg-red-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm">
+             <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-sm:max-w-xs">
                <div className="flex justify-center mb-4 text-red-600 bg-red-50 w-16 h-16 rounded-full items-center mx-auto"><Trash2 size={32} /></div>
                <h3 className="text-lg font-bold text-center mb-2">Desvincular Candidato?</h3>
                <p className="text-center text-slate-500 text-sm mb-6">Para confirmar a remoção de <strong>{candidateToDelete.name}</strong> desta vaga, digite <strong>DELETE</strong> abaixo.</p>
