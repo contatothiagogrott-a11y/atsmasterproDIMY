@@ -7,7 +7,7 @@ import {
   Globe, Users, UserPlus, MapPin, Briefcase, Filter,
   CheckCircle, Award, DollarSign, Activity, Lock, Download,
   Plus, Archive, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
-  Beaker, AlertTriangle, FileText, PauseCircle // PauseCircle para congelamento
+  Beaker, AlertTriangle, FileText, PauseCircle 
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType, CandidateTimeline } from '../types';
 import { exportJobCandidates } from '../services/excelService';
@@ -50,7 +50,6 @@ export const JobDetails: React.FC = () => {
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [targetStatus, setTargetStatus] = useState<'Cancelada' | 'Congelada' | 'Aberta' | null>(null);
   
-  // Inicializa com a data de hoje para facilitar
   const [statusFormData, setStatusFormData] = useState({ 
     requester: '', 
     reason: '', 
@@ -96,17 +95,16 @@ export const JobDetails: React.FC = () => {
   const metrics = useMemo(() => {
     if (!job) return { daysOpen: 0, daysFrozen: 0, daysNet: 0, enrolled: 0, interviewed: 0, finalists: 0, rejected: 0, withdrawn: 0, origins: {} };
 
-    // 1. SLA Bruto (Dias corridos desde abertura até hoje ou fechamento)
+    // SLA Bruto
     const endDate = job.status === 'Fechada' && job.closedAt ? new Date(job.closedAt).getTime() : new Date().getTime();
     const startDate = new Date(job.openedAt).getTime();
     const daysOpenBruto = Math.ceil((endDate - startDate) / (1000 * 3600 * 24));
 
-    // 2. Cálculo de Dias Congelados
+    // Dias Congelados
     let totalFrozenMilliseconds = 0;
     if (job.freezeHistory) {
         job.freezeHistory.forEach(freeze => {
             const startFreeze = new Date(freeze.startDate).getTime();
-            // Se tem data fim, usa ela. Se não tem (ainda congelada), usa "agora" ou data de fechamento da vaga
             const endFreeze = freeze.endDate ? new Date(freeze.endDate).getTime() : endDate;
             if (endFreeze > startFreeze) {
                 totalFrozenMilliseconds += (endFreeze - startFreeze);
@@ -115,7 +113,7 @@ export const JobDetails: React.FC = () => {
     }
     const daysFrozen = Math.floor(totalFrozenMilliseconds / (1000 * 3600 * 24));
 
-    // 3. SLA Líquido (Real)
+    // SLA Líquido
     const daysNet = Math.max(0, daysOpenBruto - daysFrozen);
 
     // Contagem de Origens
@@ -133,7 +131,7 @@ export const JobDetails: React.FC = () => {
         daysFrozen,
         daysNet,
         enrolled: jobCandidates.length,
-        interviewed: jobCandidates.filter(c => c.timeline?.interview).length,
+        interviewed: jobCandidates.filter(c => c.interviewAt).length, 
         finalists: jobCandidates.filter(c => ['Em Teste', 'Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).length,
         rejected: jobCandidates.filter(c => c.status === 'Reprovado').length,
         withdrawn: jobCandidates.filter(c => c.status === 'Desistência').length,
@@ -153,16 +151,13 @@ export const JobDetails: React.FC = () => {
         return;
     }
     
-    // Se for Congelar, Descongelar (Voltar pra Aberta) ou Cancelar, abre modal de data
     if (newStatus === 'Congelada' || newStatus === 'Cancelada' || (newStatus === 'Aberta' && job.status === 'Congelada')) {
         setTargetStatus(newStatus as any);
-        // Reseta o form com a data de hoje
         setStatusFormData({ requester: '', reason: '', date: toInputDate(new Date().toISOString()) });
         setIsStatusModalOpen(true);
         return;
     }
     
-    // Outras mudanças diretas
     updateJob({ ...job, status: newStatus as any });
   };
 
@@ -170,13 +165,10 @@ export const JobDetails: React.FC = () => {
     e.preventDefault();
     if (!job || !targetStatus) return;
     
-    // Data escolhida no modal + Hora fixa para evitar fuso (meio-dia UTC)
     const actionDateISO = `${statusFormData.date}T12:00:00.000Z`;
-    
     const updatedJob = { ...job, status: targetStatus };
     
     if (targetStatus === 'Congelada') {
-        // Adiciona novo registro de congelamento
         updatedJob.freezeHistory = [
             ...(job.freezeHistory || []), 
             { 
@@ -186,10 +178,8 @@ export const JobDetails: React.FC = () => {
             }
         ];
     } else if (targetStatus === 'Aberta' && job.status === 'Congelada') {
-        // DESCONGELAMENTO: Fecha o último registro de congelamento
         if (updatedJob.freezeHistory && updatedJob.freezeHistory.length > 0) {
             const history = [...updatedJob.freezeHistory];
-            // Pega o último item e adiciona a data de fim (Descongelamento)
             history[history.length - 1] = {
                 ...history[history.length - 1],
                 endDate: actionDateISO
@@ -209,19 +199,23 @@ export const JobDetails: React.FC = () => {
     e.preventDefault();
     if (!candidateToHire || !job) return;
     
+    // Data de início escolhida
+    const startDateISO = hiringData.startDate ? `${hiringData.startDate}T12:00:00.000Z` : new Date().toISOString();
+
     const updatedCandidate = {
         ...candidateToHire,
         status: 'Contratado',
         contractType: hiringData.contractType,
         finalSalary: hiringData.finalSalary,
-        timeline: { ...candidateToHire.timeline, startDate: hiringData.startDate ? `${hiringData.startDate}T12:00:00.000Z` : undefined }
+        timeline: { ...candidateToHire.timeline, startDate: startDateISO }
     } as Candidate;
     updateCandidate(updatedCandidate);
 
     updateJob({ 
         ...job, 
         status: 'Fechada', 
-        closedAt: new Date().toISOString(), 
+        // CORREÇÃO CRÍTICA: Data de Fechamento = Data de Início do Candidato
+        closedAt: startDateISO, 
         hiredCandidateIds: [candidateToHire.id] 
     });
     setIsHiringModalOpen(false);
@@ -347,7 +341,6 @@ export const JobDetails: React.FC = () => {
 
       {/* DASHBOARD DE MÉTRICAS (SLA + ORIGENS) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          {/* SLA */}
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 md:grid-cols-7 divide-x divide-slate-100 gap-y-4 md:gap-y-0">
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Dias Bruto</div><div className="text-xl font-bold text-slate-600">{metrics.daysOpen}</div></div>
              <div className="px-2 text-center bg-amber-50/50 rounded"><div className="text-[10px] font-bold text-amber-600 uppercase">Dias Congelada</div><div className="text-xl font-bold text-amber-700">{metrics.daysFrozen}</div></div>
@@ -358,7 +351,6 @@ export const JobDetails: React.FC = () => {
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Desistentes</div><div className="text-xl font-bold text-amber-500">{metrics.withdrawn}</div></div>
           </div>
           
-          {/* ORIGENS */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex justify-around items-center">
              <div className="text-center"><Linkedin size={20} className="text-blue-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['LinkedIn']}</span></div>
              <div className="text-center"><Instagram size={20} className="text-pink-600 mx-auto mb-1"/><span className="text-sm font-bold text-slate-700">{metrics.origins['Instagram']}</span></div>
@@ -453,49 +445,6 @@ export const JobDetails: React.FC = () => {
           </div>
         ))}
       </div>
-
-      {/* --- MODAL DE STATUS (CONGELAMENTO/CANCELAMENTO) --- */}
-      {isStatusModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-             <div className="flex items-center gap-2 mb-4 text-slate-800">
-                {targetStatus === 'Congelada' ? <PauseCircle size={24} className="text-amber-500"/> : <AlertTriangle size={24} className="text-red-500"/>}
-                <h3 className="text-lg font-bold">
-                    {targetStatus === 'Congelada' ? 'Congelar Vaga' : 
-                     targetStatus === 'Aberta' ? 'Descongelar Vaga' : 'Cancelar Vaga'}
-                </h3>
-             </div>
-             
-             <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                     {targetStatus === 'Congelada' ? 'Data do Congelamento' : 
-                      targetStatus === 'Aberta' ? 'Data do Retorno (Descongelamento)' : 'Data do Cancelamento'}
-                  </label>
-                  <input required type="date" className="w-full border p-2 rounded text-sm" value={statusFormData.date} onChange={e => setStatusFormData({...statusFormData, date: e.target.value})} />
-                </div>
-                
-                {targetStatus !== 'Aberta' && (
-                    <>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Motivo</label>
-                            <input className="w-full border p-2 rounded" value={statusFormData.reason} onChange={e => setStatusFormData({...statusFormData, reason: e.target.value})} placeholder="Por que está alterando?" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-700 mb-1">Solicitante</label>
-                            <input className="w-full border p-2 rounded" value={statusFormData.requester} onChange={e => setStatusFormData({...statusFormData, requester: e.target.value})} placeholder="Quem pediu?" />
-                        </div>
-                    </>
-                )}
-
-                <div className="flex gap-2 pt-2">
-                    <button onClick={() => setIsStatusModalOpen(false)} className="flex-1 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded">Cancelar</button>
-                    <button onClick={handleStatusSubmit} className="flex-1 bg-slate-800 text-white font-bold py-2 rounded hover:bg-slate-900">Confirmar</button>
-                </div>
-             </div>
-          </div>
-        </div>
-      )}
 
       {/* --- MODAL DE EDIÇÃO DO CANDIDATO --- */}
       {isModalOpen && (
@@ -660,6 +609,48 @@ export const JobDetails: React.FC = () => {
                  <button onClick={() => setIsHiringModalOpen(false)} className="w-full py-2 text-slate-400 font-bold hover:text-slate-600">Cancelar</button>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* --- MODAL DE STATUS (CONGELAMENTO/CANCELAMENTO) --- */}
+      {isStatusModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
+             <div className="flex items-center gap-2 mb-4 text-slate-800">
+                {targetStatus === 'Congelada' ? <PauseCircle size={24} className="text-amber-500"/> : <AlertTriangle size={24} className="text-red-500"/>}
+                <h3 className="text-lg font-bold">
+                    {targetStatus === 'Congelada' ? 'Congelar Vaga' : 
+                     targetStatus === 'Aberta' ? 'Descongelar Vaga' : 'Cancelar Vaga'}
+                </h3>
+             </div>
+             
+             <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                     {targetStatus === 'Congelada' ? 'Data do Congelamento' : 
+                      targetStatus === 'Aberta' ? 'Data do Retorno (Descongelamento)' : 'Data do Cancelamento'}
+                  </label>
+                  <input required type="date" className="w-full border p-2 rounded text-sm" value={statusFormData.date} onChange={e => setStatusFormData({...statusFormData, date: e.target.value})} />
+                </div>
+                
+                {targetStatus !== 'Aberta' && (
+                    <>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Motivo</label>
+                            <input className="w-full border p-2 rounded" value={statusFormData.reason} onChange={e => setStatusFormData({...statusFormData, reason: e.target.value})} placeholder="Por que está alterando?" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Solicitante</label><input className="w-full border p-2 rounded" value={statusFormData.requester} onChange={e => setStatusFormData({...statusFormData, requester: e.target.value})} placeholder="Quem pediu?" />
+                        </div>
+                    </>
+                )}
+
+                <div className="flex gap-2 pt-2">
+                    <button onClick={() => setIsStatusModalOpen(false)} className="flex-1 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded">Cancelar</button>
+                    <button onClick={handleStatusSubmit} className="flex-1 bg-slate-800 text-white font-bold py-2 rounded hover:bg-slate-900">Confirmar</button>
+                </div>
+             </div>
+          </div>
         </div>
       )}
 
