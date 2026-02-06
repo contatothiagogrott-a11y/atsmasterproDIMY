@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Job, Candidate, TalentProfile, SettingItem } from '../types';
 
-// Definição da Interface do Contexto
 interface DataContextType {
   user: User | null;
   login: (u: string, p: string) => Promise<boolean>;
@@ -18,7 +17,7 @@ interface DataContextType {
   addSetting: (s: SettingItem) => Promise<void>;
   removeSetting: (id: string) => Promise<void>;
   updateSetting: (s: SettingItem) => Promise<void>;
-  importSettings: (s: SettingItem[]) => Promise<void>; // Mantido para compatibilidade
+  importSettings: (s: SettingItem[]) => Promise<void>;
 
   jobs: Job[];
   addJob: (j: Job) => Promise<void>;
@@ -42,7 +41,6 @@ interface DataContextType {
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Estados Locais
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [settings, setSettings] = useState<SettingItem[]>([]);
@@ -51,15 +49,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [talents, setTalents] = useState<TalentProfile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // --- 1. FUNÇÃO MESTRA DE CARREGAMENTO (Chama API) ---
+  // --- CORREÇÃO 2: Evitar Cache do Navegador ---
   const refreshData = async () => {
     try {
-      const response = await fetch('/api/main?action=get-data');
+      // Adicionamos ?t=... para forçar o navegador a entender que é uma requisição nova
+      const timestamp = Date.now();
+      const response = await fetch(`/api/main?action=get-data&t=${timestamp}`, {
+        headers: { 
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      
       if (!response.ok) throw new Error('Falha ao conectar com o servidor');
       
       const data = await response.json();
       
-      // Atualiza os estados com o que veio do banco
       if (data.users) setUsers(data.users);
       if (data.settings) setSettings(data.settings);
       if (data.jobs) setJobs(data.jobs);
@@ -73,7 +79,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Carrega dados ao iniciar e recupera sessão
   useEffect(() => {
     refreshData();
     const savedUser = localStorage.getItem('ats_user');
@@ -82,10 +87,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // --- 2. AUTENTICAÇÃO ---
   const login = async (username: string, pass: string) => {
     try {
-      // Usamos a rota de login que já criamos
       const response = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -96,7 +99,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const userData = await response.json();
         setUser(userData);
         localStorage.setItem('ats_user', JSON.stringify(userData));
-        await refreshData(); // Garante que carregamos os dados frescos
+        await refreshData();
         return true;
       }
       return false;
@@ -106,17 +109,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // --- CORREÇÃO 1: Redirecionar para '/' no Logout ---
   const logout = () => {
     setUser(null);
     localStorage.removeItem('ats_user');
-    window.location.href = '/login'; // Força redirecionamento se necessário
+    // Manda para a raiz (Home) em vez de /login que não existe
+    window.location.href = '/'; 
   };
 
   const changePassword = async (currentPass: string, newPass: string) => {
     if (!user) return { success: false, message: 'Não logado' };
     
     try {
-      // 1. Verifica senha atual
       const verifyRes = await fetch('/api/main?action=verify-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -126,7 +130,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (!verifyData.valid) return { success: false, message: 'Senha atual incorreta' };
 
-      // 2. Salva nova senha
       await addUser({ ...user, password: newPass });
       return { success: true, message: 'Senha alterada com sucesso!' };
     } catch (e) {
@@ -135,7 +138,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const adminResetPassword = async (targetUserId: string, newPass: string) => {
-    // Admin não precisa saber a senha antiga
     const targetUser = users.find(u => u.id === targetUserId);
     if (!targetUser) return { success: false, message: 'Usuário não encontrado' };
 
@@ -143,7 +145,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true, message: 'Senha resetada com sucesso!' };
   };
 
-  // --- 3. PERSISTÊNCIA GENÉRICA (AJUDANTE) ---
+  // --- PERSISTÊNCIA E ATUALIZAÇÃO ---
   const saveEntity = async (type: string, item: any) => {
     try {
       await fetch('/api/main?action=save-entity', {
@@ -151,7 +153,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: item.id, type, data: item }),
       });
-      refreshData();
+      // Chama o refresh logo após salvar para atualizar a tela
+      await refreshData();
     } catch (error) {
       console.error(`Erro ao salvar ${type}:`, error);
     }
@@ -164,15 +167,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
       });
-      refreshData();
+      await refreshData();
     } catch (error) {
       console.error("Erro ao deletar:", error);
     }
   };
 
-  // --- 4. FUNÇÕES CRUD ESPECÍFICAS ---
+  // --- CRUD WRAPPERS (Com Atualização Otimista + Refresh Real) ---
 
-  // Usuários
   const addUser = async (u: User) => {
     try {
       await fetch('/api/main?action=save-user', {
@@ -180,20 +182,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...u, created_by: user?.id }),
       });
-      refreshData();
+      await refreshData();
     } catch (error) {
       console.error("Erro ao salvar usuário:", error);
     }
   };
-  const updateUser = (u: User) => addUser(u); // Mesma lógica (Upsert)
-  const removeUser = async (id: string) => {
-     // Implementar se necessário exclusão de usuário via API
-     console.warn("Remoção de usuário via API ainda não implementada");
-  };
+  const updateUser = (u: User) => addUser(u);
+  const removeUser = async (id: string) => { console.warn("Not implemented"); };
 
-  // Configurações (Setores/Unidades)
+  // Settings
   const addSetting = async (s: SettingItem) => {
-    setSettings(prev => [...prev, s]); // Atualiza tela rápido
+    setSettings(prev => [...prev, s]); 
     await saveEntity('setting', s);
   };
   const updateSetting = async (s: SettingItem) => {
@@ -204,12 +203,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setSettings(prev => prev.filter(i => i.id !== id));
     await deleteEntity(id);
   };
-  const importSettings = async (s: SettingItem[]) => {
-    // Compatibilidade: chama a lógica nova de backup se necessário, ou ignora
-    console.log("ImportSettings legado chamado.");
-  };
+  const importSettings = async (s: SettingItem[]) => { console.log("Legacy import"); };
 
-  // Vagas (Jobs)
+  // Jobs
   const addJob = async (j: Job) => {
     const jobWithOwner = { ...j, createdBy: user?.id };
     setJobs(prev => [...prev, jobWithOwner]);
@@ -224,7 +220,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
-  // Candidatos
+  // Candidates
   const addCandidate = async (c: Candidate) => {
     const newCandidate = { ...c, lastInteractionAt: new Date().toISOString() };
     setCandidates(prev => [...prev, newCandidate]);
@@ -233,7 +229,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateCandidate = async (c: Candidate, manualInteraction = false) => {
     let updated = { ...c };
     if (!manualInteraction) updated.lastInteractionAt = new Date().toISOString();
-    
     setCandidates(prev => prev.map(ex => ex.id === c.id ? updated : ex));
     await saveEntity('candidate', updated);
   };
@@ -242,7 +237,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
-  // Talentos
+  // Talents
   const addTalent = async (t: TalentProfile) => {
     setTalents(prev => [...prev, t]);
     await saveEntity('talent', t);
