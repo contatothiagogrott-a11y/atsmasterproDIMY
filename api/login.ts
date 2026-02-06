@@ -28,20 +28,31 @@ async function initTables(sql: any) {
   `;
 }
 
-export default async function handler(request: Request) {
+// Assinatura Node.js: (req, res)
+export default async function handler(request: any, response: any) {
   console.log("Tentando iniciar login...");
+  
+  // CORS Básico (opcional, ajuda em alguns casos)
+  response.setHeader('Access-Control-Allow-Credentials', true);
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  response.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+
+  if (request.method === 'OPTIONS') {
+    return response.status(200).end();
+  }
   
   try {
     if (request.method !== 'POST') {
-      return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+      return response.status(405).json({ error: 'Method not allowed' });
     }
 
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
-      return new Response(JSON.stringify({ error: 'DATABASE_URL not configured' }), { status: 500 });
+      return response.status(500).json({ error: 'DATABASE_URL not configured' });
     }
 
-    const { username, password } = await request.json();
+    // Node.js já traz o body parseado automaticamente
+    const { username, password } = request.body;
     const sql = neon(dbUrl);
 
     try {
@@ -53,11 +64,11 @@ export default async function handler(request: Request) {
         
         if (isMatch) {
           const { password: _, ...userWithoutPassword } = user;
-          return new Response(JSON.stringify(userWithoutPassword), { status: 200 });
+          return response.status(200).json(userWithoutPassword);
         }
       }
       
-      return new Response(JSON.stringify({ error: 'Usuário ou senha inválidos' }), { status: 401 });
+      return response.status(401).json({ error: 'Usuário ou senha inválidos' });
 
     } catch (dbErr: any) {
       if (dbErr.code === '42P01' || dbErr.message?.includes('does not exist')) {
@@ -70,15 +81,15 @@ export default async function handler(request: Request) {
           const isMatch = await bcrypt.compare(password, user.password);
           if (isMatch) {
              const { password: _, ...userWithoutPassword } = user;
-             return new Response(JSON.stringify(userWithoutPassword), { status: 200 });
+             return response.status(200).json(userWithoutPassword);
           }
         }
-        return new Response(JSON.stringify({ error: 'Usuário ou senha inválidos' }), { status: 401 });
+        return response.status(401).json({ error: 'Usuário ou senha inválidos' });
       }
       throw dbErr;
     }
   } catch (error: any) {
     console.error("ERRO FATAL NO LOGIN:", error);
-    return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), { status: 500 });
+    return response.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }
