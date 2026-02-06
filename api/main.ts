@@ -6,22 +6,24 @@ export const config = {
 };
 
 async function initTables(sql: any) {
+  // MUDANÇA: id agora é TEXT para aceitar "u-master" e outros IDs antigos
   await sql`
     CREATE TABLE IF NOT EXISTS users (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
       username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       name TEXT NOT NULL,
       role TEXT NOT NULL,
-      created_by UUID,
+      created_by TEXT,
       created_at TIMESTAMP DEFAULT NOW(),
       deleted_at TIMESTAMP
     );
   `;
 
+  // MUDANÇA: id agora é TEXT
   await sql`
     CREATE TABLE IF NOT EXISTS entities (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
       type TEXT NOT NULL, 
       data JSONB NOT NULL,
       created_at TIMESTAMP DEFAULT NOW(),
@@ -32,8 +34,8 @@ async function initTables(sql: any) {
   const hashedPassword = await bcrypt.hash('master.123', 10);
   
   await sql`
-    INSERT INTO users (username, password, name, role)
-    VALUES ('masteraccount', ${hashedPassword}, 'Master Admin', 'MASTER')
+    INSERT INTO users (id, username, password, name, role)
+    VALUES ('u-master', 'masteraccount', ${hashedPassword}, 'Master Admin', 'MASTER')
     ON CONFLICT (username) DO NOTHING
   `;
 }
@@ -56,9 +58,9 @@ export default async function handler(request: any, response: any) {
   const sql = neon(process.env.DATABASE_URL);
 
   try {
-    // --- NOVO: FUNÇÃO DE RESTAURAR BACKUP ---
+    // --- FUNÇÃO DE RESTAURAR BACKUP ---
     if (action === 'restore-backup') {
-      const { data } = request.body; // Recebe o JSON completo (objeto 'data' do seu arquivo)
+      const { data } = request.body;
       
       if (!data) {
         return response.status(400).json({ error: 'Dados inválidos ou vazios' });
@@ -67,73 +69,48 @@ export default async function handler(request: any, response: any) {
       // 1. Restaurar Usuários
       if (data.users && Array.isArray(data.users)) {
         for (const user of data.users) {
-          // Importante: Verifica se a senha já está criptografada (começa com $2a$)
-          // Se for senha antiga (texto puro), criptografa agora.
           let finalPassword = user.password;
           if (!user.password.startsWith('$2a$')) {
              finalPassword = await bcrypt.hash(user.password, 10);
           }
-
-          // Ajuste de role para MAIÚSCULO para evitar bugs
           const finalRole = user.role ? user.role.toUpperCase() : 'USER';
 
+          // REMOVIDO ::uuid PARA ACEITAR TEXTO
           await sql`
-            INSERT INTO users (id, username, password, name, role)
-            VALUES (${user.id}::uuid, ${user.username}, ${finalPassword}, ${user.name}, ${finalRole})
+            INSERT INTO users (id, username, password, name, role, created_by)
+            VALUES (${user.id}, ${user.username}, ${finalPassword}, ${user.name}, ${finalRole}, ${user.createdBy || null})
             ON CONFLICT (username) DO UPDATE SET
             password = EXCLUDED.password,
             name = EXCLUDED.name,
-            role = EXCLUDED.role
+            role = EXCLUDED.role,
+            id = EXCLUDED.id
           `;
         }
       }
 
-      // 2. Restaurar Entidades (Vagas, Talentos, Candidatos, Configs)
-      // Função auxiliar para inserir em lote
+      // 2. Restaurar Entidades
       const insertEntity = async (type: string, item: any) => {
-        // Se o item não tiver ID, geramos um UUID aleatório temporário se o banco não gerar
-        // Mas seu arquivo já tem IDs, então vamos usá-los (convertendo para UUID se necessário)
-        // Nota: Se seus IDs antigos não forem UUIDs válidos (ex: "s1", "u1"), 
-        // o ideal é deixar o banco gerar novo ID ou forçar uuid se possível.
-        // Pelo seu arquivo, alguns IDs são curtos ("s1"). O Postgres vai chiar se tentar forçar UUID neles.
-        // SOLUÇÃO: Para IDs curtos, vamos deixar o banco criar novos IDs UUID.
-        // Para IDs que parecem UUIDs (longos), tentamos manter.
-        
-        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-        
-        // Vamos salvar o ID antigo dentro do "data" para referência, mas usar ID novo no banco se não for UUID
-        const itemData = { ...item, oldId: item.id };
-        
+        // REMOVIDO ::uuid
         await sql`
-          INSERT INTO entities (type, data)
-          VALUES (${type}, ${itemData})
+          INSERT INTO entities (id, type, data)
+          VALUES (${item.id}, ${type}, ${item})
+          ON CONFLICT (id) DO UPDATE SET
+          data = EXCLUDED.data, deleted_at = NULL
         `;
       };
 
-      // Importar Settings (Setores/Unidades)
-      if (data.settings) {
-        for (const item of data.settings) await insertEntity('setting', item);
-      }
-      // Importar Jobs (Vagas)
-      if (data.jobs) {
-        for (const item of data.jobs) await insertEntity('job', item);
-      }
-      // Importar Talents (Banco de Talentos)
-      if (data.talents) {
-        for (const item of data.talents) await insertEntity('talent', item);
-      }
-      // Importar Candidates (Candidaturas)
-      if (data.candidates) {
-        for (const item of data.candidates) await insertEntity('candidate', item);
-      }
+      if (data.settings) for (const item of data.settings) await insertEntity('setting', item);
+      if (data.jobs) for (const item of data.jobs) await insertEntity('job', item);
+      if (data.talents) for (const item of data.talents) await insertEntity('talent', item);
+      if (data.candidates) for (const item of data.candidates) await insertEntity('candidate', item);
 
       return response.status(200).json({ success: true, message: 'Backup restaurado com sucesso!' });
     }
-    // ----------------------------------------
 
     if (action === 'verify-password') {
       const { userId, password } = request.body;
-      const rows = await sql`SELECT password FROM users WHERE id = ${userId}::uuid AND deleted_at IS NULL`;
+      // REMOVIDO ::uuid
+      const rows = await sql`SELECT password FROM users WHERE id = ${userId} AND deleted_at IS NULL`;
       if (rows.length > 0) {
         const isMatch = await bcrypt.compare(password, rows[0].password);
         return response.status(200).json({ valid: isMatch });
@@ -147,12 +124,12 @@ export default async function handler(request: any, response: any) {
       if (user.password && !user.password.startsWith('$2a$')) { 
         hashedPassword = await bcrypt.hash(user.password, 10);
       }
-
       const role = user.role ? user.role.toUpperCase() : 'USER';
 
+      // REMOVIDO ::uuid
       await sql`
         INSERT INTO users (id, username, password, name, role, created_by)
-        VALUES (${user.id}::uuid, ${user.username}, ${hashedPassword}, ${user.name}, ${role}, ${user.created_by ? user.created_by + '::uuid' : null})
+        VALUES (${user.id || crypto.randomUUID()}, ${user.username}, ${hashedPassword}, ${user.name}, ${role}, ${user.created_by || null})
         ON CONFLICT (id) DO UPDATE SET
         username = EXCLUDED.username, password = EXCLUDED.password, name = EXCLUDED.name, role = EXCLUDED.role
       `;
@@ -177,9 +154,10 @@ export default async function handler(request: any, response: any) {
 
     if (action === 'save-entity') {
       const { id, type, data } = request.body;
+      // REMOVIDO ::uuid
       await sql`
         INSERT INTO entities (id, type, data)
-        VALUES (${id}::uuid, ${type}, ${data})
+        VALUES (${id}, ${type}, ${data})
         ON CONFLICT (id) DO UPDATE SET
         data = EXCLUDED.data, deleted_at = NULL
       `;
@@ -188,7 +166,8 @@ export default async function handler(request: any, response: any) {
 
     if (action === 'delete-entity') {
       const { id } = request.body;
-      await sql`UPDATE entities SET deleted_at = NOW() WHERE id = ${id}::uuid`;
+      // REMOVIDO ::uuid
+      await sql`UPDATE entities SET deleted_at = NOW() WHERE id = ${id}`;
       return response.status(200).json({ success: true });
     }
 
