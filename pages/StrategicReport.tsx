@@ -79,7 +79,6 @@ export const StrategicReport: React.FC = () => {
         opened: { total: jobsOpened.length, expansion, replacement },
         closed: { total: jobsClosed.length },
         interviews: fCandidates.filter(c => isWithin(c.interviewAt)).length,
-        // NOVA MÉTRICA: TESTES REALIZADOS
         tests: fCandidates.filter(c => c.techTest && isWithin(c.techTestDate)).length,
         rejected: { total: fCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate)).length },
         withdrawn: { total: fCandidates.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate)).length },
@@ -109,7 +108,7 @@ export const StrategicReport: React.FC = () => {
       {/* HEADER */}
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate(-1)} className="p-2 hover:bg-white rounded-xl text-slate-500 hover:text-indigo-600 border border-transparent hover:border-slate-200 transition-all"><ArrowLeft size={22} /></button>
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-white rounded-xl text-slate-500 hover:text-indigo-600 border border-transparent hover:border-slate-200 transition-all shadow-sm"><ArrowLeft size={22} /></button>
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">Relatório Estratégico</h1>
         </div>
         <div className="flex gap-2">
@@ -124,47 +123,47 @@ export const StrategicReport: React.FC = () => {
 
       {/* FILTROS */}
       <div className="flex flex-wrap items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border border-slate-200 w-fit">
-          <div className="flex items-center gap-2 px-2"><Calendar size={16} className="text-indigo-500" /><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-sm font-bold text-slate-700 outline-none bg-transparent" /></div>
+          <div className="flex items-center gap-2 px-2"><Calendar size={16} className="text-indigo-500" /><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent" /></div>
           <div className="w-px h-6 bg-slate-200"></div>
           <div className="flex items-center gap-2 px-2"><Calendar size={16} className="text-rose-500" /><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="text-sm font-bold text-slate-700 outline-none bg-transparent" /></div>
           <div className="w-px h-6 bg-slate-200"></div>
-          <div className="flex items-center gap-2 px-2"><Building2 size={16} className="text-slate-400" /><select className="text-sm font-bold text-slate-700 outline-none bg-transparent" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div>
+          <div className="flex items-center gap-2 px-2"><Building2 size={16} className="text-slate-400" /><select className="text-xs font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div>
       </div>
 
-      {/* CARDS COM NOVO ITEM: TESTES */}
+      {/* CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <StrategicCard title="Abertas" value={metrics.opened.total} color="blue" icon={Briefcase} subtitle={`+${metrics.opened.expansion} Novo | +${metrics.opened.replacement} Subst.`} />
           <StrategicCard title="Concluídas" value={metrics.closed.total} color="emerald" icon={CheckCircle} subtitle="No período" />
           <StrategicCard title="Entrevistas" value={metrics.interviews} color="amber" icon={Users} subtitle="Realizadas" />
-          <StrategicCard title="Testes" value={metrics.tests} color="indigo" icon={ClipboardCheck} subtitle="Técnicos realizados" />
+          <StrategicCard title="Testes" value={metrics.tests} color="indigo" icon={ClipboardCheck} subtitle="Realizados" />
           <StrategicCard title="Reprovações" value={metrics.rejected.total} color="red" icon={XCircle} subtitle="Pela Empresa" />
-          <StrategicCard title="Desistências" value={metrics.withdrawn.total} color="orange" icon={UserX} subtitle="Pelo Candidato" />
+          <StrategicCard title="Desistências" value={metrics.withdrawn.total} color="orange" icon={UserX} subtitle="Candidato" />
       </div>
 
       {/* RELAÇÃO POR ÁREA */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex items-center gap-2"><TrendingUp size={20} className="text-indigo-600"/><h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">Relação por Área</h3></div>
+          <div className="p-5 border-b border-slate-100 flex items-center gap-2 bg-slate-50/30"><TrendingUp size={20} className="text-indigo-600"/><h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">Relação por Área</h3></div>
           <div className="overflow-x-auto">
               <table className="w-full text-left text-[11px]">
                   <thead>
-                      <tr className="bg-slate-50/50 text-slate-400 font-black uppercase tracking-tighter">
-                          <th className="p-4 pl-6">Setor</th>
+                      <tr className="bg-slate-50/80 text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
+                          <th className="p-4 pl-6">Setor / Departamento</th>
                           <th className="p-4 text-center">Abertas</th>
                           <th className="p-4 text-center">Fechadas</th>
                           <th className="p-4 text-center">Cong.</th>
                           <th className="p-4 text-center">Canc.</th>
-                          <th className="p-4 pr-6 text-right">Ação</th>
+                          <th className="p-4 pr-6 text-right">Drill-down</th>
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                       {Object.entries(metrics.bySector).filter(([_, d]: any) => d.opened+d.closed+d.frozen+d.canceled > 0).map(([sector, data]: [string, any]) => (
-                          <tr key={sector} onClick={() => setSelectedSector(sector)} className="group cursor-pointer hover:bg-slate-50/80 transition-colors">
-                              <td className="p-4 pl-6 font-black text-slate-700">{sector}</td>
-                              <td className="py-4 text-center"><span className="text-blue-600 font-black">{data.opened}</span></td>
-                              <td className="py-4 text-center"><span className="text-emerald-600 font-black">{data.closed}</span></td>
-                              <td className="py-4 text-center text-slate-400">{data.frozen}</td>
-                              <td className="py-4 text-center text-slate-400">{data.canceled}</td>
-                              <td className="p-4 pr-6 text-right"><ChevronRight size={14} className="inline text-slate-300 group-hover:text-indigo-500" /></td>
+                          <tr key={sector} onClick={() => setSelectedSector(sector)} className="group cursor-pointer hover:bg-indigo-50/30 transition-colors">
+                              <td className="p-4 pl-6 font-black text-slate-700 text-sm group-hover:text-indigo-600 transition-colors">{sector}</td>
+                              <td className="p-4 text-center"><span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg font-black">{data.opened}</span></td>
+                              <td className="p-4 text-center"><span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg font-black">{data.closed}</span></td>
+                              <td className="p-4 text-center text-slate-400">{data.frozen}</td>
+                              <td className="p-4 text-center text-slate-400">{data.canceled}</td>
+                              <td className="p-4 pr-6 text-right"><ChevronRight size={18} className="inline text-slate-300 group-hover:text-indigo-500 transform group-hover:translate-x-1 transition-all" /></td>
                           </tr>
                       ))}
                   </tbody>
@@ -172,45 +171,54 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* JANELA DE BRANCH COMPACTA À DIREITA */}
+      {/* JANELA DE BRANCH (DETALHAMENTO) - CENTRALIZADA E MAIOR */}
       {selectedSector && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-end z-[99999] pr-6 lg:pr-12 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-hidden flex flex-col border border-slate-200">
-                  <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                      <div className="text-left">
-                          <h2 className="text-sm font-black text-slate-800 uppercase tracking-tighter">Área: {selectedSector}</h2>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase">Funil Detalhado</p>
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 lg:p-8 animate-fadeIn">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                      <div className="flex items-center gap-3">
+                          <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg shadow-indigo-100"><TrendingUp size={22} /></div>
+                          <div className="text-left">
+                              <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-tight">Área: {selectedSector}</h2>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resumo operacional por vaga</p>
+                          </div>
                       </div>
-                      <button onClick={() => setSelectedSector(null)} className="p-1.5 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={20} /></button>
+                      <button onClick={() => setSelectedSector(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={26} /></button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-2 custom-scrollbar bg-white">
-                      <table className="w-full text-left text-[10px]">
-                          <thead className="text-slate-400 font-black uppercase tracking-tighter border-b border-slate-50">
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white">
+                      <table className="w-full text-left text-xs">
+                          <thead className="text-slate-400 font-black uppercase tracking-widest text-[9px] border-b border-slate-100">
                               <tr>
-                                  <th className="p-2">Vaga</th>
-                                  <th className="p-2 text-center bg-indigo-50/30">Ent.</th>
-                                  <th className="p-2 text-center bg-indigo-50/30">Test.</th>
-                                  <th className="p-2 text-center bg-red-50/30">Rep.</th>
-                                  <th className="p-2 text-center bg-orange-50/30">Des.</th>
-                                  <th className="p-2 text-right">Vaga</th>
+                                  <th className="p-3 pl-4">Solicitação / Vaga</th>
+                                  <th className="p-3 text-center bg-indigo-50/50">Ent.</th>
+                                  <th className="p-3 text-center bg-indigo-50/50">Test.</th>
+                                  <th className="p-3 text-center bg-red-50/50">Rep.</th>
+                                  <th className="p-3 text-center bg-orange-50/50">Des.</th>
+                                  <th className="p-3 pr-4 text-right">Ação</th>
                               </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
                               {sectorBranchData.map(vaga => (
                                   <tr key={vaga.id} className="hover:bg-slate-50 transition-colors">
-                                      <td className="p-2 font-black text-slate-700 truncate max-w-[100px]">{vaga.title}</td>
-                                      <td className="p-2 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.interviews}</td>
-                                      <td className="p-2 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.tests}</td>
-                                      <td className="p-2 text-center font-black text-red-600 bg-red-50/10">{vaga.rejected}</td>
-                                      <td className="p-2 text-center font-black text-orange-600 bg-orange-50/10">{vaga.withdrawn}</td>
-                                      <td className="p-2 text-right">
-                                          <button onClick={() => navigate(`/jobs/${vaga.id}`)} className="text-indigo-600 hover:text-indigo-800 p-1"><ExternalLink size={14} /></button>
+                                      <td className="p-4 pl-4 font-black text-slate-700 text-sm text-left truncate max-w-[220px]">{vaga.title}</td>
+                                      <td className="p-4 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.interviews}</td>
+                                      <td className="p-4 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.tests}</td>
+                                      <td className="p-4 text-center font-black text-red-600 bg-red-50/10">{vaga.rejected}</td>
+                                      <td className="p-4 text-center font-black text-orange-600 bg-orange-50/10">{vaga.withdrawn}</td>
+                                      <td className="p-4 pr-4 text-right">
+                                          <button 
+                                            onClick={() => navigate(`/jobs/${vaga.id}`)} 
+                                            className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg shadow-sm transition-all inline-flex items-center gap-1 font-black uppercase text-[9px]"
+                                          >
+                                              <ExternalLink size={14} /> Gestão
+                                          </button>
                                       </td>
                                   </tr>
                               ))}
                           </tbody>
                       </table>
+                      {sectorBranchData.length === 0 && <p className="text-center py-16 text-slate-400 italic">Nenhum dado detalhado para esta seção.</p>}
                   </div>
               </div>
           </div>
@@ -219,12 +227,12 @@ export const StrategicReport: React.FC = () => {
       {/* MODAL DE SEGURANÇA */}
       {isUnlockModalOpen && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100000] p-4">
-              <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-xs border-t-8 border-amber-500 text-center animate-fadeIn">
+              <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-xs border-t-8 border-amber-500 text-center animate-fadeIn">
                   <div className="flex justify-center mb-4 bg-amber-50 w-12 h-12 rounded-full items-center mx-auto text-amber-600"><Lock size={20} /></div>
                   <h3 className="text-sm font-black text-slate-800 uppercase mb-4 tracking-widest">Senha Master</h3>
                   <form onSubmit={handleUnlockSubmit}>
                       <input type="password" autoFocus placeholder="••••••" className="w-full border border-slate-200 p-3 rounded-xl mb-4 text-center font-bold outline-none focus:ring-2 focus:ring-amber-500" value={unlockPassword} onChange={e => setUnlockPassword(e.target.value)} />
-                      <button type="submit" className="w-full bg-amber-600 text-white font-black py-3 rounded-xl hover:bg-amber-700 transition-all uppercase text-[10px] tracking-widest">Acessar</button>
+                      <button type="submit" className="w-full bg-amber-600 text-white font-black py-3 rounded-xl hover:bg-amber-700 transition-all uppercase text-[10px] tracking-widest">Desbloquear</button>
                       <button type="button" onClick={() => setIsUnlockModalOpen(false)} className="w-full mt-2 text-slate-400 text-[9px] font-bold uppercase hover:text-slate-600">Voltar</button>
                   </form>
               </div>
@@ -239,17 +247,17 @@ const StrategicCard = ({ title, value, color, icon: Icon, subtitle }: any) => {
         blue: "text-blue-600 bg-blue-50/50",
         emerald: "text-emerald-600 bg-emerald-50/50",
         amber: "text-amber-600 bg-amber-50/50",
-        indigo: "text-indigo-600 bg-indigo-50/50", // Cor para Testes
+        indigo: "text-indigo-600 bg-indigo-50/50",
         red: "text-red-600 bg-red-50/50",
         orange: "text-orange-600 bg-orange-50/50"
     };
 
     return (
-        <div className="p-4 rounded-2xl border border-slate-100 relative overflow-hidden bg-white shadow-sm flex flex-col justify-between min-h-[105px]">
-            <Icon className={`absolute -right-2 -bottom-2 opacity-[0.08] size-16 transform transition-transform ${colorClasses[color]}`} />
-            <span className={`text-[9px] font-black uppercase tracking-widest relative z-10 ${colorClasses[color]}`}>{title}</span>
-            <div className="text-3xl font-black text-slate-800 relative z-10 tracking-tighter">{value}</div>
-            <p className="text-[8px] font-bold text-slate-400 uppercase relative z-10">{subtitle}</p>
+        <div className="p-5 rounded-3xl border border-slate-100 relative overflow-hidden bg-white shadow-sm flex flex-col justify-between min-h-[110px] group transition-all hover:shadow-md">
+            <Icon className={`absolute -right-2 -bottom-2 opacity-[0.07] size-20 transform group-hover:scale-110 transition-transform ${colorClasses[color]}`} />
+            <span className={`text-[10px] font-black uppercase tracking-widest relative z-10 text-left ${colorClasses[color]}`}>{title}</span>
+            <div className="text-4xl font-black text-slate-800 relative z-10 text-left tracking-tighter">{value}</div>
+            <p className="text-[9px] font-bold text-slate-400 uppercase relative z-10 text-left truncate">{subtitle}</p>
         </div>
     );
 };
