@@ -15,7 +15,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 
 const generateId = () => crypto.randomUUID();
 
-// Lista de motivos padrão para a lógica do "Outros"
+// Lista para controle interno do campo "Outros"
 const STANDARD_REASONS = [
   "Aceitou outra proposta", 
   "Salário abaixo da pretensão", 
@@ -57,7 +57,6 @@ export const JobDetails: React.FC = () => {
   const [job, setJob] = useState<Job | undefined>(undefined);
   const [jobCandidates, setJobCandidates] = useState<Candidate[]>([]);
   
-  // --- ESTADOS DE FLUXO DA VAGA ---
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [targetStatus, setTargetStatus] = useState<'Cancelada' | 'Congelada' | 'Aberta' | null>(null);
   const [statusFormData, setStatusFormData] = useState({ requester: '', reason: '', date: toInputDate(new Date().toISOString()) });
@@ -66,41 +65,33 @@ export const JobDetails: React.FC = () => {
   const [candidateToHire, setCandidateToHire] = useState<Candidate | null>(null);
   const [hiringData, setHiringData] = useState({ contractType: 'CLT' as ContractType, finalSalary: '', startDate: '' });
 
-  // --- ESTADOS DE CANDIDATO ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Candidate>>({});
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
-  const [lossReasonType, setLossReasonType] = useState(''); // Controla se o select exibe "Outros"
+  const [lossReasonType, setLossReasonType] = useState(''); 
 
-  // --- TESTE TÉCNICO ---
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [techCandidate, setTechCandidate] = useState<Candidate | null>(null);
   const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado', rejectionDetail: '' });
 
-  // --- BANCO DE TALENTOS ---
   const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
   const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
 
-  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('TODOS');
 
   useEffect(() => {
     const foundJob = jobs.find(j => j.id === id);
     setJob(foundJob);
-    if (foundJob) {
-      setJobCandidates(candidates.filter(c => c.jobId === foundJob.id));
-    }
+    if (foundJob) setJobCandidates(candidates.filter(c => c.jobId === foundJob.id));
   }, [jobs, candidates, id]);
 
   const hiredCandidate = useMemo(() => {
       return jobCandidates.find(c => c.status === 'Contratado' || job?.hiredCandidateIds?.includes(c.id));
   }, [jobCandidates, job]);
 
-  // --- CÁLCULO DE MÉTRICAS E SLA ---
   const metrics = useMemo(() => {
     if (!job) return { daysOpen: 0, daysFrozen: 0, daysNet: 0, enrolled: 0, interviewed: 0, finalists: 0, rejected: 0, withdrawn: 0, origins: {} as any };
-
     const endDate = job.status === 'Fechada' && job.closedAt ? new Date(job.closedAt).getTime() : new Date().getTime();
     const startDate = new Date(job.openedAt).getTime();
     const daysOpenBruto = Math.ceil((endDate - startDate) / (1000 * 3600 * 24));
@@ -117,7 +108,6 @@ export const JobDetails: React.FC = () => {
     const daysNet = Math.max(0, daysOpenBruto - daysFrozen);
 
     const origins: Record<string, number> = { 'LinkedIn': 0, 'Instagram': 0, 'Indicação': 0, 'SINE': 0, 'Banco de Talentos': 0, 'Recrutamento Interno': 0, 'Busca espontânea': 0, 'Outros': 0 };
-
     jobCandidates.forEach(c => {
         const o = c.origin || 'Outros';
         if (origins[o] !== undefined) origins[o]++; else origins['Outros']++;
@@ -134,7 +124,6 @@ export const JobDetails: React.FC = () => {
     };
   }, [job, jobCandidates]);
 
-  // --- HANDLERS ---
   const initiateStatusChange = (newStatus: string) => {
     if (!job || newStatus === job.status) return;
     if (newStatus === 'Fechada') {
@@ -142,7 +131,7 @@ export const JobDetails: React.FC = () => {
         setCandidateToHire(jobCandidates.find(c => c.status === 'Aprovado' || c.status === 'Proposta Aceita') || null);
         return;
     }
-    if (newStatus === 'Congelada' || newStatus === 'Cancelada' || (newStatus === 'Aberta' && job.status === 'Congelada')) {
+    if (['Congelada', 'Cancelada'].includes(newStatus) || (newStatus === 'Aberta' && job.status === 'Congelada')) {
         setTargetStatus(newStatus as any);
         setStatusFormData({ requester: '', reason: '', date: toInputDate(new Date().toISOString()) });
         setIsStatusModalOpen(true);
@@ -159,11 +148,9 @@ export const JobDetails: React.FC = () => {
     if (targetStatus === 'Congelada') {
         updatedJob.freezeHistory = [...(job.freezeHistory || []), { startDate: actionDateISO, reason: statusFormData.reason, requester: statusFormData.requester }];
     } else if (targetStatus === 'Aberta' && job.status === 'Congelada') {
-        if (updatedJob.freezeHistory && updatedJob.freezeHistory.length > 0) {
-            const history = [...updatedJob.freezeHistory];
-            history[history.length - 1] = { ...history[history.length - 1], endDate: actionDateISO };
-            updatedJob.freezeHistory = history;
-        }
+        const history = [...(updatedJob.freezeHistory || [])];
+        if (history.length > 0) history[history.length - 1].endDate = actionDateISO;
+        updatedJob.freezeHistory = history;
     } else if (targetStatus === 'Cancelada') {
         updatedJob.closedAt = actionDateISO;
         updatedJob.cancellationReason = statusFormData.reason;
@@ -243,6 +230,7 @@ export const JobDetails: React.FC = () => {
 
   return (
     <div className="pb-12">
+      {/* HEADER DA VAGA */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <div className="flex items-center gap-4">
             <button onClick={() => navigate('/jobs')} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><ArrowLeft size={24} /></button>
@@ -265,6 +253,7 @@ export const JobDetails: React.FC = () => {
         </div>
       </div>
 
+      {/* DASHBOARD DE MÉTRICAS */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 md:grid-cols-7 divide-x gap-y-4 md:gap-y-0">
              <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Dias Bruto</div><div className="text-xl font-bold text-slate-600">{metrics.daysOpen}</div></div>
@@ -280,6 +269,7 @@ export const JobDetails: React.FC = () => {
           </div>
       </div>
 
+      {/* BANNER DE CONTRATAÇÃO */}
       {job.status === 'Fechada' && hiredCandidate && (
         <div className="mb-8 bg-gradient-to-r from-emerald-600 to-emerald-800 rounded-2xl shadow-xl text-white p-6 flex flex-col md:flex-row items-center gap-6">
            <div className="bg-white/20 p-4 rounded-full"><CheckCircle size={40}/></div>
@@ -287,15 +277,16 @@ export const JobDetails: React.FC = () => {
               <h2 className="text-2xl font-bold mb-1">Vaga Preenchida!</h2>
               <p className="text-emerald-100 font-medium text-lg">{hiredCandidate.name}</p>
               <div className="flex flex-wrap gap-4 mt-3 justify-center md:justify-start text-xs opacity-90">
-                 <span>Salário: {hiredCandidate.finalSalary || 'N/I'}</span>
-                 <span>Início: {formatDate(hiredCandidate.timeline?.startDate)}</span>
-                 <span>SLA Real: {metrics.daysNet} dias</span>
-                 <span>Contrato: {hiredCandidate.contractType || 'CLT'}</span>
+                 <span className="flex items-center gap-1"><DollarSign size={14}/> {hiredCandidate.finalSalary || 'N/I'}</span>
+                 <span className="flex items-center gap-1"><Calendar size={14}/> Início: {formatDate(hiredCandidate.timeline?.startDate)}</span>
+                 <span className="flex items-center gap-1"><Activity size={14}/> SLA Real: {metrics.daysNet} dias</span>
+                 <span className="flex items-center gap-1"><FileText size={14}/> {hiredCandidate.contractType || 'CLT'}</span>
               </div>
            </div>
         </div>
       )}
 
+      {/* BUSCA E FILTROS */}
       <div className="flex gap-4 mb-6">
          <input className="flex-1 border p-3 rounded-xl shadow-sm" placeholder="Buscar candidato..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
          <select className="border p-3 rounded-xl shadow-sm bg-white font-medium" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
@@ -309,33 +300,64 @@ export const JobDetails: React.FC = () => {
          </select>
       </div>
 
+      {/* LISTA DE CANDIDATOS - RESTAURADA COM TODOS OS CAMPOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredList.map(c => (
-          <div key={c.id} className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all group ${c.status === 'Reprovado' ? 'border-red-200' : c.status === 'Desistência' ? 'border-amber-200' : 'border-slate-200'}`}>
+          <div key={c.id} className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all group flex flex-col ${c.status === 'Reprovado' ? 'border-red-200 bg-red-50/10' : c.status === 'Desistência' ? 'border-amber-200 bg-amber-50/10' : 'border-slate-200'}`}>
              <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold">{c.name.charAt(0)}</div>
-                   <div><h3 className="font-bold cursor-pointer hover:text-blue-600" onClick={() => handleOpenModal(c)}>{c.name}</h3><div className="flex items-center gap-2 mt-1 text-xs text-slate-50">{getSourceIcon(c.origin || '')} <span>{c.origin}</span></div></div>
+                   <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500">{c.name.charAt(0)}</div>
+                   <div>
+                      <h3 className="font-bold text-slate-800 cursor-pointer hover:text-blue-600" onClick={() => handleOpenModal(c)}>{c.name}</h3>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                        {getSourceIcon(c.origin || '')} <span>{c.origin}</span>
+                        {c.city && <span className="text-slate-300">• {c.city}</span>}
+                      </div>
+                   </div>
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${c.status === 'Reprovado' ? 'bg-red-100 text-red-700' : c.status === 'Desistência' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>{c.status}</span>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${c.status === 'Reprovado' ? 'bg-red-100 text-red-700' : c.status === 'Desistência' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>{c.status}</span>
+                  {c.phone && <a href={`https://wa.me/55${c.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[9px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded hover:bg-green-100 transition-colors"><MessageCircle size={10}/> WhatsApp</a>}
+                </div>
              </div>
-             <div className="flex gap-2 mt-auto">
-                <button onClick={() => handleOpenTechModal(c)} className={`flex-1 flex justify-center items-center gap-1 py-1.5 rounded text-xs font-bold border transition-colors ${c.techTest ? 'bg-indigo-50 text-indigo-700' : 'bg-white text-slate-500'}`}><Beaker size={12}/> Teste</button>
-                <button onClick={() => handleOpenModal(c)} className="flex-1 flex justify-center items-center gap-1 bg-slate-100 py-1.5 rounded text-xs font-bold hover:bg-slate-200 transition-colors"><User size={12}/> Editar</button>
+
+             {/* Informações de Perfil no Card */}
+             <div className="flex justify-between items-center bg-slate-50/80 p-2 rounded mb-3 text-[11px] border border-slate-100">
+                <span className="flex items-center gap-1 text-slate-600"><User size={12}/> {c.age} anos</span>
+                <span className="flex items-center gap-1 text-emerald-700 font-bold"><DollarSign size={12}/> {c.salaryExpectation || 'N/I'}</span>
+             </div>
+
+             {/* Linha do Tempo de Datas no Card */}
+             <div className="space-y-1 text-[10px] text-slate-500 border-t border-slate-50 pt-2 mb-3 flex-1">
+                <div className="flex justify-between"><span>1º Contato:</span><span className="font-bold text-slate-700">{formatDate(c.firstContactAt)}</span></div>
+                <div className="flex justify-between"><span>Entrevista:</span><span className={`font-bold ${c.interviewAt ? 'text-blue-600' : 'text-slate-300'}`}>{formatDate(c.interviewAt)}</span></div>
+                <div className="flex justify-between"><span>Último Contato:</span><span className="font-bold text-slate-700">{formatDate(c.lastInteractionAt)}</span></div>
+             </div>
+
+             <div className="flex gap-2 pt-2 mt-auto border-t border-slate-50">
+                <button onClick={() => handleOpenTechModal(c)} className={`flex-1 flex justify-center items-center gap-1 py-1.5 rounded text-[10px] font-bold border transition-colors ${c.techTest ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-white text-slate-500 border-slate-200'}`}><Beaker size={12}/> Teste</button>
+                <button onClick={() => { setTalentFormData({ name: c.name, city: c.city, contact: c.phone, targetRole: job.title }); setIsTalentModalOpen(true); }} className="flex-1 flex justify-center items-center gap-1 bg-white hover:bg-orange-50 text-slate-500 hover:text-orange-600 py-1.5 rounded text-[10px] font-bold border border-slate-200 transition-colors"><Database size={12}/> Banco</button>
+                <button onClick={() => handleOpenModal(c)} className="flex-1 flex justify-center items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-1.5 rounded text-[10px] font-bold transition-colors"><User size={12}/> Editar</button>
              </div>
           </div>
         ))}
       </div>
 
-      {/* --- MODAL DE EDIÇÃO DO CANDIDATO (COM LÓGICA DE ESCREVER MOTIVO) --- */}
+      {/* --- MODAL DE EDIÇÃO DO CANDIDATO COM LÓGICA DE TEXTO PERSONALIZADO --- */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 animate-fadeIn">
-             <div className="flex justify-between mb-6 border-b pb-4"><h3 className="font-bold text-xl">Gerenciar Candidato</h3><button onClick={() => setIsModalOpen(false)}><X size={24}/></button></div>
+             <div className="flex justify-between mb-6 border-b pb-4"><h3 className="font-bold text-xl text-slate-800">Gerenciar Candidato</h3><button onClick={() => setIsModalOpen(false)}><X size={24} className="text-slate-400"/></button></div>
+             
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                <div><label className="block text-xs font-bold text-slate-600 mb-1">Nome</label><input className="w-full border p-2 rounded" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Nome</label><input className="w-full border p-2 rounded text-sm" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Telefone</label><input className="w-full border p-2 rounded text-sm" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Email</label><input className="w-full border p-2 rounded text-sm" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Cidade</label><input className="w-full border p-2 rounded text-sm" value={formData.city || ''} onChange={e => setFormData({...formData, city: e.target.value})} /></div>
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Pretensão Salarial</label><input className="w-full border p-2 rounded text-sm" value={formData.salaryExpectation || ''} onChange={e => setFormData({...formData, salaryExpectation: e.target.value})} /></div>
+                
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Status</label>
-                   <select className="w-full border p-2 rounded font-bold" value={formData.status || 'Aguardando Triagem'} onChange={e => {
+                   <select className="w-full border p-2 rounded font-bold text-sm" value={formData.status || 'Aguardando Triagem'} onChange={e => {
                        const newStatus = e.target.value;
                        setFormData({...formData, status: newStatus});
                        if (!['Reprovado', 'Desistência'].includes(newStatus)) { setLossReasonType(''); setFormData(p => ({...p, rejectionReason: undefined})); }
@@ -350,10 +372,23 @@ export const JobDetails: React.FC = () => {
                    </select>
                 </div>
 
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Origem</label>
+                   <select className="w-full border p-2 rounded text-sm" value={formData.origin || 'LinkedIn'} onChange={e => setFormData({...formData, origin: e.target.value})}>
+                      <option value="LinkedIn">LinkedIn</option>
+                      <option value="Instagram">Instagram</option>
+                      <option value="Indicação">Indicação</option>
+                      <option value="Banco de Talentos">Banco de Talentos</option>
+                      <option value="Busca espontânea">Busca Espontânea</option>
+                      <option value="SINE">SINE</option>
+                      <option value="Recrutamento Interno">Recrutamento Interno</option>
+                      <option value="Outros">Outros</option>
+                   </select>
+                </div>
+
                 {(formData.status === 'Reprovado' || formData.status === 'Desistência') && (
                     <div className="md:col-span-2 bg-red-50 p-4 rounded-lg border border-red-200 animate-fadeIn">
                         <label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1"><AlertTriangle size={12}/> Motivo da Perda (Obrigatório)</label>
-                        <select className="w-full border border-red-300 p-2 rounded bg-white mb-3" value={lossReasonType} 
+                        <select className="w-full border border-red-300 p-2 rounded bg-white mb-3 text-sm" value={lossReasonType} 
                             onChange={e => {
                                 const val = e.target.value;
                                 setLossReasonType(val);
@@ -374,87 +409,110 @@ export const JobDetails: React.FC = () => {
                                     <option value="Perfil Técnico Insuficiente">Perfil Técnico Insuficiente</option>
                                     <option value="Sem Fit Cultural">Sem Fit Cultural</option>
                                     <option value="Reprovado no Teste Técnico">Reprovado no Teste Técnico</option>
+                                    <option value="Salário acima do budget">Salário acima do budget</option>
                                     <option value="Outros">Outros (Escrever...)</option>
                                 </>
                             )}
                         </select>
                         {lossReasonType === 'Outros' && (
-                            <textarea className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white min-h-[80px] text-sm" placeholder="Descreva o motivo detalhadamente..." value={formData.rejectionReason || ''} onChange={e => setFormData({...formData, rejectionReason: e.target.value})} />
+                            <textarea className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white min-h-[80px] text-sm shadow-inner" placeholder="Descreva o motivo detalhadamente..." value={formData.rejectionReason || ''} onChange={e => setFormData({...formData, rejectionReason: e.target.value})} />
                         )}
                     </div>
                 )}
 
-                <div className="md:col-span-2 grid grid-cols-3 gap-4">
-                   <div><label className="block text-xs font-bold text-slate-500 mb-1">1º Contato</label><input type="date" className="w-full border p-1 rounded" value={toInputDate(formData.firstContactAt)} onChange={e => setFormData({...formData, firstContactAt: e.target.value})} /></div>
-                   <div><label className="block text-xs font-bold text-slate-500 mb-1">Entrevista</label><input type="date" className="w-full border p-1 rounded" value={toInputDate(formData.interviewAt)} onChange={e => setFormData({...formData, interviewAt: e.target.value})} /></div>
+                <div className="md:col-span-2 grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 mt-4">
+                   <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">1º Contato</label><input type="date" className="w-full border p-2 rounded text-xs" value={toInputDate(formData.firstContactAt)} onChange={e => setFormData({...formData, firstContactAt: e.target.value})} /></div>
+                   <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Entrevista</label><input type="date" className="w-full border p-2 rounded text-xs" value={toInputDate(formData.interviewAt)} onChange={e => setFormData({...formData, interviewAt: e.target.value})} /></div>
+                   <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Último Contato</label><input type="date" className="w-full border p-2 rounded text-xs" value={toInputDate(formData.lastInteractionAt)} onChange={e => setFormData({...formData, lastInteractionAt: e.target.value})} /></div>
                 </div>
              </div>
-             <div className="flex justify-end gap-3 pt-4 border-t"><button onClick={() => setIsModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold">Cancelar</button><button onClick={handleSaveChanges} className="px-6 py-2 bg-blue-600 text-white rounded font-bold shadow-lg">Salvar</button></div>
+             <div className="flex justify-end gap-3 pt-4 border-t"><button onClick={() => setIsModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold">Cancelar</button><button onClick={handleSaveChanges} className="px-6 py-2 bg-blue-600 text-white rounded font-bold shadow-lg hover:bg-blue-700 transition-all active:scale-95">Salvar Candidato</button></div>
           </div>
         </div>
       )}
 
-      {/* --- MODAIS RESTAURADOS --- */}
+      {/* --- MODAL DE STATUS (CONGELAMENTO/CANCELAMENTO) --- */}
       {isStatusModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
-             <div className="flex items-center gap-2 mb-4 font-bold"><PauseCircle size={24} className="text-amber-500"/> Alterar Status</div>
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn">
+             <div className="flex items-center gap-2 mb-4 font-black text-slate-800 uppercase tracking-tighter">
+                {targetStatus === 'Congelada' ? <PauseCircle size={24} className="text-amber-500"/> : <AlertTriangle size={24} className="text-red-500"/>} 
+                Alterar Fluxo da Vaga
+             </div>
              <div className="space-y-4">
-                <input type="date" className="w-full border p-2 rounded" value={statusFormData.date} onChange={e => setStatusFormData({...statusFormData, date: e.target.value})} />
-                <input className="w-full border p-2 rounded" placeholder="Motivo" value={statusFormData.reason} onChange={e => setStatusFormData({...statusFormData, reason: e.target.value})} />
-                <input className="w-full border p-2 rounded" placeholder="Solicitante" value={statusFormData.requester} onChange={e => setStatusFormData({...statusFormData, requester: e.target.value})} />
-                <div className="flex gap-2 pt-2"><button onClick={() => setIsStatusModalOpen(false)} className="flex-1 py-2 text-slate-500 font-bold">Cancelar</button><button onClick={handleStatusSubmit} className="flex-1 bg-slate-800 text-white font-bold py-2 rounded">Confirmar</button></div>
+                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Data</label><input type="date" className="w-full border p-3 rounded-xl font-bold text-slate-700" value={statusFormData.date} onChange={e => setStatusFormData({...statusFormData, date: e.target.value})} /></div>
+                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Motivo</label><input className="w-full border p-3 rounded-xl" placeholder="Ex: Prioridade mudou..." value={statusFormData.reason} onChange={e => setStatusFormData({...statusFormData, reason: e.target.value})} /></div>
+                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Solicitante</label><input className="w-full border p-3 rounded-xl" placeholder="Nome do Gestor" value={statusFormData.requester} onChange={e => setStatusFormData({...statusFormData, requester: e.target.value})} /></div>
+                <div className="flex gap-2 pt-4"><button onClick={() => setIsStatusModalOpen(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">Voltar</button><button onClick={handleStatusSubmit} className="flex-1 bg-slate-800 text-white font-black py-3 rounded-xl hover:bg-slate-900 shadow-lg uppercase text-[10px] tracking-widest">Confirmar</button></div>
              </div>
           </div>
         </div>
       )}
 
+      {/* --- MODAL TESTE TÉCNICO --- */}
       {isTechModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-           <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
-             <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2"><Beaker size={20}/> Avaliação Técnica</h3>
+           <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-2xl animate-fadeIn">
+             <h3 className="font-black text-indigo-900 mb-6 flex items-center gap-2 uppercase tracking-tighter text-lg"><Beaker size={24}/> Avaliação Técnica</h3>
              <div className="space-y-4">
-                <label className="flex items-center gap-2 cursor-pointer p-3 bg-indigo-50 rounded-lg"><input type="checkbox" checked={techForm.didTest} onChange={e => setTechForm({...techForm, didTest: e.target.checked})} /> <span className="font-bold">Realizou Teste?</span></label>
-                {techForm.didTest && ( <div className="space-y-3">
-                      <input type="date" className="w-full border p-2 rounded" value={techForm.date} onChange={e => setTechForm({...techForm, date: e.target.value})} />
-                      <input className="w-full border p-2 rounded" placeholder="Avaliador" value={techForm.evaluator} onChange={e => setTechForm({...techForm, evaluator: e.target.value})} />
-                      <select className="w-full border p-2 rounded" value={techForm.result} onChange={e => setTechForm({...techForm, result: e.target.value})}><option value="Aprovado">Aprovado</option><option value="Reprovado">Reprovado</option></select>
-                      {techForm.result === 'Reprovado' && <input className="w-full border p-2 rounded border-red-200" placeholder="Motivo da Reprovação" value={techForm.rejectionDetail} onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} />}
+                <label className="flex items-center gap-3 cursor-pointer p-4 bg-indigo-50 rounded-2xl border border-indigo-100 transition-all hover:bg-indigo-100/50">
+                    <input type="checkbox" className="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500" checked={techForm.didTest} onChange={e => setTechForm({...techForm, didTest: e.target.checked})} /> 
+                    <span className="font-black text-indigo-900 text-sm uppercase tracking-widest">Registrar Teste Técnico</span>
+                </label>
+                {techForm.didTest && ( <div className="space-y-4 animate-fadeIn">
+                      <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Data Realização</label><input type="date" className="w-full border p-2 rounded-lg font-bold" value={techForm.date} onChange={e => setTechForm({...techForm, date: e.target.value})} /></div>
+                      <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Avaliador (Gestor)</label><input className="w-full border p-2 rounded-lg font-bold" value={techForm.evaluator} onChange={e => setTechForm({...techForm, evaluator: e.target.value})} /></div>
+                      <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Veredito</label><select className="w-full border p-2 rounded-lg font-bold" value={techForm.result} onChange={e => setTechForm({...techForm, result: e.target.value})}><option value="Aprovado">Aprovado</option><option value="Reprovado">Reprovado</option></select></div>
+                      {techForm.result === 'Reprovado' && <input className="w-full border border-red-200 p-2 rounded-lg bg-red-50 text-red-700 font-bold" placeholder="Por que reprovou?" value={techForm.rejectionDetail} onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} />}
                 </div>)}
-                <div className="flex justify-end gap-2"><button onClick={() => setIsTechModalOpen(false)} className="px-4 py-2 text-slate-500">Cancelar</button><button onClick={saveTechTest} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold">Salvar</button></div>
+                <div className="flex justify-end gap-2 pt-4"><button onClick={() => setIsTechModalOpen(false)} className="px-5 py-2 text-slate-500 font-bold">Voltar</button><button onClick={saveTechTest} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-indigo-100">Salvar Avaliação</button></div>
              </div>
            </div>
         </div>
       )}
 
+      {/* --- MODAL FECHAR VAGA / CONTRATAÇÃO --- */}
       {isHiringModalOpen && (
-        <div className="fixed inset-0 bg-emerald-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 border-t-8 border-emerald-500 text-center">
-              <h3 className="text-xl font-bold text-emerald-800 mb-4 flex justify-center items-center gap-2"><CheckCircle size={24}/> Fechar Vaga</h3>
-              <select className="w-full border p-2 rounded font-bold mb-4" value={candidateToHire?.id || ''} onChange={e => setCandidateToHire(jobCandidates.find(c => c.id === e.target.value) || null)}>
-                  <option value="">-- Selecione o Vencedor --</option>
-                  {jobCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              {candidateToHire && ( <div className="space-y-4">
-                  <input className="w-full border p-2 rounded" value={hiringData.finalSalary} onChange={e => setHiringData({...hiringData, finalSalary: e.target.value})} placeholder="Salário Final" />
-                  <select className="w-full border p-2 rounded" value={hiringData.contractType} onChange={e => setHiringData({...hiringData, contractType: e.target.value as ContractType})}><option value="CLT">CLT</option><option value="PJ">PJ</option><option value="Estágio">Estágio</option></select>
-                  <input type="date" className="w-full border p-2 rounded" value={hiringData.startDate} onChange={e => setHiringData({...hiringData, startDate: e.target.value})} />
-                  <button onClick={handleHiringSubmit} className="w-full bg-emerald-600 text-white font-bold py-3 rounded-xl shadow-lg">Confirmar Contratação</button>
-              </div>)}
-              <button onClick={() => setIsHiringModalOpen(false)} className="w-full py-2 text-slate-400 mt-2 hover:underline">Voltar</button>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 border-t-8 border-emerald-500 text-center animate-fadeIn">
+              <div className="flex justify-center mb-4 text-emerald-600 bg-emerald-50 w-16 h-16 rounded-full items-center mx-auto shadow-inner"><CheckCircle size={36}/></div>
+              <h3 className="text-xl font-black text-emerald-800 mb-2 uppercase tracking-tighter">Concluir Contratação</h3>
+              <p className="text-slate-500 text-xs mb-6 font-bold uppercase tracking-widest">Confirme os dados finais para encerrar a vaga</p>
+              
+              <div className="text-left space-y-4">
+                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Colaborador Escolhido</label>
+                    <select className="w-full border border-slate-200 p-3 rounded-xl font-black text-slate-700 bg-slate-50" value={candidateToHire?.id || ''} onChange={e => setCandidateToHire(jobCandidates.find(c => c.id === e.target.value) || null)}>
+                        <option value="">-- Selecione o Vencedor --</option>
+                        {jobCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                </div>
+                {candidateToHire && ( <div className="space-y-4 animate-fadeIn">
+                    <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Salário Combinado</label><input className="w-full border p-3 rounded-xl font-bold" value={hiringData.finalSalary} onChange={e => setHiringData({...hiringData, finalSalary: e.target.value})} placeholder="R$ 0.000,00" /></div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Contrato</label><select className="w-full border p-3 rounded-xl font-bold" value={hiringData.contractType} onChange={e => setHiringData({...hiringData, contractType: e.target.value as ContractType})}><option value="CLT">CLT</option><option value="PJ">PJ</option><option value="Estágio">Estágio</option></select></div>
+                        <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Data Início</label><input type="date" className="w-full border p-3 rounded-xl font-bold" value={hiringData.startDate} onChange={e => setHiringData({...hiringData, startDate: e.target.value})} /></div>
+                    </div>
+                    <button onClick={handleHiringSubmit} className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-emerald-100 uppercase tracking-widest mt-4 hover:bg-emerald-700 transition-all active:scale-95">Confirmar e Finalizar Vaga</button>
+                </div>)}
+              </div>
+              <button onClick={() => setIsHiringModalOpen(false)} className="w-full py-3 text-slate-400 mt-2 font-bold uppercase text-[10px] tracking-widest hover:text-slate-600">Voltar</button>
            </div>
         </div>
       )}
 
+      {/* --- MODAL EXPORTAR PARA BANCO DE TALENTOS --- */}
       {isTalentModalOpen && (
         <div className="fixed inset-0 bg-indigo-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-lg">
-              <h3 className="text-lg font-bold mb-4 text-indigo-900 flex items-center gap-2"><Database size={20}/> Banco de Talentos</h3>
-              <div className="space-y-3">
-                 <input className="w-full border p-2 rounded bg-slate-50 font-bold" value={talentFormData.name} disabled />
-                 <input className="w-full border p-2 rounded" placeholder="Cidade" value={talentFormData.city || ''} onChange={e => setTalentFormData({...talentFormData, city: e.target.value})} />
-                 <input className="w-full border p-2 rounded" placeholder="Cargo Alvo" value={talentFormData.targetRole || ''} onChange={e => setTalentFormData({...talentFormData, targetRole: e.target.value})} />
-                 <div className="flex justify-end gap-2 pt-2"><button onClick={() => setIsTalentModalOpen(false)} className="px-4 py-2 text-slate-500">Voltar</button><button onClick={() => { addTalent(talentFormData as TalentProfile); setIsTalentModalOpen(false); alert('Talento salvo no Banco!'); }} className="px-4 py-2 bg-indigo-600 text-white rounded font-bold shadow-md">Exportar</button></div>
+           <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-fadeIn border-t-8 border-indigo-600">
+              <div className="flex items-center gap-3 mb-6"><Database size={28} className="text-indigo-600"/><h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Exportar para Banco</h3></div>
+              <div className="space-y-4">
+                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Nome do Candidato</label><div className="font-bold text-slate-700">{talentFormData.name}</div></div>
+                 <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cidade</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Cidade de origem" value={talentFormData.city || ''} onChange={e => setTalentFormData({...talentFormData, city: e.target.value})} /></div>
+                 <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cargo para Busca Futura</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Ex: Desenvolvedor, Vendedor..." value={talentFormData.targetRole || ''} onChange={e => setTalentFormData({...talentFormData, targetRole: e.target.value})} /></div>
+                 <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                    <button onClick={() => setIsTalentModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold uppercase text-[10px] tracking-widest">Voltar</button>
+                    <button onClick={() => { addTalent(talentFormData as TalentProfile); setIsTalentModalOpen(false); alert('Talento salvo com sucesso no Banco!'); }} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100 uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all active:scale-95">Salvar Perfil</button>
+                 </div>
               </div>
            </div>
         </div>
