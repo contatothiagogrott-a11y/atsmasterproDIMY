@@ -4,7 +4,6 @@ import { Job, Candidate, User } from '../types';
 // Helper: Formata data ISO para PT-BR
 const formatDate = (dateStr?: string | null): string => {
   if (!dateStr || dateStr === 'undefined' || dateStr === 'null') return '';
-  // Se vier YYYY-MM-DD direto (do input date), não tem T
   const isoDatePart = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
   if (!isoDatePart) return '';
   const parts = isoDatePart.split('-');
@@ -23,232 +22,180 @@ const getDaysDiff = (start: string | Date, end: string | Date): number => {
 // Helper: Calcula dias totais congelados
 const calculateTotalFreezeDays = (job: Job): number => {
   if (!job.freezeHistory || job.freezeHistory.length === 0) return 0;
-  
   let totalMs = 0;
   job.freezeHistory.forEach(freeze => {
     const start = new Date(freeze.startDate).getTime();
     const end = freeze.endDate ? new Date(freeze.endDate).getTime() : new Date().getTime();
     totalMs += Math.max(0, end - start);
   });
-  
   return Math.ceil(totalMs / (1000 * 3600 * 24));
 };
 
 // --- EXPORT 1: SLA GERAL (LISTAGEM DE VAGAS) ---
 export const exportToExcel = (jobs: Job[], candidates: Candidate[], users: User[]) => {
   const rows: any[] = [];
-
-  const uniqueJobs = Array.from(new Set(jobs.map(j => j.id)))
-    .map(id => jobs.find(j => j.id === id)!);
+  const uniqueJobs = Array.from(new Set(jobs.map(j => j.id))).map(id => jobs.find(j => j.id === id)!);
 
   uniqueJobs.forEach(job => {
     if (job.isHidden) return;
-
-    // BLOCO 1
     const recruiterName = users.find(u => u.id === job.createdBy)?.name || 'N/A';
-
-    // BLOCO 2
     const totalFreezeDays = calculateTotalFreezeDays(job);
-    const hasFreeze = totalFreezeDays > 0 || (job.freezeHistory && job.freezeHistory.length > 0) ? 'Sim' : 'Não';
-    
-    const lastFreezeEvent = job.freezeHistory?.sort((a,b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
-    const lastFreezeDate = lastFreezeEvent ? formatDate(lastFreezeEvent.startDate) : '-';
-    const lastUnfreezeDate = lastFreezeEvent?.endDate ? formatDate(lastFreezeEvent.endDate) : (job.status === 'Congelada' ? 'Em andamento' : '-');
+    const hasFreeze = totalFreezeDays > 0 ? 'Sim' : 'Não';
     const closingDate = job.closedAt ? formatDate(job.closedAt) : '-';
 
-    // BLOCO 3
     const allJobCandidates = candidates.filter(c => c.jobId === job.id);
     const hiredCandidate = allJobCandidates.find(c => c.status === 'Contratado');
     
-    let winnerName = '-';
-    let winnerOrigin = '-';
-    let winnerFirstContact = '-';
-    let winnerApprover = '-';
-    let winnerApproveDate = '-';
-    let winnerStartDate = '-';
-    let candidateSLA = 0;
+    let winnerName = '-', winnerOrigin = '-', winnerSLA = 0;
 
     if (hiredCandidate) {
         winnerName = hiredCandidate.name;
         winnerOrigin = hiredCandidate.origin;
-        winnerFirstContact = formatDate(hiredCandidate.firstContactAt);
-        winnerApprover = hiredCandidate.techTestEvaluator || '-';
-        winnerApproveDate = formatDate(hiredCandidate.testApprovalDate);
-        winnerStartDate = formatDate(hiredCandidate.timeline?.startDate);
-
         if (hiredCandidate.firstContactAt) {
             const endCandidacy = hiredCandidate.timeline?.startDate || job.closedAt || new Date().toISOString();
-            candidateSLA = getDaysDiff(hiredCandidate.firstContactAt, endCandidacy);
+            winnerSLA = getDaysDiff(hiredCandidate.firstContactAt, endCandidacy);
         }
     }
 
-    // BLOCO 4
-    const totalApplicants = allJobCandidates.length;
-    const totalInterviewed = allJobCandidates.filter(c => c.interviewAt).length; // Ajustado para novo campo
-    const totalFinalists = allJobCandidates.filter(c => 
-        ['Em Teste', 'Entrevista', 'Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)
-    ).length;
-
-    // BLOCO 5
     const today = new Date().toISOString();
     const endDateForSLA = job.closedAt || today;
-    
     const slaGross = getDaysDiff(job.openedAt, endDateForSLA);
     const slaNet = Math.max(0, slaGross - totalFreezeDays);
 
     rows.push([
-        job.id, job.title, job.unit, job.sector, recruiterName,
-        formatDate(job.openedAt), job.status, hasFreeze, lastFreezeDate, lastUnfreezeDate, totalFreezeDays, closingDate,
-        winnerName, winnerOrigin, winnerFirstContact, winnerApprover, winnerApproveDate, winnerStartDate,
-        totalApplicants, totalInterviewed, totalFinalists,
-        slaGross, totalFreezeDays, slaNet, hiredCandidate ? candidateSLA : '-'
+        job.title, job.unit, job.sector, recruiterName,
+        formatDate(job.openedAt), job.status, hasFreeze, totalFreezeDays, closingDate,
+        winnerName, winnerOrigin,
+        allJobCandidates.length, 
+        allJobCandidates.filter(c => c.interviewAt).length,
+        slaGross, slaNet, hiredCandidate ? winnerSLA : '-'
     ]);
   });
 
-  const headerTitle = [`Relatório SLA Completo e Auditoria de Vagas`];
-  const headerSubtitle = [`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`];
-  
-  const tableHeaders = [
-    "ID Vaga", "Título da Vaga", "Unidade", "Setor", "Recrutador Responsável",
-    "Data Abertura", "Status Atual", "Houve Congelamento?", "Data Congelamento", "Data Descongelamento", "Dias Totais Congelada", "Data Fechamento",
-    "Nome do Contratado", "Origem", "Data 1º Contato", "Aprovador do Teste", "Data Aprovação Teste", "Data de Início",
-    "Total Inscritos", "Total Entrevistados", "Total Finalistas",
-    "SLA Vaga (Bruto Dias)", "Desconto Congelamento (Dias)", "SLA Vaga (Líquido/Real Dias)", "SLA Candidato (Dias)"
+  const wsData = [
+    ["Relatório SLA e Auditoria de Vagas"],
+    [`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`],
+    [''],
+    ["Título da Vaga", "Unidade", "Setor", "Recrutador", "Abertura", "Status", "Congelada?", "Dias Cong.", "Fechamento", "Contratado", "Origem", "Inscritos", "Entrevistados", "SLA Bruto", "SLA Líquido", "SLA Candidato"],
+    ...rows
   ];
 
-  const wsData = [headerTitle, headerSubtitle, [''], tableHeaders, ...rows];
   const worksheet = XLSX.utils.aoa_to_sheet(wsData);
-  
-  worksheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 24 } }];
-  
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "SLA Analítico");
-  XLSX.writeFile(workbook, `ATS_SLA_Analitico_${new Date().toISOString().split('T')[0]}.xlsx`);
+  XLSX.utils.book_append_sheet(workbook, worksheet, "SLA");
+  XLSX.writeFile(workbook, `ATS_SLA_${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
-// --- EXPORT 2: DETALHES DA VAGA (CANDIDATOS) ---
+// --- EXPORT 2: DETALHES DA VAGA (CANDIDATOS) - ATUALIZADO COM MOTIVOS ---
 export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
   const rows = candidates.map(cand => {
     let processTimeText = '-';
     if (cand.firstContactAt) {
-      const endProc = (cand.status === 'Contratado' || cand.status === 'Reprovado') && (cand.timeline?.startDate || cand.rejectionDate)
+      const endProc = (cand.status === 'Contratado' || cand.status === 'Reprovado' || cand.status === 'Desistência') && (cand.timeline?.startDate || cand.rejectionDate)
         ? new Date(cand.timeline?.startDate || cand.rejectionDate!).getTime() 
         : new Date().getTime();
-      const startProc = new Date(cand.firstContactAt).getTime();
-      const diff = Math.ceil(Math.max(0, endProc - startProc) / (1000 * 3600 * 24));
+      const diff = Math.ceil(Math.max(0, endProc - new Date(cand.firstContactAt).getTime()) / (1000 * 3600 * 24));
       processTimeText = `${diff} dias`;
     }
 
     return [
       cand.name,
       cand.city || '-',
-      cand.salaryExpectation || '-',
+      cand.phone || '-',
+      cand.email || '-',
       cand.origin,
       cand.status,
       formatDate(cand.firstContactAt),
-      formatDate(cand.interviewAt), // Ajustado para novo campo
-      cand.techTest ? (cand.techTestResult || 'Sim') : 'Não',
-      cand.rejectionReason || '-',
+      formatDate(cand.interviewAt),
+      cand.techTest ? (cand.techTestResult || 'Realizado') : 'Não',
+      
+      // COLUNAS DE MOTIVOS (Respeitando a caixa de texto "Outros")
+      cand.status === 'Reprovado' ? (cand.rejectionReason || 'Não informado') : '-',
+      cand.status === 'Desistência' ? (cand.rejectionReason || 'Não informado') : '-',
+      
       processTimeText,
       cand.rejectedBy || '-',
-      formatDate(cand.rejectionDate),
-      formatDate(cand.testApprovalDate)
+      formatDate(cand.rejectionDate)
     ];
   });
 
   const headerTitle = [`Relatório de Candidatos - ${job.title}`];
   const tableHeaders = [
-    "Nome do Candidato", "Cidade", "Pretensão Salarial", "Origem", "Status Atual",
-    "Data 1º Contato", "Data Entrevista", "Resultado Teste", "Motivo da Perda", "Tempo de Processo",
-    "Reprovado_Por", "Data_Reprovacao", "Data_Aprovacao_Teste"
+    "Nome do Candidato", "Cidade", "Telefone", "E-mail", "Origem", "Status Atual",
+    "1º Contato", "Data Entrevista", "Teste Técnico", 
+    "MOTIVO REPROVAÇÃO", "MOTIVO DESISTÊNCIA", // Novas colunas solicitadas
+    "Tempo de Processo", "Responsável Perda", "Data da Perda"
   ];
 
   const wsData = [headerTitle, [''], tableHeaders, ...rows];
   const worksheet = XLSX.utils.aoa_to_sheet(wsData);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Candidatos");
-  XLSX.writeFile(workbook, `ATS_Candidatos_${job.title.substring(0, 10)}.xlsx`);
+  XLSX.writeFile(workbook, `ATS_Candidatos_${job.title.replace(/\s+/g, '_')}.xlsx`);
 };
 
-// --- EXPORT 3: LISTA SIMPLES DE VAGAS ---
-export const exportJobsList = (jobs: Job[], candidates: Candidate[]) => {
-  const data = jobs.filter(j => !j.isHidden).map(job => {
-    const jobCandidates = candidates.filter(c => c.jobId === job.id);
-    return {
-      "Nome da Vaga": String(job.title || ''),
-      "Data de Abertura": formatDate(job.openedAt),
-      "Status": String(job.status || ''),
-      "Tipo de Abertura": String(job.openingDetails?.reason || 'Aumento de Quadro'),
-      "Total de Candidatos": jobCandidates.length,
-    };
-  });
-  const worksheet = XLSX.utils.json_to_sheet(data);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Vagas");
-  XLSX.writeFile(workbook, `ATS_Lista_Vagas.xlsx`);
-};
-
-// --- EXPORT 4: RELATÓRIO ESTRATÉGICO (DASHBOARD/SLA) ---
+// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - ATUALIZADO COM TESTES ---
 export const exportStrategicReport = (metrics: any, startDate: string, endDate: string) => {
     const wb = XLSX.utils.book_new();
   
-    // --- ABA 1: RESUMO GERAL ---
+    // ABA 1: RESUMO GERAL
     const summaryData = [
-      ["RELATÓRIO ESTRATÉGICO DE RECRUTAMENTO"],
+      ["RELATÓRIO ESTRATÉGICO DE PERFORMANCE"],
       [`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`],
       [""],
-      ["INDICADOR DE FLUXO", "VALOR"],
+      ["INDICADOR", "VALOR"],
       ["Vagas Abertas (Total)", metrics.opened.total],
       ["   - Aumento de Quadro", metrics.opened.expansion],
       ["   - Substituição", metrics.opened.replacement],
       ["Vagas Concluídas", metrics.closed.total],
-      ["Entrevistas Realizadas", metrics.interviews],
+      ["Entrevistas Realizadas", metrics.interviews.total || metrics.interviews],
+      ["Testes Técnicos Realizados", metrics.tests.total || metrics.tests], // Adicionado conforme solicitado
       [""],
       ["INDICADOR DE PERDAS", "VALOR"],
       ["Total de Reprovações (Empresa)", metrics.rejected.total],
-      ["Total de Desistências (Candidato)", metrics.withdrawn.total],
-      ["Taxa Total de Perda", metrics.rejected.total + metrics.withdrawn.total]
+      ["Total de Desistências (Candidato)", metrics.withdrawn.total]
     ];
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-    wsSummary['!cols'] = [{ wch: 40 }, { wch: 15 }];
     XLSX.utils.book_append_sheet(wb, wsSummary, "Resumo Executivo");
   
-    // --- ABA 2: POR SETOR ---
+    // ABA 2: POR SETOR
     const sectorRows = Object.entries(metrics.bySector).map(([sector, data]: any) => [
-        sector, 
-        data.opened, 
-        data.closed
+        sector, data.opened, data.closed, data.frozen, data.canceled
     ]);
     const wsDataSector = [
-        ["ANÁLISE POR SETOR"],
-        ["Setor", "Vagas Abertas", "Vagas Fechadas"],
+        ["MOVIMENTAÇÃO POR SETOR"],
+        ["Setor", "Abertas", "Fechadas", "Congeladas", "Canceladas"],
         ...sectorRows
     ];
     const wsSector = XLSX.utils.aoa_to_sheet(wsDataSector);
-    wsSector['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }];
     XLSX.utils.book_append_sheet(wb, wsSector, "Por Setor");
   
-    // --- ABA 3: MOTIVOS DE PERDA (SEPARADO) ---
-    // Prepara dados de Reprovação (Empresa)
-    const rejectionRows = Object.entries(metrics.rejected.reasons)
-        .sort((a: any, b: any) => b[1] - a[1])
-        .map(([reason, count]: any) => ["Reprovação (Empresa)", reason, count]);
-
-    // Prepara dados de Desistência (Candidato)
-    const withdrawalRows = Object.entries(metrics.withdrawn.reasons)
-        .sort((a: any, b: any) => b[1] - a[1])
-        .map(([reason, count]: any) => ["Desistência (Candidato)", reason, count]);
+    // ABA 3: MOTIVOS DETALHADOS
+    const rejectionRows = Object.entries(metrics.rejected.reasons || {}).map(([r, c]: any) => ["Reprovação", r, c]);
+    const withdrawalRows = Object.entries(metrics.withdrawn.reasons || {}).map(([r, c]: any) => ["Desistência", r, c]);
 
     const wsDataReasons = [
-        ["DETALHAMENTO DE PERDAS (MOTIVOS)"],
-        ["Tipo de Perda", "Motivo", "Quantidade"],
+        ["MOTIVOS DE PERDA DETALHADOS"],
+        ["Tipo", "Justificativa / Motivo", "Quantidade"],
         ...rejectionRows,
         ...withdrawalRows
     ];
     const wsReasons = XLSX.utils.aoa_to_sheet(wsDataReasons);
-    wsReasons['!cols'] = [{ wch: 25 }, { wch: 40 }, { wch: 15 }];
-    XLSX.utils.book_append_sheet(wb, wsReasons, "Motivos Detalhados");
+    XLSX.utils.book_append_sheet(wb, wsReasons, "Motivos");
   
-    // Salvar Arquivo
-    XLSX.writeFile(wb, `ATS_Report_Estrategico_${startDate}_${endDate}.xlsx`);
+    XLSX.writeFile(wb, `ATS_BI_Estrategico_${startDate}_${endDate}.xlsx`);
+};
+
+// Mantenha o exportJobsList se ainda for necessário
+export const exportJobsList = (jobs: Job[], candidates: Candidate[]) => {
+  const data = jobs.filter(j => !j.isHidden).map(job => ({
+      "Vaga": job.title,
+      "Status": job.status,
+      "Abertura": formatDate(job.openedAt),
+      "Candidatos": candidates.filter(c => c.jobId === job.id).length
+  }));
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Lista");
+  XLSX.writeFile(wb, "ATS_Lista_Vagas.xlsx");
 };
