@@ -24,7 +24,6 @@ export const StrategicReport: React.FC = () => {
   const [unitFilter, setUnitFilter] = useState('');
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   
-  // Controle do Drill-down dos Cards
   const [drillDownTarget, setDrillDownTarget] = useState<DrillDownType>(null);
 
   const [isConfidentialUnlocked, setIsConfidentialUnlocked] = useState(false);
@@ -56,7 +55,6 @@ export const StrategicReport: React.FC = () => {
       return d >= start && d <= end;
   };
 
-  // Base de dados filtrada por acessibilidade e unidade
   const accessibleJobs = useMemo(() => jobs.filter(j => {
       const matchesUnit = unitFilter ? j.unit === unitFilter : true;
       const isPublic = !j.isConfidential;
@@ -71,13 +69,11 @@ export const StrategicReport: React.FC = () => {
     const jobsOpened = accessibleJobs.filter(j => isWithin(j.openedAt));
     const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
     
-    // Listas para o Drill-down
     const interviewsList = accessibleCandidates.filter(c => isWithin(c.interviewAt));
     const testsList = accessibleCandidates.filter(c => c.techTest && isWithin(c.techTestDate));
     const rejectedList = accessibleCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
     const withdrawnList = accessibleCandidates.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate));
 
-    // Motivos para o Excel
     const rejectionReasons: Record<string, number> = {};
     rejectedList.forEach(c => {
         const r = c.rejectionReason || 'Não informado';
@@ -132,7 +128,7 @@ export const StrategicReport: React.FC = () => {
           <div className="flex items-center gap-2 px-2"><Building2 size={16} className="text-slate-400" /><select className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div>
       </div>
 
-      {/* CARDS COM DRILL-DOWN CLICÁVEL */}
+      {/* CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <StrategicCard title="Abertas" value={metrics.opened.total} color="blue" icon={Briefcase} subtitle={`+${metrics.opened.expansion} Novo | +${metrics.opened.replacement} Subst.`} />
           <StrategicCard title="Concluídas" value={metrics.closed.total} color="emerald" icon={CheckCircle} subtitle="Ver Contratações" onClick={() => setDrillDownTarget('CLOSED')} />
@@ -173,10 +169,11 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* JANELA DE DRILL-DOWN DOS CARDS */}
+      {/* JANELA DE DRILL-DOWN DOS CARDS - ENCOLHIDA E CENTRALIZADA */}
       {drillDownTarget && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 lg:p-8 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
+              {/* LARGURA REDUZIDA PARA max-w-3xl E PADDING REDUZIDO NAS CÉLULAS */}
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                       <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
                         {drillDownTarget === 'CLOSED' && "Contratações Efetuadas"}
@@ -210,10 +207,10 @@ export const StrategicReport: React.FC = () => {
                                   const sla = job.closedAt ? differenceInDays(parseISO(job.closedAt), parseISO(job.openedAt)) : '-';
                                   return (
                                       <tr key={job.id} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-4 pl-4 font-black text-slate-700">{job.title}</td>
-                                          <td className="p-4"><span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-bold">{hired?.name || 'Não identificado'}</span></td>
-                                          <td className="p-4 text-center font-bold text-slate-500">{job.closedAt ? new Date(job.closedAt).toLocaleDateString() : '-'}</td>
-                                          <td className="p-4 text-right pr-4 font-black text-indigo-600">{sla} dias</td>
+                                          <td className="p-3 pl-4 font-black text-slate-700">{job.title}</td>
+                                          <td className="p-3"><span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-bold">{hired?.name || 'Não identificado'}</span></td>
+                                          <td className="p-3 text-center font-bold text-slate-500">{job.closedAt ? new Date(job.closedAt).toLocaleDateString() : '-'}</td>
+                                          <td className="p-3 text-right pr-4 font-black text-indigo-600">{sla} dias</td>
                                       </tr>
                                   );
                               })}
@@ -222,9 +219,9 @@ export const StrategicReport: React.FC = () => {
                                   const job = jobs.find(j => j.id === c.jobId);
                                   return (
                                       <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-4 pl-4 font-black text-slate-700">{c.name}</td>
-                                          <td className="p-4 text-slate-500 font-medium">{job?.title} <br/> <span className="text-[10px] text-slate-400 uppercase">{job?.sector} | {job?.unit}</span></td>
-                                          <td className="p-4 pr-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>{c.rejectionReason || 'Sem motivo detalhado'}</span></td>
+                                          <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
+                                          <td className="p-3 text-slate-500 font-medium">{job?.title} <br/> <span className="text-[10px] text-slate-400 uppercase">{job?.sector} | {job?.unit}</span></td>
+                                          <td className="p-3 pr-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>{c.rejectionReason || 'Sem motivo detalhado'}</span></td>
                                       </tr>
                                   );
                               })}
@@ -233,19 +230,19 @@ export const StrategicReport: React.FC = () => {
                                   const job = jobs.find(j => j.id === c.jobId);
                                   return (
                                       <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-4 pl-4 font-black text-slate-700">{c.name}</td>
-                                          <td className="p-4 text-slate-500 font-medium">{job?.title}</td>
-                                          <td className="p-4 text-right pr-4 font-bold text-amber-600">{c.interviewAt ? new Date(c.interviewAt).toLocaleDateString() : '-'}</td>
+                                          <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
+                                          <td className="p-3 text-slate-500 font-medium">{job?.title}</td>
+                                          <td className="p-3 text-right pr-4 font-bold text-amber-600">{c.interviewAt ? new Date(c.interviewAt).toLocaleDateString() : '-'}</td>
                                       </tr>
                                   );
                               })}
 
                               {drillDownTarget === 'TESTS' && metrics.tests.list.map(c => (
                                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                                      <td className="p-4 pl-4 font-black text-slate-700">{c.name}</td>
-                                      <td className="p-4 font-bold text-slate-500">{c.techEvaluator || 'Não informado'}</td>
-                                      <td className="p-4 text-center font-medium text-slate-400">{c.techTestDate ? new Date(c.techTestDate).toLocaleDateString() : '-'}</td>
-                                      <td className="p-4 text-right pr-4">
+                                      <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
+                                      <td className="p-3 font-bold text-slate-500">{c.techEvaluator || 'Não informado'}</td>
+                                      <td className="p-3 text-center font-medium text-slate-400">{c.techTestDate ? new Date(c.techTestDate).toLocaleDateString() : '-'}</td>
+                                      <td className="p-3 text-right pr-4">
                                           <span className={`font-black uppercase text-[10px] ${c.techTestResult === 'Aprovado' ? 'text-emerald-600' : 'text-red-500'}`}>{c.techTestResult || 'Pendente'}</span>
                                       </td>
                                   </tr>
@@ -257,10 +254,11 @@ export const StrategicReport: React.FC = () => {
           </div>
       )}
 
-      {/* JANELA DE SETOR (BRANCH) */}
+      {/* JANELA DE SETOR (BRANCH) - ENCOLHIDA E CENTRALIZADA */}
       {selectedSector && (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 lg:p-8 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
+              {/* LARGURA REDUZIDA PARA max-w-xl E PADDING REDUZIDO NAS CÉLULAS */}
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                       <div className="text-left">
                           <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-tight">Área: {selectedSector}</h2>
@@ -274,18 +272,36 @@ export const StrategicReport: React.FC = () => {
                               <tr><th className="p-3 pl-4">Vaga</th><th className="p-3 text-center bg-indigo-50/50">Ent.</th><th className="p-3 text-center bg-red-50/50">Rep.</th><th className="p-3 text-center bg-orange-50/50">Des.</th><th className="p-3 pr-4 text-right">Ação</th></tr>
                           </thead>
                           <tbody className="divide-y divide-slate-50">
-                              {sectorBranchData.map(vaga => (
-                                  <tr key={vaga.id} className="hover:bg-slate-50 transition-colors text-left">
-                                      <td className="p-4 pl-4 font-black text-slate-700 text-sm truncate max-w-[220px]">{vaga.title}</td>
-                                      <td className="p-4 text-center font-black text-indigo-600 bg-indigo-50/10">{vaga.interviews}</td>
-                                      <td className="p-4 text-center font-black text-red-600 bg-red-50/10">{vaga.rejected}</td>
-                                      <td className="p-4 text-center font-black text-orange-600 bg-orange-50/10">{vaga.withdrawn}</td>
-                                      <td className="p-4 pr-4 text-right"><button onClick={() => navigate(`/jobs/${vaga.id}`)} className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg shadow-sm font-black uppercase text-[9px] flex items-center gap-1 ml-auto"><ExternalLink size={14} /> Gestão</button></td>
-                                  </tr>
-                              ))}
+                              {accessibleJobs.filter(j => j.sector === selectedSector && (isWithin(j.openedAt) || (j.closedAt && isWithin(j.closedAt)))).map(vaga => {
+                                  const cands = candidates.filter(c => c.jobId === vaga.id);
+                                  return (
+                                      <tr key={vaga.id} className="hover:bg-slate-50 transition-colors text-left">
+                                          <td className="p-3 pl-4 font-black text-slate-700 text-sm truncate max-w-[220px]">{vaga.title}</td>
+                                          <td className="p-3 text-center font-black text-indigo-600 bg-indigo-50/10">{cands.filter(c => isWithin(c.interviewAt)).length}</td>
+                                          <td className="p-3 text-center font-black text-red-600 bg-red-50/10">{cands.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate)).length}</td>
+                                          <td className="p-3 text-center font-black text-orange-600 bg-orange-50/10">{cands.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate)).length}</td>
+                                          <td className="p-3 pr-4 text-right"><button onClick={() => navigate(`/jobs/${vaga.id}`)} className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg shadow-sm font-black uppercase text-[9px] flex items-center gap-1 ml-auto"><ExternalLink size={14} /> Gestão</button></td>
+                                      </tr>
+                                  );
+                              })}
                           </tbody>
                       </table>
                   </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL DE SEGURANÇA */}
+      {isUnlockModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100000] p-4">
+              <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-xs border-t-8 border-amber-500 text-center animate-fadeIn">
+                  <div className="flex justify-center mb-4 bg-amber-50 w-12 h-12 rounded-full items-center mx-auto text-amber-600"><Lock size={20} /></div>
+                  <h3 className="text-sm font-black text-slate-800 uppercase mb-4 tracking-widest text-center">Senha Master</h3>
+                  <form onSubmit={handleUnlockSubmit}>
+                      <input type="password" autoFocus placeholder="••••••" className="w-full border border-slate-200 p-3 rounded-xl mb-4 text-center font-bold outline-none focus:ring-2 focus:ring-amber-500" value={unlockPassword} onChange={e => setUnlockPassword(e.target.value)} />
+                      <button type="submit" className="w-full bg-amber-600 text-white font-black py-3 rounded-xl hover:bg-amber-700 transition-all uppercase text-[10px] tracking-widest">Acessar</button>
+                      <button type="button" onClick={() => setIsUnlockModalOpen(false)} className="w-full mt-2 text-slate-400 text-[9px] font-bold uppercase hover:text-slate-600">Voltar</button>
+                  </form>
               </div>
           </div>
       )}
@@ -306,14 +322,14 @@ const StrategicCard = ({ title, value, color, icon: Icon, subtitle, onClick }: a
     return (
         <div 
           onClick={onClick}
-          className={`p-5 rounded-3xl border border-slate-100 relative overflow-hidden bg-white shadow-sm flex flex-col justify-between min-h-[110px] group transition-all ${onClick ? 'cursor-pointer hover:shadow-md hover:-translate-y-1 hover:border-slate-200' : ''}`}
+          className={`p-5 rounded-3xl border border-slate-100 relative overflow-hidden bg-white shadow-sm flex flex-col justify-between min-h-[110px] group transition-all text-left ${onClick ? 'cursor-pointer hover:shadow-md hover:-translate-y-1 hover:border-slate-200' : ''}`}
         >
             <Icon className={`absolute -right-2 -bottom-2 opacity-[0.07] size-20 transform group-hover:scale-110 transition-transform ${colorClasses[color]}`} />
-            <span className={`text-[10px] font-black uppercase tracking-widest relative z-10 text-left ${colorClasses[color]}`}>{title}</span>
-            <div className="text-4xl font-black text-slate-800 relative z-10 text-left tracking-tighter">{value}</div>
-            <p className={`text-[9px] font-bold uppercase relative z-10 text-left truncate ${onClick ? 'text-indigo-500 group-hover:underline' : 'text-slate-400'}`}>
+            <span className={`text-[10px] font-black uppercase tracking-widest relative z-10 ${colorClasses[color]}`}>{title}</span>
+            <div className="text-4xl font-black text-slate-800 relative z-10 tracking-tighter">{value}</div>
+            <p className={`text-[9px] font-bold uppercase relative z-10 truncate ${onClick ? 'text-indigo-500 group-hover:underline' : 'text-slate-400'}`}>
                 {subtitle}
             </p>
         </div>
     );
-};
+}
