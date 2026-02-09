@@ -10,17 +10,31 @@ import { Candidate } from '../types';
 const generateId = () => crypto.randomUUID();
 const GENERAL_POOL_ID = 'general';
 
+// --- LISTAS DE DIAGNÓSTICO (IGUAIS AO JOBDETAILS) ---
+const WITHDRAWAL_REASONS = [
+  "Aceitou outra proposta",
+  "Salário abaixo da pretensão",
+  "Distância / Localização",
+  "Desinteresse na vaga",
+  "Problemas pessoais"
+];
+
+const GENERAL_REJECTION_REASONS = [
+  "Perfil Técnico Insuficiente",
+  "Sem Fit Cultural",
+  "Reprovado no Teste Técnico",
+  "Salário acima do budget"
+];
+
 const toInputDate = (isoString?: string) => isoString ? isoString.split('T')[0] : '';
 const formatDate = (isoString?: string) => isoString ? new Date(isoString).toLocaleDateString('pt-BR', {timeZone: 'UTC'}) : '-';
 
-// Função para gerar link do WhatsApp
 const getWaLink = (phone?: string) => {
     if (!phone) return null;
     const clean = phone.replace(/\D/g, '');
     return `https://wa.me/55${clean}`;
 };
 
-// Verifica se a data já passou (para alertar feedback atrasado)
 const isDatePast = (dateString?: string) => {
     if (!dateString) return false;
     const date = new Date(dateString);
@@ -38,6 +52,7 @@ export const GeneralInterviews: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Candidate>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [lossReasonType, setLossReasonType] = useState(''); // Estado para o select de motivo
 
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [candidateToLink, setCandidateToLink] = useState<Candidate | null>(null);
@@ -49,22 +64,19 @@ export const GeneralInterviews: React.FC = () => {
 
   // --- LÓGICA DE DADOS ---
   
-  // 1. Todos do Pool Geral
   const allGeneralCandidates = useMemo(() => {
     return candidates
         .filter(c => c.jobId === GENERAL_POOL_ID)
         .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [candidates]);
 
-  // 2. Filtro de Pendências (Tem data de entrevista E NÃO foi finalizado)
   const pendingFeedbackCandidates = useMemo(() => {
       return allGeneralCandidates.filter(c => 
-          c.interviewAt && // Tem data marcada
-          !['Reprovado', 'Desistência', 'Contratado'].includes(c.status) // Ainda não finalizou
-      ).sort((a,b) => new Date(a.interviewAt!).getTime() - new Date(b.interviewAt!).getTime()); // Ordena por data da entrevista (mais antiga primeiro)
+          c.interviewAt && 
+          !['Reprovado', 'Desistência', 'Contratado'].includes(c.status)
+      ).sort((a,b) => new Date(a.interviewAt!).getTime() - new Date(b.interviewAt!).getTime());
   }, [allGeneralCandidates]);
 
-  // 3. Filtro da Lista Geral (Busca)
   const filteredList = useMemo(() => {
     return allGeneralCandidates.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [allGeneralCandidates, searchTerm]);
@@ -77,6 +89,19 @@ export const GeneralInterviews: React.FC = () => {
     if (candidate) {
         setEditingId(candidate.id);
         setFormData({ ...candidate });
+        // Preenche o motivo se já existir
+        if (candidate.rejectionReason) {
+            const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
+            const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
+            
+            if (isGeneral || isWithdrawal) {
+                setLossReasonType(candidate.rejectionReason);
+            } else {
+                setLossReasonType('Outros');
+            }
+        } else { 
+            setLossReasonType(''); 
+        }
     } else {
         setEditingId(null);
         setFormData({ 
@@ -87,6 +112,7 @@ export const GeneralInterviews: React.FC = () => {
             createdAt: new Date().toISOString(),
             firstContactAt: new Date().toISOString()
         });
+        setLossReasonType('');
     }
     setIsModalOpen(true);
   };
@@ -97,6 +123,15 @@ export const GeneralInterviews: React.FC = () => {
     if (payload.firstContactAt) payload.firstContactAt = `${toInputDate(payload.firstContactAt)}T12:00:00.000Z`;
     if (payload.interviewAt) payload.interviewAt = `${toInputDate(payload.interviewAt)}T12:00:00.000Z`;
     
+    // Limpa motivo se status mudar para algo positivo
+    if (!['Reprovado', 'Desistência'].includes(payload.status || '')) {
+        payload.rejectionReason = undefined;
+        payload.rejectionDate = undefined;
+    } else {
+        // Se for reprovado/desistência, garante que tem data
+        if (!payload.rejectionDate) payload.rejectionDate = new Date().toISOString();
+    }
+
     if (editingId) {
         const original = candidates.find(c => c.id === editingId);
         if (original) await updateCandidate({ ...original, ...payload } as Candidate);
@@ -320,21 +355,32 @@ export const GeneralInterviews: React.FC = () => {
            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
               <div className="flex justify-between items-center mb-6 border-b pb-4">
                   <h3 className="font-bold text-xl text-slate-800">{editingId ? 'Editar Candidato' : 'Nova Entrevista Geral'}</h3>
-                  <button onClick={() => setIsModalOpen(false)} className="hover:bg-slate-100 p-1 rounded-full"><arrowRight size={24} className="hidden"/><span className="text-slate-400 font-bold">X</span></button>
+                  <button onClick={() => setIsModalOpen(false)} className="hover:bg-slate-100 p-1 rounded-full"><ArrowRight size={24} className="hidden"/><span className="text-slate-400 font-bold">X</span></button>
               </div>
               <form onSubmit={handleSave} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                      <div><label className="block text-xs font-bold mb-1">Nome</label><input required className="w-full border p-2 rounded" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-                      <div><label className="block text-xs font-bold mb-1">Idade</label><input type="number" className="w-full border p-2 rounded" value={formData.age} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
+                      <div><label className="block text-xs font-bold mb-1">Nome</label><input required className="w-full border p-2 rounded" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                      <div><label className="block text-xs font-bold mb-1">Idade</label><input type="number" className="w-full border p-2 rounded" value={formData.age || ''} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                      <div><label className="block text-xs font-bold mb-1">Telefone</label><input className="w-full border p-2 rounded" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
-                      <div><label className="block text-xs font-bold mb-1">Cidade</label><input className="w-full border p-2 rounded" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} /></div>
+                      <div><label className="block text-xs font-bold mb-1">Telefone</label><input className="w-full border p-2 rounded" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
+                      <div><label className="block text-xs font-bold mb-1">Cidade</label><input className="w-full border p-2 rounded" value={formData.city || ''} onChange={e => setFormData({...formData, city: e.target.value})} /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
-                      <div><label className="block text-xs font-bold mb-1">Pretensão Salarial</label><input className="w-full border p-2 rounded" value={formData.salaryExpectation} onChange={e => setFormData({...formData, salaryExpectation: e.target.value})} /></div>
+                      <div><label className="block text-xs font-bold mb-1">Pretensão Salarial</label><input className="w-full border p-2 rounded" value={formData.salaryExpectation || ''} onChange={e => setFormData({...formData, salaryExpectation: e.target.value})} /></div>
                       <div><label className="block text-xs font-bold mb-1">Status</label>
-                          <select className="w-full border p-2 rounded" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
+                          <select 
+                            className="w-full border p-2 rounded" 
+                            value={formData.status} 
+                            onChange={e => {
+                                const newStatus = e.target.value;
+                                setFormData({...formData, status: newStatus});
+                                if (!['Reprovado', 'Desistência'].includes(newStatus)) {
+                                    setLossReasonType(''); 
+                                    setFormData(p => ({...p, rejectionReason: undefined}));
+                                }
+                            }}
+                          >
                               <option value="Entrevista">Entrevista</option>
                               <option value="Em Análise">Em Análise</option>
                               <option value="Reprovado">Reprovado</option>
@@ -342,6 +388,31 @@ export const GeneralInterviews: React.FC = () => {
                           </select>
                       </div>
                   </div>
+
+                  {/* CAMPO DE MOTIVO DA PERDA (IGUAL AO JOBDETAILS) */}
+                  {(formData.status === 'Reprovado' || formData.status === 'Desistência') && (
+                      <div className="bg-red-50 p-4 rounded-lg border border-red-200 animate-fadeIn">
+                          <label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1"><AlertCircle size={12}/> Motivo da Perda (Obrigatório)</label>
+                          <select className="w-full border border-red-300 p-2 rounded bg-white mb-3 text-sm" value={lossReasonType} 
+                              onChange={e => {
+                                  const val = e.target.value;
+                                  setLossReasonType(val);
+                                  if (val !== 'Outros') setFormData({...formData, rejectionReason: val});
+                                  else setFormData({...formData, rejectionReason: ''});
+                              }}>
+                              <option value="">-- Selecione o Motivo --</option>
+                              {formData.status === 'Desistência' ? (
+                                  WITHDRAWAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)
+                              ) : (
+                                  GENERAL_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)
+                              )}
+                              <option value="Outros">Outros (Escrever...)</option>
+                          </select>
+                          {lossReasonType === 'Outros' && (
+                              <textarea className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white min-h-[80px] text-sm shadow-inner" placeholder="Descreva o motivo detalhadamente..." value={formData.rejectionReason || ''} onChange={e => setFormData({...formData, rejectionReason: e.target.value})} />
+                          )}
+                      </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-4 bg-blue-50 p-4 rounded-xl border border-blue-100">
                       <div><label className="block text-xs font-bold mb-1 uppercase text-blue-800">Data Chegada</label><input type="date" className="w-full border p-2 rounded" value={toInputDate(formData.firstContactAt)} onChange={e => setFormData({...formData, firstContactAt: e.target.value})} /></div>
