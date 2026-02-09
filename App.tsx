@@ -6,6 +6,7 @@ import { Layout } from './components/Layout';
 // Importação das Páginas
 import { Login } from './pages/Login';
 import { Dashboard } from './pages/Dashboard';
+import { GeneralInterviews } from './pages/GeneralInterviews';
 import { Jobs } from './pages/Jobs';
 import { JobDetails } from './pages/JobDetails';
 import { TalentPool } from './pages/TalentPool';
@@ -40,6 +41,8 @@ const App: React.FC = () => {
           <Route element={<ProtectedRoute />}>
             
             <Route path="/" element={<Dashboard />} />
+
+            <Route path="/general-interviews" element={<GeneralInterviews />} />
             
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetails />} />
