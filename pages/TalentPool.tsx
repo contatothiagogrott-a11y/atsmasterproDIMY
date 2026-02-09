@@ -17,7 +17,7 @@ export const TalentPool: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'NAME_ASC' | 'NAME_DESC' | 'DATE_DESC' | 'DATE_ASC'>('DATE_DESC');
   
-  // Modais (Apenas Link e Delete permanecem como modal)
+  // Modais
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   
@@ -52,10 +52,14 @@ export const TalentPool: React.FC = () => {
     }
 
     return result.sort((a, b) => {
+      // Proteção contra datas nulas
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+
       if (sortOrder === 'NAME_ASC') return (a.name || '').localeCompare(b.name || '');
       if (sortOrder === 'NAME_DESC') return (b.name || '').localeCompare(a.name || '');
-      if (sortOrder === 'DATE_ASC') return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sortOrder === 'DATE_ASC') return dateA - dateB;
+      return dateB - dateA;
     });
   }, [talents, searchTerm, sortOrder]);
 
@@ -75,7 +79,7 @@ export const TalentPool: React.FC = () => {
 
   const openJobs = useMemo(() => (jobs || []).filter(j => j.status === 'Aberta'), [jobs]);
 
-  // --- NAVEGAÇÃO PARA PÁGINA DE DETALHES ---
+  // --- NAVEGAÇÃO ---
   const handleEditClick = (e: React.MouseEvent, talent: TalentProfile) => {
     e.stopPropagation();
     navigate(`/talents/${talent.id}`);
@@ -101,7 +105,7 @@ export const TalentPool: React.FC = () => {
 
   const confirmDelete = (e: React.FormEvent) => {
     e.preventDefault();
-    if (talentToDelete && deleteConfirmation === 'DELETE') {
+    if (talentToDelete && deleteConfirmation.toUpperCase() === 'DELETE') {
       removeTalent(talentToDelete.id);
       setIsDeleteModalOpen(false);
       setTalentToDelete(null);
@@ -114,14 +118,16 @@ export const TalentPool: React.FC = () => {
       const selectedJob = jobs.find(j => j.id === selectedJobId);
       if (!selectedJob) return;
 
-      const contactParts = talentToLink.contact.split('|');
+      // Proteção contra contato nulo
+      const safeContact = talentToLink.contact || '';
+      const contactParts = safeContact.split('|');
       const email = contactParts[0]?.includes('@') ? contactParts[0].trim() : undefined;
-      const phone = contactParts.find(p => p.match(/\d{8,}/))?.trim() || talentToLink.contact;
+      const phone = contactParts.find(p => p.match(/\d{8,}/))?.trim() || safeContact;
 
       const newCandidate: Candidate = {
         id: generateId(),
         jobId: selectedJob.id,
-        name: talentToLink.name,
+        name: talentToLink.name || 'Sem Nome',
         age: talentToLink.age,
         phone: phone,
         email: email,
@@ -183,7 +189,10 @@ export const TalentPool: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {paginatedTalents.map(t => {
-          const phoneRaw = t.contact.split('|').find(s => s.match(/\d{4,}/));
+          // --- CORREÇÃO DO CRASH ---
+          // Garante que contact existe antes de dar split
+          const safeContact = t.contact || '';
+          const phoneRaw = safeContact.split('|').find(s => s.match(/\d{4,}/));
           const waLink = phoneRaw ? `https://wa.me/55${phoneRaw.replace(/\D/g, '')}` : null;
           
           return (
@@ -193,19 +202,19 @@ export const TalentPool: React.FC = () => {
                    <AlertTriangle size={16} fill="white" />
                  </div>
                )}
- 
+
                <div className="flex justify-between items-start mb-3">
                  <div>
-                    <h3 className="font-bold text-lg text-slate-800 group-hover:text-blue-600 transition-colors cursor-pointer" onClick={(e) => handleEditClick(e, t)}>{t.name}</h3>
+                    <h3 className="font-bold text-lg text-slate-800 group-hover:text-blue-600 transition-colors cursor-pointer" onClick={(e) => handleEditClick(e, t)}>{t.name || 'Sem Nome'}</h3>
                     <p className="text-blue-600 font-bold text-sm uppercase tracking-wide">{t.targetRole}</p>
                  </div>
-                 <span className="text-xs bg-slate-100 px-2 py-1 rounded font-bold text-slate-600">{t.age} anos</span>
+                 <span className="text-xs bg-slate-100 px-2 py-1 rounded font-bold text-slate-600">{t.age ? `${t.age} anos` : '-'}</span>
                </div>
                
                <div className="text-sm text-slate-500 space-y-1.5 mb-4">
-                 <p>{t.city}</p>
+                 <p>{t.city || 'Cidade N/I'}</p>
                  <div className="flex items-center gap-2">
-                    <p className="truncate max-w-[180px]" title={t.contact}>{t.contact}</p>
+                    <p className="truncate max-w-[180px]" title={safeContact}>{safeContact}</p>
                     {waLink && (
                         <a href={waLink} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="bg-green-500 text-white p-1 rounded-full hover:bg-green-600 transition-colors" title="WhatsApp">
                             <Phone size={12} fill="white"/>
@@ -214,7 +223,7 @@ export const TalentPool: React.FC = () => {
                  </div>
                  {t.salaryExpectation && <p className="text-emerald-600 font-bold flex items-center gap-1"><DollarSign size={14}/> {t.salaryExpectation}</p>}
                </div>
- 
+
                <div className="flex flex-wrap gap-2 mb-4">
                  {(t.tags || []).slice(0, 4).map((tag, i) => (
                    <span key={i} className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md border border-indigo-100 font-medium">{tag}</span>
@@ -226,7 +235,7 @@ export const TalentPool: React.FC = () => {
                  <div className="flex items-center gap-1.5"><GraduationCap size={16} className="text-slate-400" /> {(t.education || []).length} Formações</div>
                  <div className="flex items-center gap-1.5"><Briefcase size={16} className="text-slate-400" /> {(t.experience || []).length} Experiências</div>
                </div>
- 
+
                <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 bg-white/90 p-1 rounded-lg shadow-sm border border-slate-100">
                   <button onClick={(e) => handleLinkClick(e, t)} className="p-2 bg-blue-100 text-blue-600 rounded hover:bg-blue-200 transition-colors" title="Vincular a uma vaga"><LinkIcon size={16} /></button>
                   <button onClick={(e) => handleEditClick(e, t)} className="p-2 bg-slate-100 text-slate-600 rounded hover:bg-slate-200 transition-colors" title="Editar Talento"><Edit2 size={16} /></button>
@@ -250,20 +259,20 @@ export const TalentPool: React.FC = () => {
         </div>
       )}
 
-      {/* Modais de Link e Delete (Mantidos) */}
+      {/* Modais de Link e Delete */}
       {isLinkModalOpen && talentToLink && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-              <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><LinkIcon size={20} className="text-blue-600"/> Vincular Candidato</h3>
-              <p className="text-sm text-slate-500 mb-4">Selecione a vaga para vincular <strong>{talentToLink.name}</strong>.</p>
-              <select className="w-full border p-3 rounded-lg mb-4 bg-white font-medium text-slate-700" value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)}>
+             <h3 className="text-xl font-bold mb-4 flex items-center gap-2"><LinkIcon size={20} className="text-blue-600"/> Vincular Candidato</h3>
+             <p className="text-sm text-slate-500 mb-4">Selecione a vaga para vincular <strong>{talentToLink.name}</strong>.</p>
+             <select className="w-full border p-3 rounded-lg mb-4 bg-white font-medium text-slate-700" value={selectedJobId} onChange={e => setSelectedJobId(e.target.value)}>
                  <option value="">Selecione a Vaga...</option>
                  {openJobs.map(j => (<option key={j.id} value={j.id}>{j.title} ({j.unit})</option>))}
-              </select>
-              <div className="flex justify-end gap-2">
+             </select>
+             <div className="flex justify-end gap-2">
                  <button onClick={() => setIsLinkModalOpen(false)} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded">Cancelar</button>
                  <button onClick={confirmLink} disabled={!selectedJobId} className="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 disabled:bg-slate-300">Confirmar Vínculo</button>
-              </div>
+             </div>
            </div>
         </div>
       )}
@@ -271,15 +280,15 @@ export const TalentPool: React.FC = () => {
       {isDeleteModalOpen && (
         <div className="fixed inset-0 bg-red-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
            <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md border-t-4 border-red-500">
-              <h3 className="text-xl font-bold mb-2 text-slate-800">Excluir Talento?</h3>
-              <p className="text-sm text-slate-500 mb-4">Esta ação moverá <strong>{talentToDelete?.name}</strong> para a lixeira. Digite <strong>DELETE</strong> para confirmar.</p>
-              <form onSubmit={confirmDelete}>
+             <h3 className="text-xl font-bold mb-2 text-slate-800">Excluir Talento?</h3>
+             <p className="text-sm text-slate-500 mb-4">Esta ação moverá <strong>{talentToDelete?.name}</strong> para a lixeira. Digite <strong>DELETE</strong> para confirmar.</p>
+             <form onSubmit={confirmDelete}>
                  <input autoFocus className="w-full border p-2 rounded mb-4 text-center uppercase tracking-widest font-bold" value={deleteConfirmation} onChange={e => setDeleteConfirmation(e.target.value)} placeholder="DELETE" />
                  <div className="flex gap-2">
                     <button type="button" onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-2 text-slate-500 hover:bg-slate-50 rounded">Cancelar</button>
-                    <button type="submit" disabled={deleteConfirmation !== 'DELETE'} className="flex-1 py-2 bg-red-600 disabled:bg-slate-300 text-white font-bold rounded hover:bg-red-700">Excluir</button>
+                    <button type="submit" disabled={deleteConfirmation.toUpperCase() !== 'DELETE'} className="flex-1 py-2 bg-red-600 disabled:bg-slate-300 text-white font-bold rounded hover:bg-red-700">Excluir</button>
                  </div>
-              </form>
+             </form>
            </div>
         </div>
       )}
