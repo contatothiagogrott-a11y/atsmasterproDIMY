@@ -15,7 +15,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 
 const generateId = () => crypto.randomUUID();
 
-// Lista para controle interno do campo "Outros"
+// Lista para controle interno do campo "Outros" (Perda Geral)
 const STANDARD_REASONS = [
   "Aceitou outra proposta", 
   "Salário abaixo da pretensão", 
@@ -25,6 +25,16 @@ const STANDARD_REASONS = [
   "Sem Fit Cultural", 
   "Reprovado no Teste Técnico", 
   "Salário acima do budget"
+];
+
+// NOVA LISTA: Motivos específicos de Reprovação TÉCNICA
+const TECH_REASONS = [
+  "Não atingiu a nota mínima",
+  "Conhecimento insuficiente na stack principal",
+  "Código não funcional / com bugs",
+  "Não entregou o teste no prazo",
+  "Plágio / Cópia identificada",
+  "Boa lógica, mas sênioridade abaixo do esperado"
 ];
 
 const toInputDate = (isoString?: string) => {
@@ -73,6 +83,8 @@ export const JobDetails: React.FC = () => {
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [techCandidate, setTechCandidate] = useState<Candidate | null>(null);
   const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado', rejectionDetail: '' });
+  // Novo estado para controlar o tipo de motivo técnico
+  const [techReasonType, setTechReasonType] = useState('');
 
   const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
   const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
@@ -203,16 +215,40 @@ export const JobDetails: React.FC = () => {
 
   const handleOpenTechModal = (c: Candidate) => {
     setTechCandidate(c);
-    setTechForm({ didTest: c.techTest || false, date: toInputDate(c.techTestDate || new Date().toISOString()), evaluator: c.techTestEvaluator || '', result: c.techTestResult || 'Aprovado', rejectionDetail: '' });
+    setTechForm({ 
+        didTest: c.techTest || false, 
+        date: toInputDate(c.techTestDate || new Date().toISOString()), 
+        evaluator: c.techTestEvaluator || '', 
+        result: c.techTestResult || 'Aprovado', 
+        rejectionDetail: c.rejectionReason || '' // Carrega motivo se houver
+    });
+    
+    // Define o tipo de motivo técnico
+    if (c.rejectionReason && TECH_REASONS.includes(c.rejectionReason)) {
+        setTechReasonType(c.rejectionReason);
+    } else if (c.rejectionReason) {
+        setTechReasonType('Outros');
+    } else {
+        setTechReasonType('');
+    }
+    
     setIsTechModalOpen(true);
   };
 
   const saveTechTest = () => {
     if (!techCandidate) return;
-    const update = { ...techCandidate, techTest: techForm.didTest, techTestDate: techForm.didTest ? `${techForm.date}T12:00:00.000Z` : undefined, techTestEvaluator: techForm.didTest ? techForm.evaluator : undefined, techTestResult: techForm.didTest ? techForm.result : undefined };
+    const update = { 
+        ...techCandidate, 
+        techTest: techForm.didTest, 
+        techTestDate: techForm.didTest ? `${techForm.date}T12:00:00.000Z` : undefined, 
+        techTestEvaluator: techForm.didTest ? techForm.evaluator : undefined, 
+        techTestResult: techForm.didTest ? techForm.result : undefined 
+    };
+    
     if (techForm.didTest && techForm.result === 'Reprovado') {
         update.status = 'Reprovado';
-        update.rejectionReason = techForm.rejectionDetail || 'Reprovado no Teste Técnico';
+        // Se for "Outros", usa o texto digitado. Se não, usa a opção selecionada.
+        update.rejectionReason = techReasonType === 'Outros' ? techForm.rejectionDetail : techReasonType;
         update.rejectionDate = new Date().toISOString();
         update.rejectedBy = user?.name || 'Sistema';
     }
@@ -350,7 +386,6 @@ export const JobDetails: React.FC = () => {
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Nome</label><input className="w-full border p-2 rounded text-sm" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                 
-                {/* IDADE ADICIONADA AQUI */}
                 <div className="grid grid-cols-2 gap-2">
                     <div><label className="block text-xs font-bold text-slate-600 mb-1">Telefone</label><input className="w-full border p-2 rounded text-sm" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
                     <div><label className="block text-xs font-bold text-slate-600 mb-1">Idade</label><input type="number" className="w-full border p-2 rounded text-sm" value={formData.age || ''} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
@@ -389,16 +424,10 @@ export const JobDetails: React.FC = () => {
                    </select>
                 </div>
 
-                {/* CAMPO CONDICIONAL: QUEM INDICOU? (CORRIGIDO) */}
                 {formData.origin === 'Indicação' && (
                     <div className="animate-fadeIn md:col-span-2 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
                         <label className="block text-xs font-bold text-indigo-700 mb-1">Quem Indicou? (Obrigatório)</label>
-                        <input 
-                            className="w-full border border-indigo-200 bg-white p-2 rounded text-sm placeholder-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none"
-                            placeholder="Nome do Padrinho/Madrinha"
-                            value={formData.referralName || ''}
-                            onChange={e => setFormData({...formData, referralName: e.target.value})}
-                        />
+                        <input className="w-full border border-indigo-200 bg-white p-2 rounded text-sm placeholder-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Nome do Padrinho/Madrinha" value={formData.referralName || ''} onChange={e => setFormData({...formData, referralName: e.target.value})} />
                     </div>
                 )}
 
@@ -466,7 +495,7 @@ export const JobDetails: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL TESTE TÉCNICO --- */}
+      {/* --- MODAL TESTE TÉCNICO (ATUALIZADO) --- */}
       {isTechModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
            <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-2xl animate-fadeIn">
@@ -476,12 +505,48 @@ export const JobDetails: React.FC = () => {
                     <input type="checkbox" className="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500" checked={techForm.didTest} onChange={e => setTechForm({...techForm, didTest: e.target.checked})} /> 
                     <span className="font-black text-indigo-900 text-sm uppercase tracking-widest">Registrar Teste Técnico</span>
                 </label>
-                {techForm.didTest && ( <div className="space-y-4 animate-fadeIn">
+                
+                {techForm.didTest && ( 
+                    <div className="space-y-4 animate-fadeIn">
                       <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Data Realização</label><input type="date" className="w-full border p-2 rounded-lg font-bold" value={techForm.date} onChange={e => setTechForm({...techForm, date: e.target.value})} /></div>
                       <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Avaliador (Gestor)</label><input className="w-full border p-2 rounded-lg font-bold" value={techForm.evaluator} onChange={e => setTechForm({...techForm, evaluator: e.target.value})} /></div>
                       <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Veredito</label><select className="w-full border p-2 rounded-lg font-bold" value={techForm.result} onChange={e => setTechForm({...techForm, result: e.target.value})}><option value="Aprovado">Aprovado</option><option value="Reprovado">Reprovado</option></select></div>
-                      {techForm.result === 'Reprovado' && <input className="w-full border border-red-200 p-2 rounded-lg bg-red-50 text-red-700 font-bold" placeholder="Por que reprovou?" value={techForm.rejectionDetail} onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} />}
-                </div>)}
+                      
+                      {/* SE REPROVADO, MOSTRA SELETOR DE MOTIVO TÉCNICO */}
+                      {techForm.result === 'Reprovado' && (
+                          <div className="bg-red-50 p-3 rounded-lg border border-red-100 animate-fadeIn">
+                              <label className="block text-[10px] font-black text-red-500 uppercase mb-1">Motivo da Reprovação</label>
+                              <select 
+                                  className="w-full border border-red-200 p-2 rounded-lg bg-white mb-2 text-sm text-red-800 font-medium outline-none focus:ring-2 focus:ring-red-300"
+                                  value={techReasonType}
+                                  onChange={(e) => {
+                                      const val = e.target.value;
+                                      setTechReasonType(val);
+                                      if (val !== 'Outros') {
+                                          setTechForm({...techForm, rejectionDetail: val});
+                                      } else {
+                                          setTechForm({...techForm, rejectionDetail: ''});
+                                      }
+                                  }}
+                              >
+                                  <option value="">Selecione...</option>
+                                  {TECH_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                                  <option value="Outros">Outros (Escrever)</option>
+                              </select>
+                              
+                              {techReasonType === 'Outros' && (
+                                  <input 
+                                    className="w-full border border-red-200 p-2 rounded-lg bg-white text-red-700 font-bold placeholder-red-300" 
+                                    placeholder="Descreva o motivo..." 
+                                    value={techForm.rejectionDetail} 
+                                    onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} 
+                                  />
+                              )}
+                          </div>
+                      )}
+                    </div>
+                )}
+                
                 <div className="flex justify-end gap-2 pt-4"><button onClick={() => setIsTechModalOpen(false)} className="px-5 py-2 text-slate-500 font-bold">Voltar</button><button onClick={saveTechTest} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-indigo-100">Salvar Avaliação</button></div>
              </div>
            </div>
