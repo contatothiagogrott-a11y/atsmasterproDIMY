@@ -9,7 +9,8 @@ import {
   Settings, 
   LogOut, 
   UserCircle,
-  Database
+  Database,
+  ClipboardList // <--- 1. Ícone adicionado
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -49,7 +50,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <span className="font-semibold">Vagas</span>
           </Link>
 
-          {/* CORRIGIDO AQUI: De /talent para /talent-pool */}
+          {/* --- 2. NOVO ITEM NO MENU: ENTREVISTAS GERAIS --- */}
+          <Link to="/general-interviews" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/general-interviews') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
+            <ClipboardList size={20} />
+            <span className="font-semibold">Entrevistas Gerais</span>
+          </Link>
+
           <Link to="/talent-pool" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/talent-pool') || isActive('/talents') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
             <Users size={20} />
             <span className="font-semibold">Banco de Talentos</span>
