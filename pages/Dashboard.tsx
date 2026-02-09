@@ -1,26 +1,37 @@
 import React, { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-// CORREÇÃO: Adicionado 'Search' e 'Beaker' na lista de importação
 import { 
   Briefcase, Users, CheckCircle, XCircle, Clock, AlertCircle, 
   Building2, TrendingUp, UserMinus, Lock, Unlock, X, 
   PieChart as PieChartIcon, ChevronRight, ExternalLink, Target,
-  Search, Beaker 
+  Search, Beaker
 } from 'lucide-react';
 import { isWithinInterval, parseISO } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
+
+// Tipos para o DrillDown (Detalhes ao clicar)
+type DrillDownType = 
+  'Aumento de Quadro' | 'Substituição' | 
+  'OPEN' | 'CLOSED' | 'FROZEN' | 'CANCELED' | 
+  'TOTAL_CANDIDATES' | 'IN_TEST' | 'APPROVED' | 'INTERNAL_REC' | null;
 
 export const Dashboard: React.FC = () => {
   const { jobs, candidates, settings, user } = useData();
   const navigate = useNavigate();
   
+  // --- 1. CONFIGURAÇÃO DE DATAS PADRÃO (MÊS ATUAL) ---
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+
   const [sectorFilter, setSectorFilter] = useState('');
   const [unitFilter, setUnitFilter] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Inicia com dia 1 até hoje
+  const [startDate, setStartDate] = useState(firstDay.toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
+  
   const [showConfidential, setShowConfidential] = useState(false);
-  const [drillDownType, setDrillDownType] = useState<'Aumento de Quadro' | 'Substituição' | null>(null);
+  const [drillDownType, setDrillDownType] = useState<DrillDownType>(null);
 
   const hasConfidentialAccess = useMemo(() => {
     if (!user) return false;
@@ -30,24 +41,41 @@ export const Dashboard: React.FC = () => {
 
   const filteredData = useMemo(() => {
     let fJobs = jobs.filter(j => !j.isHidden);
+    
+    // Filtro de Confidencialidade
     fJobs = fJobs.filter(j => {
         if (!j.isConfidential) return true;
         if (!user) return false;
         return user.role === 'MASTER' || j.createdBy === user.id || j.allowedUserIds?.includes(user.id);
     });
     if (!showConfidential) fJobs = fJobs.filter(j => !j.isConfidential);
+
+    // Filtros de Setor e Unidade
     if (sectorFilter) fJobs = fJobs.filter(j => j.sector === sectorFilter);
     if (unitFilter) fJobs = fJobs.filter(j => j.unit === unitFilter);
+
+    // Filtro de Data (Aplica nas vagas)
     if (startDate && endDate) {
-      fJobs = fJobs.filter(j => isWithinInterval(parseISO(j.openedAt), { start: parseISO(startDate), end: parseISO(endDate) }));
+      // Ajusta o final do dia para incluir o dia inteiro selecionado
+      const endDateTime = new Date(endDate);
+      endDateTime.setHours(23, 59, 59, 999);
+      
+      fJobs = fJobs.filter(j => {
+         const opened = new Date(j.openedAt);
+         return opened >= new Date(startDate) && opened <= endDateTime;
+      });
     }
+
+    // Filtra candidatos baseados nas vagas filtradas
     const jobIds = new Set(fJobs.map(j => j.id));
     const fCandidates = candidates.filter(c => jobIds.has(c.jobId));
+    
     return { fJobs, fCandidates };
   }, [jobs, candidates, sectorFilter, unitFilter, startDate, endDate, showConfidential, user]);
 
   const { fJobs, fCandidates } = filteredData;
 
+  // --- 2. CÁLCULO DOS KPIS ---
   const kpis = {
     open: fJobs.filter(j => j.status === 'Aberta').length,
     closed: fJobs.filter(j => j.status === 'Fechada').length,
@@ -56,7 +84,11 @@ export const Dashboard: React.FC = () => {
     totalCandidates: fCandidates.length,
     inTest: fCandidates.filter(c => c.status === 'Em Teste').length,
     approved: fCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).length,
-    internalRecruitment: fCandidates.filter(c => c.origin === 'Recrutamento Interno').length,
+    // LÓGICA CORRIGIDA: Só conta se for Recrutamento Interno E aprovado/contratado
+    internalRecruitment: fCandidates.filter(c => 
+        c.origin === 'Recrutamento Interno' && 
+        ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)
+    ).length,
     expansion: fJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro').length,
     replacement: fJobs.filter(j => j.openingDetails?.reason === 'Substituição').length
   };
@@ -67,6 +99,68 @@ export const Dashboard: React.FC = () => {
     { name: 'Congelada', value: kpis.frozen, color: '#f59e0b' },
     { name: 'Cancelada', value: kpis.canceled, color: '#ef4444' },
   ];
+
+  // --- HELPER PARA O CONTEÚDO DO MODAL ---
+  const getDrillDownContent = () => {
+      // 1. LISTA DE VAGAS
+      if (['OPEN', 'CLOSED', 'FROZEN', 'CANCELED', 'Aumento de Quadro', 'Substituição'].includes(drillDownType as string)) {
+          let targetJobs = fJobs;
+          if (drillDownType === 'OPEN') targetJobs = fJobs.filter(j => j.status === 'Aberta');
+          if (drillDownType === 'CLOSED') targetJobs = fJobs.filter(j => j.status === 'Fechada');
+          if (drillDownType === 'FROZEN') targetJobs = fJobs.filter(j => j.status === 'Congelada');
+          if (drillDownType === 'CANCELED') targetJobs = fJobs.filter(j => j.status === 'Cancelada');
+          if (drillDownType === 'Aumento de Quadro') targetJobs = fJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro');
+          if (drillDownType === 'Substituição') targetJobs = fJobs.filter(j => j.openingDetails?.reason === 'Substituição');
+
+          return (
+            <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px]">
+                    <tr><th className="p-4 rounded-l-xl">Vaga</th><th className="p-4 text-center">Status</th><th className="p-4 text-center">Unidade</th><th className="p-4 text-right rounded-r-xl">Ação</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {targetJobs.map(j => (
+                        <tr key={j.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-4 font-black text-slate-700">{j.title}</td>
+                            <td className="p-4 text-center"><span className="px-2 py-1 rounded bg-slate-100 font-bold text-[10px] uppercase">{j.status}</span></td>
+                            <td className="p-4 text-center text-slate-500">{j.unit}</td>
+                            <td className="p-4 text-right"><button onClick={() => navigate(`/jobs/${j.id}`)} className="text-indigo-600 font-bold hover:underline flex items-center justify-end gap-1"><ExternalLink size={14}/> Abrir</button></td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+          );
+      }
+
+      // 2. LISTA DE CANDIDATOS
+      if (['TOTAL_CANDIDATES', 'IN_TEST', 'APPROVED', 'INTERNAL_REC'].includes(drillDownType as string)) {
+          let targetCandidates = fCandidates;
+          if (drillDownType === 'IN_TEST') targetCandidates = fCandidates.filter(c => c.status === 'Em Teste');
+          if (drillDownType === 'APPROVED') targetCandidates = fCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status));
+          if (drillDownType === 'INTERNAL_REC') targetCandidates = fCandidates.filter(c => c.origin === 'Recrutamento Interno' && ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status));
+
+          return (
+            <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px]">
+                    <tr><th className="p-4 rounded-l-xl">Candidato</th><th className="p-4">Vaga</th><th className="p-4 text-center">Status</th><th className="p-4 text-right rounded-r-xl">Ação</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {targetCandidates.map(c => {
+                        const job = jobs.find(j => j.id === c.jobId);
+                        return (
+                            <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-4 font-black text-slate-700">{c.name}</td>
+                                <td className="p-4 text-slate-600">{job?.title || 'Vaga N/I'}</td>
+                                <td className="p-4 text-center"><span className="px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold text-[10px] uppercase">{c.status}</span></td>
+                                <td className="p-4 text-right"><button onClick={() => navigate(`/jobs/${c.jobId}`)} className="text-indigo-600 font-bold hover:underline flex items-center justify-end gap-1"><Target size={14}/> Ver Vaga</button></td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+          );
+      }
+      return null;
+  };
 
   return (
     <div className="space-y-8 animate-fadeIn">
@@ -96,16 +190,16 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* KPI Cards: Visuais corrigidos com ícones no fundo */}
+      {/* --- 3. KPI Cards CLICÁVEIS --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
-        <KPICard title="Abertas" value={kpis.open} color="text-blue-600" bgIcon={Briefcase} />
-        <KPICard title="Fechadas" value={kpis.closed} color="text-emerald-600" bgIcon={CheckCircle} />
-        <KPICard title="Congeladas" value={kpis.frozen} color="text-amber-600" bgIcon={Clock} />
-        <KPICard title="Canceladas" value={kpis.canceled} color="text-red-600" bgIcon={XCircle} />
-        <KPICard title="Candidatos" value={kpis.totalCandidates} color="text-slate-700" bgIcon={Users} />
-        <KPICard title="Em Teste" value={kpis.inTest} color="text-indigo-600" bgIcon={Beaker} />
-        <KPICard title="Aprovados" value={kpis.approved} color="text-green-700" bgIcon={Target} />
-        <KPICard title="Rec. Interno" value={kpis.internalRecruitment} color="text-purple-700" bgIcon={Building2} />
+        <KPICard title="Abertas" value={kpis.open} color="text-blue-600" bgIcon={Briefcase} onClick={() => setDrillDownType('OPEN')} />
+        <KPICard title="Fechadas" value={kpis.closed} color="text-emerald-600" bgIcon={CheckCircle} onClick={() => setDrillDownType('CLOSED')} />
+        <KPICard title="Congeladas" value={kpis.frozen} color="text-amber-600" bgIcon={Clock} onClick={() => setDrillDownType('FROZEN')} />
+        <KPICard title="Canceladas" value={kpis.canceled} color="text-red-600" bgIcon={XCircle} onClick={() => setDrillDownType('CANCELED')} />
+        <KPICard title="Candidatos" value={kpis.totalCandidates} color="text-slate-700" bgIcon={Users} onClick={() => setDrillDownType('TOTAL_CANDIDATES')} />
+        <KPICard title="Em Teste" value={kpis.inTest} color="text-indigo-600" bgIcon={Beaker} onClick={() => setDrillDownType('IN_TEST')} />
+        <KPICard title="Aprovados" value={kpis.approved} color="text-green-700" bgIcon={Target} onClick={() => setDrillDownType('APPROVED')} />
+        <KPICard title="Rec. Interno" value={kpis.internalRecruitment} color="text-purple-700" bgIcon={Building2} onClick={() => setDrillDownType('INTERNAL_REC')} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -153,35 +247,22 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Janela de Drill-Down (Detalhes das Vagas por Categoria) */}
+      {/* --- 4. MODAL DE DRILL-DOWN (DETALHES) --- */}
       {drillDownType && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[10000] p-4 animate-fadeIn">
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                       <div className="flex items-center gap-3">
-                          <div className={`p-2.5 rounded-xl text-white shadow-lg ${drillDownType === 'Substituição' ? 'bg-rose-500' : 'bg-indigo-600'}`}>{drillDownType === 'Substituição' ? <UserMinus size={22} /> : <TrendingUp size={22} />}</div>
-                          <div><h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Vagas em {drillDownType}</h2><p className="text-xs text-slate-400 font-black uppercase tracking-widest">Resumo operacional detalhado</p></div>
+                          <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg"><Search size={22} /></div>
+                          <div>
+                            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Detalhes: {drillDownType}</h2>
+                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Registros encontrados</p>
+                          </div>
                       </div>
                       <button onClick={() => setDrillDownType(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all shadow-sm"><X size={24} /></button>
                   </div>
                   <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                      <table className="w-full text-left text-xs">
-                          <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px]"><tr><th className="p-4 rounded-l-xl">Título da Vaga</th><th className="p-4 text-center">Status</th><th className="p-4 text-center">Unidade</th><th className="p-4 text-right rounded-r-xl">Ação</th></tr></thead>
-                          <tbody className="divide-y divide-slate-100">
-                              {fJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === drillDownType).map(vaga => (
-                                  <tr key={vaga.id} className="hover:bg-slate-50 transition-colors">
-                                      <td className="p-4 font-black text-slate-700 text-sm">{vaga.title}</td>
-                                      <td className="p-4 text-center"><span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase border ${vaga.status === 'Aberta' ? 'bg-blue-50 text-blue-700 border-blue-100' : vaga.status === 'Fechada' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>{vaga.status}</span></td>
-                                      <td className="p-4 text-center font-bold text-slate-500 uppercase">{vaga.unit}</td>
-                                      <td className="p-4 text-right">
-                                          <button onClick={() => navigate(`/jobs/${vaga.id}`)} className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 px-3 rounded-lg shadow-sm transition-all flex items-center gap-2 ml-auto font-black uppercase text-[10px]">
-                                              <ExternalLink size={14} /> Abrir Vaga
-                                          </button>
-                                      </td>
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
+                      {getDrillDownContent()}
                   </div>
               </div>
           </div>
@@ -190,10 +271,13 @@ export const Dashboard: React.FC = () => {
   );
 };
 
-// Componente de Card Operacional (KPI) Refatorado
-const KPICard = ({ title, value, color, bgIcon: BgIcon }: any) => (
-  <div className="relative p-5 rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col justify-between min-h-[115px] overflow-hidden group transition-all hover:shadow-md hover:-translate-y-1">
-    {/* Ícone Decorativo: Cores mais vivas e z-index para ficar atrás do texto */}
+// Componente de Card Operacional (KPI) com suporte a onClick
+const KPICard = ({ title, value, color, bgIcon: BgIcon, onClick }: any) => (
+  <div 
+    onClick={onClick}
+    className={`relative p-5 rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col justify-between min-h-[115px] overflow-hidden group transition-all hover:shadow-md hover:-translate-y-1 cursor-pointer`}
+  >
+    {/* Ícone Decorativo */}
     <div className={`absolute -right-4 -bottom-4 opacity-[0.12] group-hover:opacity-[0.20] transition-all duration-300 pointer-events-none z-0 ${color}`}>
         <BgIcon size={95} strokeWidth={1.5} />
     </div>
