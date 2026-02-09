@@ -63,7 +63,14 @@ export const StrategicReport: React.FC = () => {
   }), [jobs, unitFilter, isConfidentialUnlocked, user]);
 
   const jobIds = useMemo(() => new Set(accessibleJobs.map(j => j.id)), [accessibleJobs]);
-  const accessibleCandidates = useMemo(() => candidates.filter(c => jobIds.has(c.jobId)), [candidates, jobIds]);
+  
+  // --- CORREÇÃO AQUI: Incluir candidatos do Pool Geral ---
+  const accessibleCandidates = useMemo(() => candidates.filter(c => {
+      // Se tiver filtro de unidade, o Geral só aparece se a unidade for vazia (Global) 
+      // ou se você quiser que apareça sempre, remova a verificação do unitFilter.
+      const isGeneral = c.jobId === 'general' && (!unitFilter || unitFilter === ''); 
+      return jobIds.has(c.jobId) || isGeneral;
+  }), [candidates, jobIds, unitFilter]);
 
   const metrics = useMemo(() => {
     const jobsOpened = accessibleJobs.filter(j => isWithin(j.openedAt));
@@ -186,7 +193,7 @@ export const StrategicReport: React.FC = () => {
 
                   <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
                       
-                      {/* --- NOVO: PAINEL DE INDICADORES VISUAIS PARA MOTIVOS --- */}
+                      {/* PAINEL DE INDICADORES VISUAIS PARA MOTIVOS */}
                       {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
                           <div className="p-6 bg-slate-50/50 border-b border-slate-100">
                               <div className="flex items-center gap-2 mb-4">
@@ -197,7 +204,7 @@ export const StrategicReport: React.FC = () => {
                               </div>
                               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                   {Object.entries(metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].reasons)
-                                      .sort(([,a], [,b]) => b - a) // Ordena do maior para o menor
+                                      .sort(([,a], [,b]) => b - a) 
                                       .map(([reason, count]) => (
                                           <div key={reason} className={`p-3 rounded-xl border flex flex-col justify-between shadow-sm relative overflow-hidden ${drillDownTarget === 'REJECTED' ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'}`}>
                                               <div className={`text-2xl font-black mb-1 ${drillDownTarget === 'REJECTED' ? 'text-red-600' : 'text-orange-600'}`}>
@@ -206,7 +213,6 @@ export const StrategicReport: React.FC = () => {
                                               <div className="text-[10px] font-bold uppercase text-slate-600 leading-tight">
                                                   {reason}
                                               </div>
-                                              {/* Barra de Progresso Visual */}
                                               <div className="absolute bottom-0 left-0 h-1 bg-current opacity-20" style={{ 
                                                   width: `${(count / (metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].total || 1)) * 100}%`,
                                                   color: drillDownTarget === 'REJECTED' ? 'red' : 'orange'
@@ -253,10 +259,14 @@ export const StrategicReport: React.FC = () => {
 
                                   {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].list.map(c => {
                                       const job = jobs.find(j => j.id === c.jobId);
+                                      // --- CORREÇÃO AQUI: Exibe "Entrevista Geral" se não tiver vaga ---
+                                      const displayTitle = c.jobId === 'general' ? 'Entrevista Geral (Pool)' : job?.title;
+                                      const displaySector = c.jobId === 'general' ? 'Sem vaga definida' : `${job?.sector} | ${job?.unit}`;
+                                      
                                       return (
                                           <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                                               <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                              <td className="p-3 text-slate-500 font-medium">{job?.title} <br/> <span className="text-[10px] text-slate-400 uppercase">{job?.sector} | {job?.unit}</span></td>
+                                              <td className="p-3 text-slate-500 font-medium">{displayTitle} <br/> <span className="text-[10px] text-slate-400 uppercase">{displaySector}</span></td>
                                               <td className="p-3 pr-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>{c.rejectionReason || 'Sem motivo detalhado'}</span></td>
                                           </tr>
                                       );
@@ -264,10 +274,13 @@ export const StrategicReport: React.FC = () => {
 
                                   {drillDownTarget === 'INTERVIEWS' && metrics.interviews.list.map(c => {
                                       const job = jobs.find(j => j.id === c.jobId);
+                                      // --- CORREÇÃO AQUI TAMBÉM ---
+                                      const displayTitle = c.jobId === 'general' ? 'Entrevista Geral (Pool)' : job?.title;
+
                                       return (
                                           <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                                               <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                              <td className="p-3 text-slate-500 font-medium">{job?.title}</td>
+                                              <td className="p-3 text-slate-500 font-medium">{displayTitle}</td>
                                               <td className="p-3 text-right pr-4 font-bold text-amber-600">{c.interviewAt ? new Date(c.interviewAt).toLocaleDateString() : '-'}</td>
                                           </tr>
                                       );
