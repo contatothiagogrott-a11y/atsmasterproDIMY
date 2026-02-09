@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useData } from '../context/DataContext';
+// --- CORREÇÃO AQUI: Adicionei Trash2 na lista de imports ---
 import { 
   ArrowLeft, Save, Briefcase, GraduationCap, Plus, X, 
-  User, Phone, MapPin, Target, DollarSign, FileText 
+  User, Phone, MapPin, Target, DollarSign, FileText, Trash2 
 } from 'lucide-react';
-import { TalentProfile, Education, Experience } from '../types';
+import { TalentProfile, Education, Experience, Candidate } from '../types';
 
 const generateId = () => crypto.randomUUID();
 
 export const TalentDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { talents, addTalent, updateTalent } = useData();
+  const { talents, addTalent, updateTalent, candidates, jobs } = useData();
 
   const isEditing = id && id !== 'new';
 
@@ -32,13 +33,31 @@ export const TalentDetails: React.FC = () => {
     if (isEditing) {
       const found = talents.find(t => t.id === id);
       if (found) {
-        setFormData(JSON.parse(JSON.stringify(found))); // Deep copy para evitar mutação direta
-      } else {
-        alert('Talento não encontrado');
-        navigate('/talent-pool');
+        setFormData(JSON.parse(JSON.stringify(found))); 
       }
     }
-  }, [id, talents, navigate, isEditing]);
+  }, [id, talents, isEditing]);
+
+  // Histórico de Candidaturas (Calculado automaticamente baseado no telefone/email)
+  const history = candidates.filter(c => {
+      if (!formData.contact) return false;
+      const cleanContact = formData.contact.replace(/\D/g, ''); // Limpa para comparar números
+      const cleanCandidatePhone = c.phone?.replace(/\D/g, '') || '';
+      
+      // Verifica se o contato do talento está no email ou telefone do candidato
+      const matchEmail = c.email && formData.contact.includes(c.email);
+      const matchPhone = cleanCandidatePhone && cleanContact.includes(cleanCandidatePhone);
+      
+      return matchEmail || matchPhone;
+  }).map(c => {
+      const job = jobs.find(j => j.id === c.jobId);
+      return {
+          date: c.createdAt,
+          jobTitle: job ? job.title : 'Vaga Desconhecida',
+          status: c.status,
+          notes: c.rejectionReason || '-'
+      };
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +76,7 @@ export const TalentDetails: React.FC = () => {
       salaryExpectation: formData.salaryExpectation,
       transportation: formData.transportation,
       createdAt: formData.createdAt || new Date().toISOString(),
-      needsReview: false, // Remove flag de revisão ao salvar manual
+      needsReview: false,
       observations: formData.observations || []
     } as TalentProfile;
 
@@ -67,10 +86,10 @@ export const TalentDetails: React.FC = () => {
       addTalent(payload);
     }
     
-    navigate('/talent-pool'); // Volta para a lista
+    navigate('/talent-pool');
   };
 
-  // --- Handlers de Arrays (Tags, Exp, Edu, Obs) ---
+  // --- Handlers ---
   const handleAddTag = () => {
     if(tagInput.trim()) {
       setFormData(prev => ({ ...prev, tags: [...(prev.tags || []), tagInput.trim()] }));
@@ -97,7 +116,7 @@ export const TalentDetails: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto pb-12">
-      {/* Header com Voltar */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/talent-pool')} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
@@ -157,6 +176,35 @@ export const TalentDetails: React.FC = () => {
             </div>
          </div>
 
+         {/* Bloco 3: Histórico Automático (Só Visualização) */}
+         {history.length > 0 && (
+             <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Target size={20} className="text-orange-500"/> Histórico de Processos (Automático)</h3>
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                    <table className="w-full text-sm text-left bg-white">
+                        <thead className="bg-slate-100 text-slate-500 font-bold">
+                            <tr>
+                                <th className="p-3">Data</th>
+                                <th className="p-3">Vaga</th>
+                                <th className="p-3">Status Final</th>
+                                <th className="p-3">Obs</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {history.map((h, i) => (
+                                <tr key={i}>
+                                    <td className="p-3">{new Date(h.date).toLocaleDateString()}</td>
+                                    <td className="p-3 font-bold text-slate-700">{h.jobTitle}</td>
+                                    <td className="p-3"><span className="bg-slate-100 px-2 py-1 rounded text-xs font-bold">{h.status}</span></td>
+                                    <td className="p-3 text-slate-500">{h.notes}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+             </div>
+         )}
+
          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
              {/* Experiência */}
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
@@ -213,7 +261,10 @@ export const TalentDetails: React.FC = () => {
                 {(formData.observations || []).map((obs, i) => (
                     <li key={i} className="text-sm text-slate-700 bg-yellow-50 p-3 rounded-lg border border-yellow-100 flex justify-between items-center group">
                         <span>{obs}</span>
-                        <button type="button" onClick={() => setFormData(p => ({...p, observations: p.observations?.filter((_, idx) => idx !== i)}))} className="text-yellow-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
+                        {/* AQUI ESTAVA O ERRO! AGORA TRASH2 JÁ FOI IMPORTADO */}
+                        <button type="button" onClick={() => setFormData(p => ({...p, observations: p.observations?.filter((_, idx) => idx !== i)}))} className="text-yellow-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Trash2 size={14}/>
+                        </button>
                     </li>
                 ))}
             </ul>
