@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Plus, Search, Trash2, GraduationCap, Briefcase, 
   DollarSign, AlertTriangle, Link as LinkIcon, 
-  Phone, Users, Edit2, ChevronLeft, ChevronRight
+  Phone, Users, Edit2, ChevronLeft, ChevronRight, Mail
 } from 'lucide-react';
 import { TalentProfile, Candidate } from '../types';
 
@@ -121,8 +121,8 @@ export const TalentPool: React.FC = () => {
       // Proteção contra contato nulo
       const safeContact = talentToLink.contact || '';
       const contactParts = safeContact.split('|');
-      const email = contactParts[0]?.includes('@') ? contactParts[0].trim() : undefined;
-      const phone = contactParts.find(p => p.match(/\d{8,}/))?.trim() || safeContact;
+      const email = contactParts.find(p => p.includes('@'))?.trim();
+      const phone = contactParts.find(p => p.match(/\d{4,}/))?.trim() || safeContact;
 
       const newCandidate: Candidate = {
         id: generateId(),
@@ -189,11 +189,16 @@ export const TalentPool: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {paginatedTalents.map(t => {
-          // --- CORREÇÃO DO CRASH ---
-          // Garante que contact existe antes de dar split
+          // --- LÓGICA DE EXIBIÇÃO SEPARADA ---
           const safeContact = t.contact || '';
-          const phoneRaw = safeContact.split('|').find(s => s.match(/\d{4,}/));
-          const waLink = phoneRaw ? `https://wa.me/55${phoneRaw.replace(/\D/g, '')}` : null;
+          const contactParts = safeContact.split('|');
+          
+          // Tenta encontrar partes que pareçam email ou telefone
+          const emailPart = contactParts.find(p => p.includes('@'))?.trim();
+          const phonePart = contactParts.find(p => p.match(/\d{4,}/))?.trim();
+          
+          // Link do WhatsApp baseado na parte do telefone encontrada
+          const waLink = phonePart ? `https://wa.me/55${phonePart.replace(/\D/g, '')}` : null;
           
           return (
             <div key={t.id} className={`bg-white rounded-xl border p-6 shadow-sm hover:shadow-lg transition-all group relative ${t.needsReview ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-200'}`}>
@@ -211,16 +216,35 @@ export const TalentPool: React.FC = () => {
                  <span className="text-xs bg-slate-100 px-2 py-1 rounded font-bold text-slate-600">{t.age ? `${t.age} anos` : '-'}</span>
                </div>
                
-               <div className="text-sm text-slate-500 space-y-1.5 mb-4">
+               <div className="text-sm text-slate-500 space-y-2 mb-4">
                  <p>{t.city || 'Cidade N/I'}</p>
-                 <div className="flex items-center gap-2">
-                    <p className="truncate max-w-[180px]" title={safeContact}>{safeContact}</p>
-                    {waLink && (
-                        <a href={waLink} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="bg-green-500 text-white p-1 rounded-full hover:bg-green-600 transition-colors" title="WhatsApp">
-                            <Phone size={12} fill="white"/>
-                        </a>
-                    )}
-                 </div>
+                 
+                 {/* Exibe Telefone se existir */}
+                 {phonePart && (
+                     <div className="flex items-center gap-2 font-medium text-slate-700">
+                        <Phone size={14} className="text-slate-400"/> {phonePart}
+                        {waLink && (
+                            <a href={waLink} onClick={e => e.stopPropagation()} target="_blank" rel="noopener noreferrer" className="bg-green-500 text-white p-1 rounded-full hover:bg-green-600 transition-colors" title="WhatsApp">
+                                <Phone size={10} fill="white"/>
+                            </a>
+                        )}
+                     </div>
+                 )}
+
+                 {/* Exibe Email se existir */}
+                 {emailPart && (
+                     <div className="flex items-center gap-2 truncate" title={emailPart}>
+                        <Mail size={14} className="text-slate-400"/> {emailPart}
+                     </div>
+                 )}
+
+                 {/* Fallback se não achou nem email nem telefone mas tem texto */}
+                 {!phonePart && !emailPart && safeContact && (
+                     <div className="flex items-center gap-2 truncate">
+                        <Phone size={14} className="text-slate-400"/> {safeContact}
+                     </div>
+                 )}
+
                  {t.salaryExpectation && <p className="text-emerald-600 font-bold flex items-center gap-1"><DollarSign size={14}/> {t.salaryExpectation}</p>}
                </div>
 
