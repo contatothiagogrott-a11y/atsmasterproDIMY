@@ -24,6 +24,7 @@ export const TalentDetails: React.FC = () => {
     transportation: 'Consegue vir até a empresa'
   });
 
+  // --- NOVOS STATES PARA SEPARAR OS CAMPOS ---
   const [emailInput, setEmailInput] = useState('');
   const [phoneInput, setPhoneInput] = useState('');
 
@@ -36,20 +37,51 @@ export const TalentDetails: React.FC = () => {
       const found = talents.find(t => t.id === id);
       if (found) {
         setFormData(JSON.parse(JSON.stringify(found)));
-        // Separa email e telefone se existirem
+        
+        // LÓGICA: Separa a string única em Email e Telefone
         if (found.contact) {
             const parts = found.contact.split('|');
-            setEmailInput(parts.find(p => p.includes('@'))?.trim() || '');
-            setPhoneInput(parts.find(p => p.match(/\d{4,}/))?.trim() || '');
+            // Tenta achar a parte que tem @ (Email)
+            const foundEmail = parts.find(p => p.includes('@'))?.trim();
+            // Tenta achar a parte que tem números (Telefone)
+            const foundPhone = parts.find(p => p.match(/\d{4,}/))?.trim();
+            
+            setEmailInput(foundEmail || '');
+            // Se não achar telefone via regex, pega o que sobrou (fallback) ou vazio
+            setPhoneInput(foundPhone || (parts.find(p => !p.includes('@'))?.trim() || ''));
         }
       }
     }
   }, [id, talents, isEditing]);
 
+  // Histórico de Candidaturas (Atualizado para buscar pelos campos separados)
+  const history = candidates.filter(c => {
+      if (!emailInput && !phoneInput) return false;
+
+      const cleanPhoneInput = phoneInput.replace(/\D/g, ''); 
+      const cleanCandidatePhone = c.phone?.replace(/\D/g, '') || '';
+      
+      // Verifica match de Email
+      const matchEmail = c.email && emailInput && c.email.toLowerCase().includes(emailInput.toLowerCase());
+      
+      // Verifica match de Telefone (precisa ter pelo menos 5 digitos para evitar falsos positivos)
+      const matchPhone = cleanCandidatePhone && cleanPhoneInput.length > 4 && cleanCandidatePhone.includes(cleanPhoneInput);
+      
+      return matchEmail || matchPhone;
+  }).map(c => {
+      const job = jobs.find(j => j.id === c.jobId);
+      return {
+          date: c.createdAt,
+          jobTitle: job ? job.title : 'Vaga Desconhecida',
+          status: c.status,
+          notes: c.rejectionReason || '-'
+      };
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Une email e telefone antes de salvar
+    // LÓGICA DE JUNÇÃO: Junta Email e Telefone numa string única com " | " antes de salvar
     const finalContact = [emailInput, phoneInput].filter(Boolean).join(' | ');
 
     const payload = {
@@ -57,7 +89,7 @@ export const TalentDetails: React.FC = () => {
       id: isEditing ? id! : generateId(),
       name: formData.name!,
       age: Number(formData.age),
-      contact: finalContact,
+      contact: finalContact, // Salva aqui a string unida
       city: formData.city!,
       targetRole: formData.targetRole!,
       tags: formData.tags || [],
@@ -79,59 +111,74 @@ export const TalentDetails: React.FC = () => {
     navigate('/talent-pool');
   };
 
-  // --- Handlers ---
-  const handleAddTag = () => { if(tagInput.trim()) { setFormData(prev => ({ ...prev, tags: [...(prev.tags || []), tagInput.trim()] })); setTagInput(''); } };
-  const handleAddObservation = () => { if(obsInput.trim()) { const timestamp = new Date().toLocaleDateString('pt-BR'); const newObs = `${timestamp}: ${obsInput.trim()}`; setFormData(prev => ({ ...prev, observations: [...(prev.observations || []), newObs] })); setObsInput(''); } };
+  // --- Handlers Auxiliares ---
+  const handleAddTag = () => {
+    if(tagInput.trim()) {
+      setFormData(prev => ({ ...prev, tags: [...(prev.tags || []), tagInput.trim()] }));
+      setTagInput('');
+    }
+  };
+
+  const handleAddObservation = () => {
+    if(obsInput.trim()) {
+      const timestamp = new Date().toLocaleDateString('pt-BR');
+      const newObs = `${timestamp}: ${obsInput.trim()}`;
+      setFormData(prev => ({ ...prev, observations: [...(prev.observations || []), newObs] }));
+      setObsInput('');
+    }
+  };
+
   const addEducation = () => setFormData(prev => ({ ...prev, education: [...(prev.education || []), { institution: '', level: '', status: 'Completo', conclusionYear: '' }] }));
   const updateEducation = (i: number, f: keyof Education, v: string) => { const list = [...(formData.education || [])]; list[i] = { ...list[i], [f]: v }; setFormData(p => ({ ...p, education: list })); };
   const removeEducation = (i: number) => setFormData(p => ({ ...p, education: p.education?.filter((_, idx) => idx !== i) }));
+
   const addExperience = () => setFormData(prev => ({ ...prev, experience: [...(prev.experience || []), { company: '', role: '', period: '', description: '' }] }));
   const updateExperience = (i: number, f: keyof Experience, v: string) => { const list = [...(formData.experience || [])]; list[i] = { ...list[i], [f]: v }; setFormData(p => ({ ...p, experience: list })); };
   const removeExperience = (i: number) => setFormData(p => ({ ...p, experience: p.experience?.filter((_, idx) => idx !== i) }));
 
-  // Histórico
-  const history = candidates.filter(c => {
-      if (!emailInput && !phoneInput) return false;
-      const cleanPhone = phoneInput.replace(/\D/g, ''); 
-      const cleanCandidatePhone = c.phone?.replace(/\D/g, '') || '';
-      const matchEmail = c.email && emailInput && c.email.includes(emailInput);
-      const matchPhone = cleanCandidatePhone && cleanPhone && cleanCandidatePhone.includes(cleanPhone);
-      return matchEmail || matchPhone;
-  }).map(c => {
-      const job = jobs.find(j => j.id === c.jobId);
-      return { date: c.createdAt, jobTitle: job ? job.title : 'Vaga Desconhecida', status: c.status, notes: c.rejectionReason || '-' };
-  });
-
   return (
     <div className="max-w-5xl mx-auto pb-12">
+      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/talent-pool')} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><ArrowLeft size={24} /></button>
+          <button onClick={() => navigate('/talent-pool')} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
+            <ArrowLeft size={24} />
+          </button>
           <div>
             <h1 className="text-2xl font-bold text-slate-800">{isEditing ? 'Editar Perfil' : 'Novo Talento'}</h1>
             <p className="text-slate-500 text-sm">Preencha os dados completos do candidato.</p>
           </div>
         </div>
-        <button onClick={handleSubmit} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg flex items-center gap-2 transition-all"><Save size={20}/> Salvar Perfil</button>
+        <button onClick={handleSubmit} className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-lg flex items-center gap-2 transition-all">
+           <Save size={20}/> Salvar Perfil
+        </button>
       </div>
 
       <div className="space-y-6">
+         {/* Bloco 1: Dados Pessoais */}
          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
             <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2 border-b pb-2"><User size={20} className="text-blue-600"/> Dados Pessoais</h3>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Nome Completo</label><input required className="w-full border p-2.5 rounded-lg" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Idade</label><input type="number" className="w-full border p-2.5 rounded-lg" value={formData.age || ''} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
             </div>
-            
-            {/* CAMPOS SEPARADOS */}
+
+            {/* --- AQUI ESTÃO OS CAMPOS SEPARADOS NO FORMULÁRIO --- */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                <div><label className="block text-xs font-bold text-slate-600 mb-1">Email</label><input type="email" className="w-full border p-2.5 rounded-lg" value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="email@exemplo.com" /></div>
-                <div><label className="block text-xs font-bold text-slate-600 mb-1">Telefone / WhatsApp</label><input className="w-full border p-2.5 rounded-lg" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} placeholder="(XX) 9XXXX-XXXX" /></div>
+                <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><Mail size={14}/> Email</label>
+                    <input type="email" className="w-full border p-2.5 rounded-lg" value={emailInput} onChange={e => setEmailInput(e.target.value)} placeholder="email@exemplo.com" />
+                </div>
+                <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center gap-1"><Phone size={14}/> Telefone / WhatsApp</label>
+                    <input className="w-full border p-2.5 rounded-lg" value={phoneInput} onChange={e => setPhoneInput(e.target.value)} placeholder="(XX) 9XXXX-XXXX" />
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Cidade</label><input className="w-full border p-2.5 rounded-lg" value={formData.city || ''} onChange={e => setFormData({...formData, city: e.target.value})} /></div>
-                <div><label className="block text-xs font-bold text-slate-600 mb-1">Transporte</label>
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Transporte/Locomoção</label>
                    <select className="w-full border p-2.5 rounded-lg bg-white" value={formData.transportation || 'Consegue vir até a empresa'} onChange={e => setFormData({...formData, transportation: e.target.value})}>
                       <option value="Consegue vir até a empresa">Consegue vir até a empresa</option>
                       <option value="Precisa de Fretado/VT">Precisa de Fretado/VT</option>
@@ -141,6 +188,7 @@ export const TalentDetails: React.FC = () => {
             </div>
          </div>
 
+         {/* Bloco 2: Profissional */}
          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
             <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2 border-b pb-2"><Briefcase size={20} className="text-blue-600"/> Objetivo Profissional</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -148,6 +196,7 @@ export const TalentDetails: React.FC = () => {
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Pretensão Salarial</label><input className="w-full border p-2.5 rounded-lg text-emerald-600 font-bold" value={formData.salaryExpectation || ''} onChange={e => setFormData({...formData, salaryExpectation: e.target.value})} /></div>
             </div>
             
+            {/* Tags */}
             <div>
                 <label className="block text-xs font-bold text-slate-600 mb-1">Tags / Habilidades</label>
                 <div className="flex gap-2 mb-3">
@@ -164,6 +213,7 @@ export const TalentDetails: React.FC = () => {
             </div>
          </div>
 
+         {/* Bloco 3: Histórico Automático (Só Visualização) */}
          {history.length > 0 && (
              <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Target size={20} className="text-orange-500"/> Histórico de Processos (Automático)</h3>
@@ -193,6 +243,7 @@ export const TalentDetails: React.FC = () => {
          )}
 
          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+             {/* Experiência */}
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Briefcase size={20} className="text-slate-400"/> Experiência</h3>
@@ -214,6 +265,7 @@ export const TalentDetails: React.FC = () => {
                 </div>
              </div>
 
+             {/* Formação */}
              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><GraduationCap size={20} className="text-slate-400"/> Formação</h3>
@@ -235,6 +287,7 @@ export const TalentDetails: React.FC = () => {
              </div>
          </div>
 
+         {/* Observações */}
          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
             <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><FileText size={20} className="text-slate-400"/> Observações Internas</h3>
             <div className="flex gap-2 mb-4">
@@ -245,7 +298,9 @@ export const TalentDetails: React.FC = () => {
                 {(formData.observations || []).map((obs, i) => (
                     <li key={i} className="text-sm text-slate-700 bg-yellow-50 p-3 rounded-lg border border-yellow-100 flex justify-between items-center group">
                         <span>{obs}</span>
-                        <button type="button" onClick={() => setFormData(p => ({...p, observations: p.observations?.filter((_, idx) => idx !== i)}))} className="text-yellow-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={14}/></button>
+                        <button type="button" onClick={() => setFormData(p => ({...p, observations: p.observations?.filter((_, idx) => idx !== i)}))} className="text-yellow-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Trash2 size={14}/>
+                        </button>
                     </li>
                 ))}
             </ul>
