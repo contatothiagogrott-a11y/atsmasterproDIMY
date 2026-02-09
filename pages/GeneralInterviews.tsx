@@ -3,27 +3,41 @@ import { useData } from '../context/DataContext';
 import { 
   Plus, Search, MapPin, Calendar, 
   Trash2, MessageCircle, Edit2, Briefcase, 
-  ExternalLink, CheckCircle, Clock, AlertCircle, ArrowRight
+  ExternalLink, CheckCircle, Clock, AlertCircle, ArrowRight,
+  Database, Eye, EyeOff, Archive // Novos ícones
 } from 'lucide-react';
-import { Candidate } from '../types';
+import { Candidate, TalentProfile } from '../types';
 
 const generateId = () => crypto.randomUUID();
 const GENERAL_POOL_ID = 'general';
 
-// --- LISTAS DE DIAGNÓSTICO (IGUAIS AO JOBDETAILS) ---
+// --- LISTAS DE DIAGNÓSTICO ROBUSTAS ---
 const WITHDRAWAL_REASONS = [
-  "Aceitou outra proposta",
-  "Salário abaixo da pretensão",
-  "Distância / Localização",
-  "Desinteresse na vaga",
-  "Problemas pessoais"
+  "Aceitou outra proposta (Concorrente)",
+  "Recebeu contraproposta da empresa atual",
+  "Salário oferecido abaixo da pretensão",
+  "Benefícios pouco atrativos",
+  "Distância / Modelo de Trabalho (Presencial/Híbrido)",
+  "Desinteresse no escopo do projeto/vaga",
+  "Processo seletivo muito longo",
+  "Problemas pessoais/familiares",
+  "Sem retorno do candidato (Ghosting)"
 ];
 
 const GENERAL_REJECTION_REASONS = [
-  "Perfil Técnico Insuficiente",
-  "Sem Fit Cultural",
-  "Reprovado no Teste Técnico",
-  "Salário acima do budget"
+  // Técnico / Exp
+  "Perfil Técnico Insuficiente (Hard Skills)",
+  "Experiência de Mercado Insuficiente",
+  "Senioridade abaixo do esperado",
+  // Comportamental / Cultura
+  "Fit Cultural Divergente (Valores)",
+  "Comunicação/Postura Inadequada",
+  "Perfil Comportamental (Soft Skills) Incompatível",
+  // Condições
+  "Pretensão Salarial acima do Budget",
+  "Disponibilidade/Horário Incompatível",
+  "Localização/Logística Inviável",
+  "Conflito de Interesses"
 ];
 
 const toInputDate = (isoString?: string) => isoString ? isoString.split('T')[0] : '';
@@ -43,16 +57,17 @@ const isDatePast = (dateString?: string) => {
 };
 
 export const GeneralInterviews: React.FC = () => {
-  const { candidates, addCandidate, updateCandidate, removeCandidate, jobs, verifyUserPassword } = useData();
+  const { candidates, addCandidate, updateCandidate, removeCandidate, jobs, verifyUserPassword, addTalent } = useData();
   
   // States
   const [searchTerm, setSearchTerm] = useState('');
+  const [showArchived, setShowArchived] = useState(false); // Toggle para ver antigos/reprovados
   
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Candidate>>({});
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [lossReasonType, setLossReasonType] = useState(''); // Estado para o select de motivo
+  const [lossReasonType, setLossReasonType] = useState(''); 
 
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [candidateToLink, setCandidateToLink] = useState<Candidate | null>(null);
@@ -62,6 +77,12 @@ export const GeneralInterviews: React.FC = () => {
   const [candidateToDelete, setCandidateToDelete] = useState<Candidate | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
 
+  // --- NOVOS STATES PARA EXPORTAR PARA BANCO ---
+  const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
+  const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
+  const [talentEmail, setTalentEmail] = useState('');
+  const [talentPhone, setTalentPhone] = useState('');
+
   // --- LÓGICA DE DADOS ---
   
   const allGeneralCandidates = useMemo(() => {
@@ -70,16 +91,27 @@ export const GeneralInterviews: React.FC = () => {
         .sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [candidates]);
 
+  // Filtro principal da lista (com busca e toggle de arquivados)
+  const filteredList = useMemo(() => {
+    return allGeneralCandidates.filter(c => {
+        const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        // Lógica de Arquivamento:
+        // Se showArchived for FALSE, esconde Reprovados e Desistentes
+        // Se showArchived for TRUE, mostra TUDO (ou apenas os arquivados, depende da preferência. Vou deixar mostrar tudo para facilitar).
+        const isArchivedStatus = ['Reprovado', 'Desistência'].includes(c.status);
+        const matchesArchive = showArchived ? true : !isArchivedStatus;
+
+        return matchesSearch && matchesArchive;
+    });
+  }, [allGeneralCandidates, searchTerm, showArchived]);
+
   const pendingFeedbackCandidates = useMemo(() => {
       return allGeneralCandidates.filter(c => 
           c.interviewAt && 
           !['Reprovado', 'Desistência', 'Contratado'].includes(c.status)
       ).sort((a,b) => new Date(a.interviewAt!).getTime() - new Date(b.interviewAt!).getTime());
   }, [allGeneralCandidates]);
-
-  const filteredList = useMemo(() => {
-    return allGeneralCandidates.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [allGeneralCandidates, searchTerm]);
 
   const openJobs = useMemo(() => jobs.filter(j => j.status === 'Aberta'), [jobs]);
 
@@ -89,7 +121,6 @@ export const GeneralInterviews: React.FC = () => {
     if (candidate) {
         setEditingId(candidate.id);
         setFormData({ ...candidate });
-        // Preenche o motivo se já existir
         if (candidate.rejectionReason) {
             const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
             const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
@@ -123,12 +154,10 @@ export const GeneralInterviews: React.FC = () => {
     if (payload.firstContactAt) payload.firstContactAt = `${toInputDate(payload.firstContactAt)}T12:00:00.000Z`;
     if (payload.interviewAt) payload.interviewAt = `${toInputDate(payload.interviewAt)}T12:00:00.000Z`;
     
-    // Limpa motivo se status mudar para algo positivo
     if (!['Reprovado', 'Desistência'].includes(payload.status || '')) {
         payload.rejectionReason = undefined;
         payload.rejectionDate = undefined;
     } else {
-        // Se for reprovado/desistência, garante que tem data
         if (!payload.rejectionDate) payload.rejectionDate = new Date().toISOString();
     }
 
@@ -183,16 +212,27 @@ export const GeneralInterviews: React.FC = () => {
     <div className="pb-12 animate-fadeIn space-y-8">
       
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
            <h1 className="text-3xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
              <Briefcase className="text-slate-800" size={32}/> Entrevistas Gerais
            </h1>
            <p className="text-slate-500 mt-1">Gestão de pool e candidatos espontâneos.</p>
         </div>
-        <button onClick={() => handleOpenModal()} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold shadow-md transition-all">
-          <Plus size={20} /> Novo Candidato
-        </button>
+        <div className="flex gap-2">
+            {/* BOTÃO TOGGLE ARQUIVADOS */}
+            <button 
+                onClick={() => setShowArchived(!showArchived)} 
+                className={`px-4 py-2.5 rounded-lg flex items-center gap-2 font-bold text-sm transition-all border ${showArchived ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50'}`}
+            >
+                {showArchived ? <EyeOff size={18}/> : <Archive size={18}/>}
+                {showArchived ? 'Ocultar Antigos' : 'Ver Antigos'}
+            </button>
+
+            <button onClick={() => handleOpenModal()} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold shadow-md transition-all text-sm">
+                <Plus size={20} /> Novo Candidato
+            </button>
+        </div>
       </div>
 
       {/* --- SEÇÃO DE ACOMPANHAMENTO (PENDÊNCIAS) --- */}
@@ -279,7 +319,7 @@ export const GeneralInterviews: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                       {filteredList.map(c => (
-                          <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                          <tr key={c.id} className={`hover:bg-slate-50 transition-colors ${['Reprovado', 'Desistência'].includes(c.status) ? 'opacity-70 bg-slate-50/50' : ''}`}>
                               <td className="p-4">
                                   <div className="font-bold text-slate-800">{c.name}</div>
                                   <div className="text-xs text-slate-500">{c.city} • {c.age ? `${c.age} anos` : '-'}</div>
@@ -305,6 +345,20 @@ export const GeneralInterviews: React.FC = () => {
                                   </span>
                               </td>
                               <td className="p-4 text-right flex justify-end gap-2">
+                                  {/* BOTÃO BANCO DE TALENTOS (NOVO) */}
+                                  <button 
+                                    onClick={() => {
+                                        setTalentFormData({ name: c.name, city: c.city, targetRole: 'Entrevista Geral' });
+                                        setTalentEmail(c.email || '');
+                                        setTalentPhone(c.phone || '');
+                                        setIsTalentModalOpen(true);
+                                    }} 
+                                    className="p-2 text-slate-500 hover:bg-orange-50 hover:text-orange-600 rounded transition-colors" 
+                                    title="Salvar no Banco de Talentos"
+                                  >
+                                      <Database size={16}/>
+                                  </button>
+
                                   <button onClick={() => handleOpenLink(c)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded" title="Vincular a Vaga"><ExternalLink size={16}/></button>
                                   <button onClick={() => handleOpenModal(c)} className="p-2 text-slate-600 hover:bg-slate-100 rounded" title="Editar"><Edit2 size={16}/></button>
                                   <button onClick={() => handleDeleteClick(c)} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Excluir"><Trash2 size={16}/></button>
@@ -443,6 +497,47 @@ export const GeneralInterviews: React.FC = () => {
                       <button type="submit" className="flex-1 bg-red-600 text-white font-bold py-2 rounded shadow">Excluir</button>
                   </div>
               </form>
+           </div>
+        </div>
+      )}
+
+      {/* --- MODAL EXPORTAR PARA BANCO DE TALENTOS (NOVO) --- */}
+      {isTalentModalOpen && (
+        <div className="fixed inset-0 bg-indigo-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+           <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-fadeIn border-t-8 border-indigo-600">
+              <div className="flex items-center gap-3 mb-6"><Database size={28} className="text-indigo-600"/><h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Exportar para Banco</h3></div>
+              <div className="space-y-4">
+                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Nome do Candidato</label><div className="font-bold text-slate-700">{talentFormData.name}</div></div>
+                 <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cidade</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Cidade de origem" value={talentFormData.city || ''} onChange={e => setTalentFormData({...talentFormData, city: e.target.value})} /></div>
+                 
+                 {/* CAMPOS SEPARADOS NO MODAL DE EXPORTAÇÃO */}
+                 <div className="grid grid-cols-2 gap-4">
+                     <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Email</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="email@..." value={talentEmail} onChange={e => setTalentEmail(e.target.value)} /></div>
+                     <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Telefone</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="(XX)..." value={talentPhone} onChange={e => setTalentPhone(e.target.value)} /></div>
+                 </div>
+
+                 <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cargo para Busca Futura</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Ex: Desenvolvedor, Vendedor..." value={talentFormData.targetRole || ''} onChange={e => setTalentFormData({...talentFormData, targetRole: e.target.value})} /></div>
+                 <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                    <button onClick={() => setIsTalentModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold uppercase text-[10px] tracking-widest">Voltar</button>
+                    <button onClick={() => { 
+                        // JUNTA TUDO ANTES DE SALVAR
+                        const finalContact = [talentEmail, talentPhone].filter(Boolean).join(' | ');
+                        
+                        addTalent({ 
+                            ...talentFormData, 
+                            contact: finalContact, // SALVA UNIDO
+                            id: generateId(), 
+                            createdAt: new Date().toISOString(),
+                            tags: [],
+                            education: [],
+                            experience: [],
+                            observations: [`Origem: Entrevista Geral`]
+                        } as TalentProfile); 
+                        setIsTalentModalOpen(false); 
+                        alert('Talento salvo com sucesso no Banco!'); 
+                    }} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100 uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all active:scale-95">Salvar Perfil</button>
+                 </div>
+              </div>
            </div>
         </div>
       )}
