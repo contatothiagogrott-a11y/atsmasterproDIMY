@@ -7,6 +7,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Jobs } from './pages/Jobs';
 import { JobDetails } from './pages/JobDetails';
 import { TalentPool } from './pages/TalentPool';
+import { TalentDetails } from './pages/TalentDetails';
 import { Reports } from './pages/Reports';
 import { SettingsPage } from './pages/Settings';
 import { StrategicReport } from './pages/StrategicReport'; // <--- PASSO 2: IMPORTAÇÃO DA NOVA PÁGINA
@@ -33,6 +34,7 @@ const AppRoutes = () => {
         <Route path="/jobs" element={<Jobs />} />
         <Route path="/jobs/:id" element={<JobDetails />} />
         <Route path="/talent" element={<TalentPool />} />
+        <Route path="/talents/:id" element={<TalentDetails />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/strategic-report" element={<StrategicReport />} /> {/* <--- PASSO 2: NOVA ROTA ADICIONADA */}
