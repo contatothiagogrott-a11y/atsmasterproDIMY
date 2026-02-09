@@ -5,7 +5,7 @@ import {
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, PieChart, TrendingUp, UserX, AlertTriangle, 
   Calendar, Building2, Lock, Unlock, X, ChevronRight, 
-  ExternalLink, ClipboardCheck, UserCheck, Clock, Search
+  ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
@@ -169,10 +169,9 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* JANELA DE DRILL-DOWN DOS CARDS - ENCOLHIDA E CENTRALIZADA */}
+      {/* JANELA DE DRILL-DOWN DOS CARDS */}
       {drillDownTarget && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
-              {/* LARGURA REDUZIDA PARA max-w-3xl E PADDING REDUZIDO NAS CÉLULAS */}
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                       <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
@@ -185,79 +184,116 @@ export const StrategicReport: React.FC = () => {
                       <button onClick={() => setDrillDownTarget(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={26} /></button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white">
-                      <table className="w-full text-left text-xs">
-                          <thead className="text-slate-400 font-black uppercase tracking-widest text-[9px] border-b border-slate-100">
-                              {drillDownTarget === 'CLOSED' && (
-                                  <tr><th className="p-3 pl-4">Vaga</th><th className="p-3">Colaborador Escolhido</th><th className="p-3 text-center">Data Fech.</th><th className="p-3 text-right pr-4">SLA Líquido</th></tr>
-                              )}
-                              {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
-                                  <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga / Setor / Unidade</th><th className="p-3 pr-4">Motivo do Desligamento</th></tr>
-                              )}
-                              {drillDownTarget === 'INTERVIEWS' && (
-                                  <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga</th><th className="p-3 text-right pr-4">Data Entrevista</th></tr>
-                              )}
-                              {drillDownTarget === 'TESTS' && (
-                                  <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Avaliador Técnico</th><th className="p-3 text-center">Data Teste</th><th className="p-3 text-right pr-4">Resultado</th></tr>
-                              )}
-                          </thead>
-                          <tbody className="divide-y divide-slate-50">
-                              {drillDownTarget === 'CLOSED' && metrics.closed.list.map(job => {
-                                  const hired = candidates.find(c => c.jobId === job.id && c.status === 'Contratado');
-                                  const sla = job.closedAt ? differenceInDays(parseISO(job.closedAt), parseISO(job.openedAt)) : '-';
-                                  return (
-                                      <tr key={job.id} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-3 pl-4 font-black text-slate-700">{job.title}</td>
-                                          <td className="p-3"><span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-bold">{hired?.name || 'Não identificado'}</span></td>
-                                          <td className="p-3 text-center font-bold text-slate-500">{job.closedAt ? new Date(job.closedAt).toLocaleDateString() : '-'}</td>
-                                          <td className="p-3 text-right pr-4 font-black text-indigo-600">{sla} dias</td>
-                                      </tr>
-                                  );
-                              })}
+                  <div className="flex-1 overflow-y-auto custom-scrollbar bg-white">
+                      
+                      {/* --- NOVO: PAINEL DE INDICADORES VISUAIS PARA MOTIVOS --- */}
+                      {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
+                          <div className="p-6 bg-slate-50/50 border-b border-slate-100">
+                              <div className="flex items-center gap-2 mb-4">
+                                  <BarChart3 size={18} className={drillDownTarget === 'REJECTED' ? 'text-red-500' : 'text-orange-500'} />
+                                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">
+                                      Ranking de Motivos
+                                  </h3>
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                  {Object.entries(metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].reasons)
+                                      .sort(([,a], [,b]) => b - a) // Ordena do maior para o menor
+                                      .map(([reason, count]) => (
+                                          <div key={reason} className={`p-3 rounded-xl border flex flex-col justify-between shadow-sm relative overflow-hidden ${drillDownTarget === 'REJECTED' ? 'bg-red-50 border-red-100' : 'bg-orange-50 border-orange-100'}`}>
+                                              <div className={`text-2xl font-black mb-1 ${drillDownTarget === 'REJECTED' ? 'text-red-600' : 'text-orange-600'}`}>
+                                                  {count}
+                                              </div>
+                                              <div className="text-[10px] font-bold uppercase text-slate-600 leading-tight">
+                                                  {reason}
+                                              </div>
+                                              {/* Barra de Progresso Visual */}
+                                              <div className="absolute bottom-0 left-0 h-1 bg-current opacity-20" style={{ 
+                                                  width: `${(count / (metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].total || 1)) * 100}%`,
+                                                  color: drillDownTarget === 'REJECTED' ? 'red' : 'orange'
+                                              }}></div>
+                                          </div>
+                                      ))
+                                  }
+                                  {Object.keys(metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].reasons).length === 0 && (
+                                      <div className="col-span-full text-center text-slate-400 text-xs italic py-2">Sem motivos registrados neste período.</div>
+                                  )}
+                              </div>
+                          </div>
+                      )}
 
-                              {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].list.map(c => {
-                                  const job = jobs.find(j => j.id === c.jobId);
-                                  return (
+                      <div className="p-4">
+                          <table className="w-full text-left text-xs">
+                              <thead className="text-slate-400 font-black uppercase tracking-widest text-[9px] border-b border-slate-100">
+                                  {drillDownTarget === 'CLOSED' && (
+                                      <tr><th className="p-3 pl-4">Vaga</th><th className="p-3">Colaborador Escolhido</th><th className="p-3 text-center">Data Fech.</th><th className="p-3 text-right pr-4">SLA Líquido</th></tr>
+                                  )}
+                                  {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
+                                      <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga / Setor / Unidade</th><th className="p-3 pr-4">Motivo do Desligamento</th></tr>
+                                  )}
+                                  {drillDownTarget === 'INTERVIEWS' && (
+                                      <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga</th><th className="p-3 text-right pr-4">Data Entrevista</th></tr>
+                                  )}
+                                  {drillDownTarget === 'TESTS' && (
+                                      <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Avaliador Técnico</th><th className="p-3 text-center">Data Teste</th><th className="p-3 text-right pr-4">Resultado</th></tr>
+                                  )}
+                              </thead>
+                              <tbody className="divide-y divide-slate-50">
+                                  {drillDownTarget === 'CLOSED' && metrics.closed.list.map(job => {
+                                      const hired = candidates.find(c => c.jobId === job.id && c.status === 'Contratado');
+                                      const sla = job.closedAt ? differenceInDays(parseISO(job.closedAt), parseISO(job.openedAt)) : '-';
+                                      return (
+                                          <tr key={job.id} className="hover:bg-slate-50 transition-colors">
+                                              <td className="p-3 pl-4 font-black text-slate-700">{job.title}</td>
+                                              <td className="p-3"><span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-bold">{hired?.name || 'Não identificado'}</span></td>
+                                              <td className="p-3 text-center font-bold text-slate-500">{job.closedAt ? new Date(job.closedAt).toLocaleDateString() : '-'}</td>
+                                              <td className="p-3 text-right pr-4 font-black text-indigo-600">{sla} dias</td>
+                                          </tr>
+                                      );
+                                  })}
+
+                                  {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].list.map(c => {
+                                      const job = jobs.find(j => j.id === c.jobId);
+                                      return (
+                                          <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                                              <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
+                                              <td className="p-3 text-slate-500 font-medium">{job?.title} <br/> <span className="text-[10px] text-slate-400 uppercase">{job?.sector} | {job?.unit}</span></td>
+                                              <td className="p-3 pr-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>{c.rejectionReason || 'Sem motivo detalhado'}</span></td>
+                                          </tr>
+                                      );
+                                  })}
+
+                                  {drillDownTarget === 'INTERVIEWS' && metrics.interviews.list.map(c => {
+                                      const job = jobs.find(j => j.id === c.jobId);
+                                      return (
+                                          <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                                              <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
+                                              <td className="p-3 text-slate-500 font-medium">{job?.title}</td>
+                                              <td className="p-3 text-right pr-4 font-bold text-amber-600">{c.interviewAt ? new Date(c.interviewAt).toLocaleDateString() : '-'}</td>
+                                          </tr>
+                                      );
+                                  })}
+
+                                  {drillDownTarget === 'TESTS' && metrics.tests.list.map(c => (
                                       <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                                           <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                          <td className="p-3 text-slate-500 font-medium">{job?.title} <br/> <span className="text-[10px] text-slate-400 uppercase">{job?.sector} | {job?.unit}</span></td>
-                                          <td className="p-3 pr-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>{c.rejectionReason || 'Sem motivo detalhado'}</span></td>
+                                          <td className="p-3 font-bold text-slate-500">{c.techEvaluator || 'Não informado'}</td>
+                                          <td className="p-3 text-center font-medium text-slate-400">{c.techTestDate ? new Date(c.techTestDate).toLocaleDateString() : '-'}</td>
+                                          <td className="p-3 text-right pr-4">
+                                              <span className={`font-black uppercase text-[10px] ${c.techTestResult === 'Aprovado' ? 'text-emerald-600' : 'text-red-500'}`}>{c.techTestResult || 'Pendente'}</span>
+                                          </td>
                                       </tr>
-                                  );
-                              })}
-
-                              {drillDownTarget === 'INTERVIEWS' && metrics.interviews.list.map(c => {
-                                  const job = jobs.find(j => j.id === c.jobId);
-                                  return (
-                                      <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                          <td className="p-3 text-slate-500 font-medium">{job?.title}</td>
-                                          <td className="p-3 text-right pr-4 font-bold text-amber-600">{c.interviewAt ? new Date(c.interviewAt).toLocaleDateString() : '-'}</td>
-                                      </tr>
-                                  );
-                              })}
-
-                              {drillDownTarget === 'TESTS' && metrics.tests.list.map(c => (
-                                  <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                                      <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                      <td className="p-3 font-bold text-slate-500">{c.techEvaluator || 'Não informado'}</td>
-                                      <td className="p-3 text-center font-medium text-slate-400">{c.techTestDate ? new Date(c.techTestDate).toLocaleDateString() : '-'}</td>
-                                      <td className="p-3 text-right pr-4">
-                                          <span className={`font-black uppercase text-[10px] ${c.techTestResult === 'Aprovado' ? 'text-emerald-600' : 'text-red-500'}`}>{c.techTestResult || 'Pendente'}</span>
-                                      </td>
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
+                                  ))}
+                              </tbody>
+                          </table>
+                      </div>
                   </div>
               </div>
           </div>
       )}
 
-      {/* JANELA DE SETOR (BRANCH) - ENCOLHIDA E CENTRALIZADA */}
+      {/* JANELA DE SETOR (BRANCH) */}
       {selectedSector && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
-              {/* LARGURA REDUZIDA PARA max-w-xl E PADDING REDUZIDO NAS CÉLULAS */}
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                       <div className="text-left">
