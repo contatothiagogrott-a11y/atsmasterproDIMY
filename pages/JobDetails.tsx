@@ -7,7 +7,7 @@ import {
   Globe, Users, UserPlus, MapPin, Briefcase, Filter,
   CheckCircle, Award, DollarSign, Activity, Lock, Download,
   Plus, Archive, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
-  Beaker, AlertTriangle, FileText, PauseCircle 
+  Beaker, AlertTriangle, FileText, PauseCircle, Trash2, ShieldAlert
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType } from '../types';
 import { exportJobCandidates } from '../services/excelService';
@@ -15,26 +15,31 @@ import { differenceInDays, parseISO } from 'date-fns';
 
 const generateId = () => crypto.randomUUID();
 
-// Lista para controle interno do campo "Outros" (Perda Geral)
-const STANDARD_REASONS = [
-  "Aceitou outra proposta", 
-  "Salário abaixo da pretensão", 
-  "Distância / Localização", 
+// --- LISTAS DE DIAGNÓSTICO DE DHO ---
+
+// 1. Motivos de Desistência (Candidato não quis)
+const WITHDRAWAL_REASONS = [
+  "Aceitou outra proposta",
+  "Salário abaixo da pretensão",
+  "Distância / Localização",
   "Desinteresse na vaga",
-  "Perfil Técnico Insuficiente", 
-  "Sem Fit Cultural", 
-  "Reprovado no Teste Técnico", 
+  "Problemas pessoais"
+];
+
+// 2. Motivos de Reprovação Geral (Usado na Edição e no Teste Técnico agora)
+const GENERAL_REJECTION_REASONS = [
+  "Perfil Técnico Insuficiente",
+  "Sem Fit Cultural",
+  "Reprovado no Teste Técnico",
   "Salário acima do budget"
 ];
 
-// NOVA LISTA: Motivos específicos de Reprovação TÉCNICA
-const TECH_REASONS = [
-  "Não atingiu a nota mínima",
-  "Conhecimento insuficiente na stack principal",
-  "Código não funcional / com bugs",
-  "Não entregou o teste no prazo",
-  "Plágio / Cópia identificada",
-  "Boa lógica, mas sênioridade abaixo do esperado"
+// 3. Motivos de Reprovação TÉCNICA (Igual ao Geral conforme solicitado)
+const TECH_REJECTION_REASONS = [
+  "Perfil Técnico Insuficiente",
+  "Sem Fit Cultural",
+  "Reprovado no Teste Técnico",
+  "Salário acima do budget"
 ];
 
 const toInputDate = (isoString?: string) => {
@@ -62,7 +67,7 @@ const getSourceIcon = (origin: string) => {
 export const JobDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { jobs, candidates, updateCandidate, addCandidate, addTalent, updateJob, user } = useData();
+  const { jobs, candidates, updateCandidate, addCandidate, addTalent, updateJob, removeCandidate, user, verifyUserPassword } = useData();
   
   const [job, setJob] = useState<Job | undefined>(undefined);
   const [jobCandidates, setJobCandidates] = useState<Candidate[]>([]);
@@ -83,11 +88,16 @@ export const JobDetails: React.FC = () => {
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [techCandidate, setTechCandidate] = useState<Candidate | null>(null);
   const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado', rejectionDetail: '' });
-  // Novo estado para controlar o tipo de motivo técnico
   const [techReasonType, setTechReasonType] = useState('');
 
   const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
   const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
+
+  // DELETE STATES
+  const [isDeleteCandidateModalOpen, setIsDeleteCandidateModalOpen] = useState(false);
+  const [candidateToDelete, setCandidateToDelete] = useState<Candidate | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('TODOS');
@@ -135,6 +145,28 @@ export const JobDetails: React.FC = () => {
         origins
     };
   }, [job, jobCandidates]);
+
+  // --- DELETE CANDIDATE LOGIC ---
+  const handleOpenDeleteCandidate = (c: Candidate) => {
+    setCandidateToDelete(c);
+    setDeletePassword('');
+    setDeleteError('');
+    setIsDeleteCandidateModalOpen(true);
+  };
+
+  const handleConfirmCandidateDelete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!candidateToDelete) return;
+
+    const isValid = await verifyUserPassword(deletePassword);
+    if (isValid) {
+        await removeCandidate(candidateToDelete.id);
+        setIsDeleteCandidateModalOpen(false);
+        setCandidateToDelete(null);
+    } else {
+        setDeleteError('Senha incorreta.');
+    }
+  };
 
   const initiateStatusChange = (newStatus: string) => {
     if (!job || newStatus === job.status) return;
@@ -185,8 +217,14 @@ export const JobDetails: React.FC = () => {
         setSelectedCandidate(candidate);
         setFormData({ ...candidate });
         if (candidate.rejectionReason) {
-            const isStandard = STANDARD_REASONS.includes(candidate.rejectionReason);
-            setLossReasonType(isStandard ? candidate.rejectionReason : 'Outros');
+            const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
+            const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
+            
+            if (isGeneral || isWithdrawal) {
+                setLossReasonType(candidate.rejectionReason);
+            } else {
+                setLossReasonType('Outros');
+            }
         } else { setLossReasonType(''); }
     } else {
         setSelectedCandidate(null);
@@ -220,11 +258,11 @@ export const JobDetails: React.FC = () => {
         date: toInputDate(c.techTestDate || new Date().toISOString()), 
         evaluator: c.techTestEvaluator || '', 
         result: c.techTestResult || 'Aprovado', 
-        rejectionDetail: c.rejectionReason || '' // Carrega motivo se houver
+        rejectionDetail: c.rejectionReason || '' 
     });
     
-    // Define o tipo de motivo técnico
-    if (c.rejectionReason && TECH_REASONS.includes(c.rejectionReason)) {
+    // Define o tipo de motivo técnico para o select
+    if (c.rejectionReason && TECH_REJECTION_REASONS.includes(c.rejectionReason)) {
         setTechReasonType(c.rejectionReason);
     } else if (c.rejectionReason) {
         setTechReasonType('Outros');
@@ -372,10 +410,34 @@ export const JobDetails: React.FC = () => {
                 <button onClick={() => handleOpenTechModal(c)} className={`flex-1 flex justify-center items-center gap-1 py-1.5 rounded text-[10px] font-bold border transition-colors ${c.techTest ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-white text-slate-500 border-slate-200'}`}><Beaker size={12}/> Teste</button>
                 <button onClick={() => { setTalentFormData({ name: c.name, city: c.city, contact: c.phone, targetRole: job.title }); setIsTalentModalOpen(true); }} className="flex-1 flex justify-center items-center gap-1 bg-white hover:bg-orange-50 text-slate-500 hover:text-orange-600 py-1.5 rounded text-[10px] font-bold border border-slate-200 transition-colors"><Database size={12}/> Banco</button>
                 <button onClick={() => handleOpenModal(c)} className="flex-1 flex justify-center items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-1.5 rounded text-[10px] font-bold transition-colors"><User size={12}/> Editar</button>
+                {/* BOTÃO DE DELETAR */}
+                <button onClick={() => handleOpenDeleteCandidate(c)} className="flex justify-center items-center px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 rounded transition-colors" title="Excluir Candidato"><Trash2 size={12}/></button>
              </div>
           </div>
         ))}
       </div>
+
+      {/* --- MODAL DE DELETAR CANDIDATO COM SENHA --- */}
+      {isDeleteCandidateModalOpen && (
+        <div className="fixed inset-0 bg-red-900/40 backdrop-blur-sm flex items-center justify-center z-[250] p-4">
+           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border-t-4 border-red-500 animate-fadeIn">
+              <div className="flex justify-center mb-4"><div className="bg-red-100 p-3 rounded-full text-red-600"><ShieldAlert size={32}/></div></div>
+              <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Excluir {candidateToDelete?.name}?</h3>
+              <p className="text-xs text-slate-500 text-center mb-6">Esta ação removerá o candidato desta vaga e apagará o histórico dele no Banco de Talentos. É irreversível.</p>
+              
+              <form onSubmit={handleConfirmCandidateDelete}>
+                 <div className="mb-4">
+                    <input autoFocus type="password" placeholder="Sua senha para confirmar" className="w-full border p-3 rounded-lg text-center tracking-widest outline-none focus:ring-2 focus:ring-red-500" value={deletePassword} onChange={e => setDeletePassword(e.target.value)} />
+                    {deleteError && <p className="text-red-600 text-xs font-bold mt-2 text-center">{deleteError}</p>}
+                 </div>
+                 <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsDeleteCandidateModalOpen(false)} className="flex-1 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">Cancelar</button>
+                    <button type="submit" className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg hover:bg-red-700 shadow-md">Confirmar Exclusão</button>
+                 </div>
+              </form>
+           </div>
+        </div>
+      )}
 
       {/* --- MODAL DE EDIÇÃO DO CANDIDATO --- */}
       {isModalOpen && (
@@ -443,22 +505,11 @@ export const JobDetails: React.FC = () => {
                             }}>
                             <option value="">-- Selecione o Motivo --</option>
                             {formData.status === 'Desistência' ? (
-                                <>
-                                    <option value="Aceitou outra proposta">Aceitou outra proposta</option>
-                                    <option value="Salário abaixo da pretensão">Salário abaixo da pretensão</option>
-                                    <option value="Distância / Localização">Distância / Localização</option>
-                                    <option value="Desinteresse na vaga">Desinteresse na vaga</option>
-                                    <option value="Outros">Outros (Escrever...)</option>
-                                </>
+                                WITHDRAWAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)
                             ) : (
-                                <>
-                                    <option value="Perfil Técnico Insuficiente">Perfil Técnico Insuficiente</option>
-                                    <option value="Sem Fit Cultural">Sem Fit Cultural</option>
-                                    <option value="Reprovado no Teste Técnico">Reprovado no Teste Técnico</option>
-                                    <option value="Salário acima do budget">Salário acima do budget</option>
-                                    <option value="Outros">Outros (Escrever...)</option>
-                                </>
+                                GENERAL_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)
                             )}
+                            <option value="Outros">Outros (Escrever...)</option>
                         </select>
                         {lossReasonType === 'Outros' && (
                             <textarea className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white min-h-[80px] text-sm shadow-inner" placeholder="Descreva o motivo detalhadamente..." value={formData.rejectionReason || ''} onChange={e => setFormData({...formData, rejectionReason: e.target.value})} />
@@ -530,7 +581,7 @@ export const JobDetails: React.FC = () => {
                                   }}
                               >
                                   <option value="">Selecione...</option>
-                                  {TECH_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                                  {TECH_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                                   <option value="Outros">Outros (Escrever)</option>
                               </select>
                               
