@@ -300,7 +300,7 @@ export const JobDetails: React.FC = () => {
          </select>
       </div>
 
-      {/* LISTA DE CANDIDATOS - RESTAURADA COM TODOS OS CAMPOS */}
+      {/* LISTA DE CANDIDATOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredList.map(c => (
           <div key={c.id} className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all group flex flex-col ${c.status === 'Reprovado' ? 'border-red-200 bg-red-50/10' : c.status === 'Desistência' ? 'border-amber-200 bg-amber-50/10' : 'border-slate-200'}`}>
@@ -321,13 +321,11 @@ export const JobDetails: React.FC = () => {
                 </div>
              </div>
 
-             {/* Informações de Perfil no Card */}
              <div className="flex justify-between items-center bg-slate-50/80 p-2 rounded mb-3 text-[11px] border border-slate-100">
                 <span className="flex items-center gap-1 text-slate-600"><User size={12}/> {c.age} anos</span>
                 <span className="flex items-center gap-1 text-emerald-700 font-bold"><DollarSign size={12}/> {c.salaryExpectation || 'N/I'}</span>
              </div>
 
-             {/* Linha do Tempo de Datas no Card */}
              <div className="space-y-1 text-[10px] text-slate-500 border-t border-slate-50 pt-2 mb-3 flex-1">
                 <div className="flex justify-between"><span>1º Contato:</span><span className="font-bold text-slate-700">{formatDate(c.firstContactAt)}</span></div>
                 <div className="flex justify-between"><span>Entrevista:</span><span className={`font-bold ${c.interviewAt ? 'text-blue-600' : 'text-slate-300'}`}>{formatDate(c.interviewAt)}</span></div>
@@ -343,7 +341,7 @@ export const JobDetails: React.FC = () => {
         ))}
       </div>
 
-      {/* --- MODAL DE EDIÇÃO DO CANDIDATO COM LÓGICA DE TEXTO PERSONALIZADO --- */}
+      {/* --- MODAL DE EDIÇÃO DO CANDIDATO --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 animate-fadeIn">
@@ -351,7 +349,13 @@ export const JobDetails: React.FC = () => {
              
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Nome</label><input className="w-full border p-2 rounded text-sm" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
-                <div><label className="block text-xs font-bold text-slate-600 mb-1">Telefone</label><input className="w-full border p-2 rounded text-sm" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
+                
+                {/* IDADE ADICIONADA AQUI */}
+                <div className="grid grid-cols-2 gap-2">
+                    <div><label className="block text-xs font-bold text-slate-600 mb-1">Telefone</label><input className="w-full border p-2 rounded text-sm" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
+                    <div><label className="block text-xs font-bold text-slate-600 mb-1">Idade</label><input type="number" className="w-full border p-2 rounded text-sm" value={formData.age || ''} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
+                </div>
+
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Email</label><input className="w-full border p-2 rounded text-sm" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Cidade</label><input className="w-full border p-2 rounded text-sm" value={formData.city || ''} onChange={e => setFormData({...formData, city: e.target.value})} /></div>
                 <div><label className="block text-xs font-bold text-slate-600 mb-1">Pretensão Salarial</label><input className="w-full border p-2 rounded text-sm" value={formData.salaryExpectation || ''} onChange={e => setFormData({...formData, salaryExpectation: e.target.value})} /></div>
@@ -384,6 +388,19 @@ export const JobDetails: React.FC = () => {
                       <option value="Outros">Outros</option>
                    </select>
                 </div>
+
+                {/* CAMPO CONDICIONAL: QUEM INDICOU? (CORRIGIDO) */}
+                {formData.origin === 'Indicação' && (
+                    <div className="animate-fadeIn md:col-span-2 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                        <label className="block text-xs font-bold text-indigo-700 mb-1">Quem Indicou? (Obrigatório)</label>
+                        <input 
+                            className="w-full border border-indigo-200 bg-white p-2 rounded text-sm placeholder-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none"
+                            placeholder="Nome do Padrinho/Madrinha"
+                            value={formData.referralName || ''}
+                            onChange={e => setFormData({...formData, referralName: e.target.value})}
+                        />
+                    </div>
+                )}
 
                 {(formData.status === 'Reprovado' || formData.status === 'Desistência') && (
                     <div className="md:col-span-2 bg-red-50 p-4 rounded-lg border border-red-200 animate-fadeIn">
