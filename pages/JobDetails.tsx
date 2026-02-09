@@ -17,16 +17,14 @@ const generateId = () => crypto.randomUUID();
 
 // --- LISTAS DE DIAGNÓSTICO DE DHO ---
 
-// 1. Motivos de Desistência (Candidato não quis)
 const WITHDRAWAL_REASONS = [
-  "Aceitou outra proposta",
-  "Salário abaixo da pretensão",
-  "Distância / Localização",
+  "Aceitou outra proposta", 
+  "Salário abaixo da pretensão", 
+  "Distância / Localização", 
   "Desinteresse na vaga",
   "Problemas pessoais"
 ];
 
-// 2. Motivos de Reprovação Geral (Usado na Edição e no Teste Técnico agora)
 const GENERAL_REJECTION_REASONS = [
   "Perfil Técnico Insuficiente",
   "Sem Fit Cultural",
@@ -34,7 +32,6 @@ const GENERAL_REJECTION_REASONS = [
   "Salário acima do budget"
 ];
 
-// 3. Motivos de Reprovação TÉCNICA (Igual ao Geral conforme solicitado)
 const TECH_REJECTION_REASONS = [
   "Perfil Técnico Insuficiente",
   "Sem Fit Cultural",
@@ -408,9 +405,23 @@ export const JobDetails: React.FC = () => {
 
              <div className="flex gap-2 pt-2 mt-auto border-t border-slate-50">
                 <button onClick={() => handleOpenTechModal(c)} className={`flex-1 flex justify-center items-center gap-1 py-1.5 rounded text-[10px] font-bold border transition-colors ${c.techTest ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-white text-slate-500 border-slate-200'}`}><Beaker size={12}/> Teste</button>
-                <button onClick={() => { setTalentFormData({ name: c.name, city: c.city, contact: c.phone, targetRole: job.title }); setIsTalentModalOpen(true); }} className="flex-1 flex justify-center items-center gap-1 bg-white hover:bg-orange-50 text-slate-500 hover:text-orange-600 py-1.5 rounded text-[10px] font-bold border border-slate-200 transition-colors"><Database size={12}/> Banco</button>
+                {/* --- AQUI ESTAVA O PROBLEMA DO ID NULO --- */}
+                <button onClick={() => { 
+                    const talentData = {
+                        ...c,
+                        id: generateId(), // GERA UM NOVO ID AQUI
+                        targetRole: job.title,
+                        createdAt: new Date().toISOString(),
+                        tags: [],
+                        education: [],
+                        experience: [],
+                        observations: [`Importado da vaga: ${job.title}`]
+                    };
+                    // Preenche o modal para confirmar
+                    setTalentFormData(talentData as TalentProfile); 
+                    setIsTalentModalOpen(true); 
+                }} className="flex-1 flex justify-center items-center gap-1 bg-white hover:bg-orange-50 text-slate-500 hover:text-orange-600 py-1.5 rounded text-[10px] font-bold border border-slate-200 transition-colors"><Database size={12}/> Banco</button>
                 <button onClick={() => handleOpenModal(c)} className="flex-1 flex justify-center items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-1.5 rounded text-[10px] font-bold transition-colors"><User size={12}/> Editar</button>
-                {/* BOTÃO DE DELETAR */}
                 <button onClick={() => handleOpenDeleteCandidate(c)} className="flex justify-center items-center px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 rounded transition-colors" title="Excluir Candidato"><Trash2 size={12}/></button>
              </div>
           </div>
@@ -644,7 +655,20 @@ export const JobDetails: React.FC = () => {
                  <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cargo para Busca Futura</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Ex: Desenvolvedor, Vendedor..." value={talentFormData.targetRole || ''} onChange={e => setTalentFormData({...talentFormData, targetRole: e.target.value})} /></div>
                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                     <button onClick={() => setIsTalentModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold uppercase text-[10px] tracking-widest">Voltar</button>
-                    <button onClick={() => { addTalent(talentFormData as TalentProfile); setIsTalentModalOpen(false); alert('Talento salvo com sucesso no Banco!'); }} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100 uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all active:scale-95">Salvar Perfil</button>
+                    {/* CORREÇÃO DO ID NULO APLICADA AQUI TAMBÉM */}
+                    <button onClick={() => { 
+                        addTalent({ 
+                            ...talentFormData, 
+                            id: generateId(), 
+                            createdAt: new Date().toISOString(),
+                            tags: [],
+                            education: [],
+                            experience: [],
+                            observations: [`Importado da vaga: ${job.title}`]
+                        } as TalentProfile); 
+                        setIsTalentModalOpen(false); 
+                        alert('Talento salvo com sucesso no Banco!'); 
+                    }} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100 uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all active:scale-95">Salvar Perfil</button>
                  </div>
               </div>
            </div>
