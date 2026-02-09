@@ -87,8 +87,11 @@ export const JobDetails: React.FC = () => {
   const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado', rejectionDetail: '' });
   const [techReasonType, setTechReasonType] = useState('');
 
+  // --- NOVOS STATES PARA CORRIGIR O BUG DO TELEFONE ---
   const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
   const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
+  const [talentEmail, setTalentEmail] = useState(''); // Separado
+  const [talentPhone, setTalentPhone] = useState(''); // Separado
 
   // DELETE STATES
   const [isDeleteCandidateModalOpen, setIsDeleteCandidateModalOpen] = useState(false);
@@ -258,7 +261,6 @@ export const JobDetails: React.FC = () => {
         rejectionDetail: c.rejectionReason || '' 
     });
     
-    // Define o tipo de motivo técnico para o select
     if (c.rejectionReason && TECH_REJECTION_REASONS.includes(c.rejectionReason)) {
         setTechReasonType(c.rejectionReason);
     } else if (c.rejectionReason) {
@@ -282,7 +284,6 @@ export const JobDetails: React.FC = () => {
     
     if (techForm.didTest && techForm.result === 'Reprovado') {
         update.status = 'Reprovado';
-        // Se for "Outros", usa o texto digitado. Se não, usa a opção selecionada.
         update.rejectionReason = techReasonType === 'Outros' ? techForm.rejectionDetail : techReasonType;
         update.rejectionDate = new Date().toISOString();
         update.rejectedBy = user?.name || 'Sistema';
@@ -405,22 +406,15 @@ export const JobDetails: React.FC = () => {
 
              <div className="flex gap-2 pt-2 mt-auto border-t border-slate-50">
                 <button onClick={() => handleOpenTechModal(c)} className={`flex-1 flex justify-center items-center gap-1 py-1.5 rounded text-[10px] font-bold border transition-colors ${c.techTest ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-white text-slate-500 border-slate-200'}`}><Beaker size={12}/> Teste</button>
-                {/* --- AQUI ESTAVA O PROBLEMA DO ID NULO --- */}
+                
+                {/* --- BOTÃO CORRIGIDO: Agora carrega o Telefone e Email para os states separados --- */}
                 <button onClick={() => { 
-                    const talentData = {
-                        ...c,
-                        id: generateId(), // GERA UM NOVO ID AQUI
-                        targetRole: job.title,
-                        createdAt: new Date().toISOString(),
-                        tags: [],
-                        education: [],
-                        experience: [],
-                        observations: [`Importado da vaga: ${job.title}`]
-                    };
-                    // Preenche o modal para confirmar
-                    setTalentFormData(talentData as TalentProfile); 
+                    setTalentFormData({ name: c.name, city: c.city, targetRole: job.title }); 
+                    setTalentEmail(c.email || ''); // Preenche o estado do email
+                    setTalentPhone(c.phone || ''); // Preenche o estado do telefone
                     setIsTalentModalOpen(true); 
                 }} className="flex-1 flex justify-center items-center gap-1 bg-white hover:bg-orange-50 text-slate-500 hover:text-orange-600 py-1.5 rounded text-[10px] font-bold border border-slate-200 transition-colors"><Database size={12}/> Banco</button>
+                
                 <button onClick={() => handleOpenModal(c)} className="flex-1 flex justify-center items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-1.5 rounded text-[10px] font-bold transition-colors"><User size={12}/> Editar</button>
                 <button onClick={() => handleOpenDeleteCandidate(c)} className="flex justify-center items-center px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 rounded transition-colors" title="Excluir Candidato"><Trash2 size={12}/></button>
              </div>
@@ -644,7 +638,7 @@ export const JobDetails: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL EXPORTAR PARA BANCO DE TALENTOS --- */}
+      {/* --- MODAL EXPORTAR PARA BANCO DE TALENTOS (ATUALIZADO) --- */}
       {isTalentModalOpen && (
         <div className="fixed inset-0 bg-indigo-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
            <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-fadeIn border-t-8 border-indigo-600">
@@ -652,13 +646,23 @@ export const JobDetails: React.FC = () => {
               <div className="space-y-4">
                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Nome do Candidato</label><div className="font-bold text-slate-700">{talentFormData.name}</div></div>
                  <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cidade</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Cidade de origem" value={talentFormData.city || ''} onChange={e => setTalentFormData({...talentFormData, city: e.target.value})} /></div>
+                 
+                 {/* CAMPOS SEPARADOS NO MODAL PARA CORRIGIR O BUG DO TELEFONE */}
+                 <div className="grid grid-cols-2 gap-4">
+                     <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Email</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="email@..." value={talentEmail} onChange={e => setTalentEmail(e.target.value)} /></div>
+                     <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Telefone</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="(XX)..." value={talentPhone} onChange={e => setTalentPhone(e.target.value)} /></div>
+                 </div>
+
                  <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cargo para Busca Futura</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Ex: Desenvolvedor, Vendedor..." value={talentFormData.targetRole || ''} onChange={e => setTalentFormData({...talentFormData, targetRole: e.target.value})} /></div>
                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                     <button onClick={() => setIsTalentModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold uppercase text-[10px] tracking-widest">Voltar</button>
-                    {/* CORREÇÃO DO ID NULO APLICADA AQUI TAMBÉM */}
                     <button onClick={() => { 
+                        // JUNTA EMAIL E TELEFONE
+                        const finalContact = [talentEmail, talentPhone].filter(Boolean).join(' | ');
+                        
                         addTalent({ 
                             ...talentFormData, 
+                            contact: finalContact, // SALVA UNIDO
                             id: generateId(), 
                             createdAt: new Date().toISOString(),
                             tags: [],
