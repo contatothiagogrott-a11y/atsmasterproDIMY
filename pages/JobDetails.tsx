@@ -215,7 +215,9 @@ export const JobDetails: React.FC = () => {
   const handleOpenModal = (candidate?: Candidate) => {
     if (candidate) {
         setSelectedCandidate(candidate);
+        // Garante que os dados do form são uma cópia exata, sem datas mágicas
         setFormData({ ...candidate });
+        
         if (candidate.rejectionReason) {
             const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
             const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
@@ -236,9 +238,19 @@ export const JobDetails: React.FC = () => {
 
   const handleSaveChanges = async () => {
     const processedData = { ...formData };
-    if (processedData.firstContactAt) processedData.firstContactAt = `${toInputDate(processedData.firstContactAt)}T12:00:00.000Z`;
-    if (processedData.interviewAt) processedData.interviewAt = `${toInputDate(processedData.interviewAt)}T12:00:00.000Z`;
-    if (processedData.lastInteractionAt) processedData.lastInteractionAt = `${toInputDate(processedData.lastInteractionAt)}T12:00:00.000Z`;
+
+    // --- CORREÇÃO AQUI ---
+    // Só formata a data se ela existir no input. Se vier vazia ou undefined, mantém como undefined ou remove.
+    if (processedData.firstContactAt) {
+        processedData.firstContactAt = `${toInputDate(processedData.firstContactAt)}T12:00:00.000Z`;
+    }
+    if (processedData.interviewAt) {
+        processedData.interviewAt = `${toInputDate(processedData.interviewAt)}T12:00:00.000Z`;
+    }
+    // IMPORTANTE: Só atualiza lastInteractionAt se o usuário mexeu no campo
+    if (processedData.lastInteractionAt) {
+        processedData.lastInteractionAt = `${toInputDate(processedData.lastInteractionAt)}T12:00:00.000Z`;
+    }
 
     if (processedData.status === 'Reprovado' || processedData.status === 'Desistência') {
         if (!processedData.rejectionReason) { alert("Por favor, informe o motivo da perda."); return; }
