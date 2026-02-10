@@ -4,15 +4,15 @@ import { useData } from '../context/DataContext';
 import { 
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, TrendingUp, UserX, 
-  Calendar, Building2, Lock, Unlock, X, 
-  ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3, 
-  UserMinus, PauseCircle, Activity
+  Calendar, Building2, Lock, Unlock, X, ChevronRight, 
+  ExternalLink, ClipboardCheck, Clock, Search, BarChart3, 
+  UserMinus, PauseCircle, Activity, History // Adicionado History
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
 
-// Tipos definidos separadamente para controlar o modal corretamente
-type DrillDownType = 'ALL_ACTIVE' | 'OPENED_NEW' | 'CANCELED' | 'FROZEN' | 'CLOSED' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION' | 'REPLACEMENT' | 'SLA' | null;
+// Tipos definidos separadamente
+type DrillDownType = 'ALL_ACTIVE' | 'BACKLOG' | 'OPENED_NEW' | 'CANCELED' | 'FROZEN' | 'CLOSED' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION' | 'REPLACEMENT' | 'SLA' | null;
 
 export const StrategicReport: React.FC = () => {
   const navigate = useNavigate();
@@ -97,6 +97,13 @@ export const StrategicReport: React.FC = () => {
       const avgSla = closedInPeriodList.length > 0 ? (totalDays / closedInPeriodList.length).toFixed(1) : '0';
 
       // 2. FLUXO DE VAGAS
+      // Backlog: Abertas ANTES do inicio do filtro e que continuam abertas (ou fecharam depois do inicio)
+      const jobsBacklog = accessibleJobs.filter(j => {
+          const opened = new Date(j.openedAt).getTime();
+          const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
+          return opened < start && (!closed || closed >= start);
+      });
+
       const jobsOpenedNew = accessibleJobs.filter(j => isWithin(j.openedAt));
       const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
       const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(j.frozenAt));
@@ -125,14 +132,16 @@ export const StrategicReport: React.FC = () => {
 
       return {
           allActive: { total: allActiveJobs.length, list: allActiveJobs },
-          expansion: { total: expansionList.length, list: expansionList },     // Lista separada
-          replacement: { total: replacementList.length, list: replacementList }, // Lista separada
-          sla: { avg: avgSla, list: closedInPeriodList, count: closedInPeriodList.length }, // Lista separada para SLA
+          expansion: { total: expansionList.length, list: expansionList },     
+          replacement: { total: replacementList.length, list: replacementList },
+          sla: { avg: avgSla, list: closedInPeriodList, count: closedInPeriodList.length },
 
+          backlog: { total: jobsBacklog.length, list: jobsBacklog }, // NOVO
           openedNew: { total: jobsOpenedNew.length, list: jobsOpenedNew },
           closed: { total: jobsClosed.length, list: jobsClosed },
           frozen: { total: jobsFrozen.length, list: jobsFrozen },
           canceled: { total: jobsCanceled.length, list: jobsCanceled },
+          
           interviews: { total: interviews.length, list: interviews },
           tests: { total: tests.length, list: tests },
           rejected: { total: rejected.length, list: rejected, reasons: rejectionReasons },
@@ -144,15 +153,16 @@ export const StrategicReport: React.FC = () => {
   // --- RENDERIZAÇÃO DO CONTEÚDO DO MODAL ---
   const getModalContent = () => {
       // TIPO A: LISTA DE VAGAS
-      if(['ALL_ACTIVE', 'OPENED_NEW', 'CANCELED', 'FROZEN', 'CLOSED', 'EXPANSION', 'REPLACEMENT', 'SLA'].includes(drillDownTarget as string)) {
+      if(['ALL_ACTIVE', 'BACKLOG', 'OPENED_NEW', 'CANCELED', 'FROZEN', 'CLOSED', 'EXPANSION', 'REPLACEMENT', 'SLA'].includes(drillDownTarget as string)) {
           let list = kpis.allActive.list;
+          if(drillDownTarget === 'BACKLOG') list = kpis.backlog.list;
           if(drillDownTarget === 'OPENED_NEW') list = kpis.openedNew.list;
           if(drillDownTarget === 'CANCELED') list = kpis.canceled.list;
           if(drillDownTarget === 'FROZEN') list = kpis.frozen.list;
           if(drillDownTarget === 'CLOSED') list = kpis.closed.list;
-          if(drillDownTarget === 'EXPANSION') list = kpis.expansion.list;     // Lista correta
-          if(drillDownTarget === 'REPLACEMENT') list = kpis.replacement.list; // Lista correta
-          if(drillDownTarget === 'SLA') list = kpis.sla.list;                 // Lista correta
+          if(drillDownTarget === 'EXPANSION') list = kpis.expansion.list;     
+          if(drillDownTarget === 'REPLACEMENT') list = kpis.replacement.list; 
+          if(drillDownTarget === 'SLA') list = kpis.sla.list;                 
 
           return (
               <div className="overflow-x-auto">
@@ -339,11 +349,12 @@ export const StrategicReport: React.FC = () => {
       {/* --- BLOCO 2: FLUXO DE VAGAS --- */}
       <div>
          <h3 className="text-lg font-black text-slate-700 uppercase tracking-tighter mb-4 flex items-center gap-2"><Activity size={20}/> Movimentação de Vagas</h3>
-         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-             <StrategicCard title="Novas (Período)" value={kpis.openedNew.total} color="blue" icon={Briefcase} subtitle="Abertas neste intervalo" onClick={() => setDrillDownTarget('OPENED_NEW')} />
+         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+             <StrategicCard title="Em Aberto (Antigas)" value={kpis.backlog.total} color="violet" icon={History} subtitle="Backlog anterior" onClick={() => setDrillDownTarget('BACKLOG')} />
+             <StrategicCard title="Novas (Entrada)" value={kpis.openedNew.total} color="blue" icon={Briefcase} subtitle="Abertas neste intervalo" onClick={() => setDrillDownTarget('OPENED_NEW')} />
              <StrategicCard title="Canceladas" value={kpis.canceled.total} color="red" icon={XCircle} subtitle="Canceladas neste intervalo" onClick={() => setDrillDownTarget('CANCELED')} />
              <StrategicCard title="Congeladas" value={kpis.frozen.total} color="amber" icon={PauseCircle} subtitle="Congeladas neste intervalo" onClick={() => setDrillDownTarget('FROZEN')} />
-             <StrategicCard title="Finalizadas" value={kpis.closed.total} color="emerald" icon={CheckCircle} subtitle="Fechadas com sucesso" onClick={() => setDrillDownTarget('CLOSED')} />
+             <StrategicCard title="Finalizadas (Saída)" value={kpis.closed.total} color="emerald" icon={CheckCircle} subtitle="Fechadas com sucesso" onClick={() => setDrillDownTarget('CLOSED')} />
          </div>
       </div>
 
@@ -366,7 +377,7 @@ export const StrategicReport: React.FC = () => {
                   <thead>
                       <tr className="bg-slate-50/80 text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
                           <th className="p-4 pl-6">Setor / Departamento</th>
-                          <th className="p-4 text-center">Abertas</th>
+                          <th className="p-4 text-center">Abertas (Novas)</th>
                           <th className="p-4 text-center">Fechadas</th>
                           <th className="p-4 text-center">Cong.</th>
                           <th className="p-4 text-center">Canc.</th>
@@ -401,8 +412,9 @@ export const StrategicReport: React.FC = () => {
                                 {drillDownTarget === 'EXPANSION' && "Vagas de Aumento de Quadro"}
                                 {drillDownTarget === 'REPLACEMENT' && "Vagas de Substituição"}
                                 {drillDownTarget === 'ALL_ACTIVE' && "Vagas Ativas (Total)"}
-                                {drillDownTarget === 'OPENED_NEW' && "Novas Vagas"}
-                                {drillDownTarget === 'CLOSED' && "Vagas Finalizadas"}
+                                {drillDownTarget === 'BACKLOG' && "Vagas em Aberto (Antigas)"}
+                                {drillDownTarget === 'OPENED_NEW' && "Novas Vagas (Entrada)"}
+                                {drillDownTarget === 'CLOSED' && "Vagas Finalizadas (Saída)"}
                                 {drillDownTarget === 'CANCELED' && "Vagas Canceladas"}
                                 {drillDownTarget === 'FROZEN' && "Vagas Congeladas"}
                                 {drillDownTarget === 'INTERVIEWS' && "Entrevistas Realizadas"}
