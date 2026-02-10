@@ -4,14 +4,15 @@ import { useData } from '../context/DataContext';
 import { 
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, TrendingUp, UserX, 
-  Calendar, Building2, Lock, Unlock, X, ChevronRight, 
-  ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3, 
+  Calendar, Building2, Lock, Unlock, X, 
+  ExternalLink, ClipboardCheck, Clock, Search, BarChart3, 
   UserMinus, PauseCircle, Activity
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
 
-type DrillDownType = 'ALL_ACTIVE' | 'OPENED_NEW' | 'CANCELED' | 'FROZEN' | 'CLOSED' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION_REPLACEMENT' | null;
+// Tipos definidos separadamente para controlar o modal corretamente
+type DrillDownType = 'ALL_ACTIVE' | 'OPENED_NEW' | 'CANCELED' | 'FROZEN' | 'CLOSED' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION' | 'REPLACEMENT' | 'SLA' | null;
 
 export const StrategicReport: React.FC = () => {
   const navigate = useNavigate();
@@ -78,36 +79,41 @@ export const StrategicReport: React.FC = () => {
   // --- CÁLCULO DAS MÉTRICAS ---
   const kpis = useMemo(() => {
       // 1. VAGAS ATIVAS NO PERÍODO (Total trabalhado)
-      // Aberta antes do fim E (não fechou OU fechou depois do início)
       const allActiveJobs = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
           const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
           return opened <= end && (!closed || closed >= start);
       });
 
-      const expansionCount = allActiveJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro').length;
-      const replacementCount = allActiveJobs.filter(j => j.openingDetails?.reason === 'Substituição').length;
+      const expansionList = allActiveJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro');
+      const replacementList = allActiveJobs.filter(j => j.openingDetails?.reason === 'Substituição');
 
-      // 2. FLUXO DE VAGAS (O que aconteceu DENTRO do período)
+      // SLA (Fechadas no período)
+      const closedInPeriodList = accessibleJobs.filter(j => j.status === 'Fechada' && j.closedAt && isWithin(j.closedAt));
+      const totalDays = closedInPeriodList.reduce((acc, j) => {
+          const days = differenceInDays(parseISO(j.closedAt!), parseISO(j.openedAt));
+          return acc + days;
+      }, 0);
+      const avgSla = closedInPeriodList.length > 0 ? (totalDays / closedInPeriodList.length).toFixed(1) : '0';
+
+      // 2. FLUXO DE VAGAS
       const jobsOpenedNew = accessibleJobs.filter(j => isWithin(j.openedAt));
       const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
-      const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(j.frozenAt)); // Assumindo frozenAt ou usar histórico
+      const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(j.frozenAt));
       const jobsCanceled = accessibleJobs.filter(j => j.status === 'Cancelada' && isWithin(j.closedAt));
 
-      // 3. FLUXO DE CANDIDATOS (Atividade no período)
+      // 3. FLUXO DE CANDIDATOS
       const interviews = accessibleCandidates.filter(c => isWithin(c.interviewAt));
       const tests = accessibleCandidates.filter(c => c.techTest && isWithin(c.techTestDate));
       const rejected = accessibleCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
       const withdrawn = accessibleCandidates.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate));
 
-      // Motivos
       const rejectionReasons: Record<string, number> = {};
       rejected.forEach(c => { const r = c.rejectionReason || 'N/I'; rejectionReasons[r] = (rejectionReasons[r] || 0) + 1; });
       
       const withdrawnReasons: Record<string, number> = {};
       withdrawn.forEach(c => { const r = c.rejectionReason || 'N/I'; withdrawnReasons[r] = (withdrawnReasons[r] || 0) + 1; });
 
-      // Setorização para tabela final
       const bySector: Record<string, any> = {};
       accessibleJobs.forEach(j => {
           if (!bySector[j.sector]) bySector[j.sector] = { opened: 0, closed: 0, frozen: 0, canceled: 0 };
@@ -118,7 +124,11 @@ export const StrategicReport: React.FC = () => {
       });
 
       return {
-          allActive: { total: allActiveJobs.length, list: allActiveJobs, expansion: expansionCount, replacement: replacementCount },
+          allActive: { total: allActiveJobs.length, list: allActiveJobs },
+          expansion: { total: expansionList.length, list: expansionList },     // Lista separada
+          replacement: { total: replacementList.length, list: replacementList }, // Lista separada
+          sla: { avg: avgSla, list: closedInPeriodList, count: closedInPeriodList.length }, // Lista separada para SLA
+
           openedNew: { total: jobsOpenedNew.length, list: jobsOpenedNew },
           closed: { total: jobsClosed.length, list: jobsClosed },
           frozen: { total: jobsFrozen.length, list: jobsFrozen },
@@ -134,14 +144,16 @@ export const StrategicReport: React.FC = () => {
   // --- RENDERIZAÇÃO DO CONTEÚDO DO MODAL ---
   const getModalContent = () => {
       // TIPO A: LISTA DE VAGAS
-      if(['ALL_ACTIVE', 'OPENED_NEW', 'CANCELED', 'FROZEN', 'CLOSED', 'EXPANSION_REPLACEMENT'].includes(drillDownTarget as string)) {
+      if(['ALL_ACTIVE', 'OPENED_NEW', 'CANCELED', 'FROZEN', 'CLOSED', 'EXPANSION', 'REPLACEMENT', 'SLA'].includes(drillDownTarget as string)) {
           let list = kpis.allActive.list;
           if(drillDownTarget === 'OPENED_NEW') list = kpis.openedNew.list;
           if(drillDownTarget === 'CANCELED') list = kpis.canceled.list;
           if(drillDownTarget === 'FROZEN') list = kpis.frozen.list;
           if(drillDownTarget === 'CLOSED') list = kpis.closed.list;
-          // Se for o detalhe de expansão/reposição, mostra todas ativas com a coluna extra
-          
+          if(drillDownTarget === 'EXPANSION') list = kpis.expansion.list;     // Lista correta
+          if(drillDownTarget === 'REPLACEMENT') list = kpis.replacement.list; // Lista correta
+          if(drillDownTarget === 'SLA') list = kpis.sla.list;                 // Lista correta
+
           return (
               <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
@@ -150,10 +162,10 @@ export const StrategicReport: React.FC = () => {
                               <th className="p-4 pl-6 rounded-l-xl">Vaga</th>
                               <th className="p-4 text-center">Tipo</th>
                               <th className="p-4 text-center">Abertura</th>
-                              {drillDownTarget === 'CLOSED' && <th className="p-4 text-center">Fechamento</th>}
-                              {drillDownTarget === 'CLOSED' && <th className="p-4 text-center">Contratado</th>}
-                              {drillDownTarget === 'CANCELED' && <th className="p-4 text-center">Motivo Canc.</th>}
-                              {drillDownTarget === 'FROZEN' && <th className="p-4 text-center">Data Cong.</th>}
+                              {(drillDownTarget === 'CLOSED' || drillDownTarget === 'SLA') && <th className="p-4 text-center">Fechamento (SLA)</th>}
+                              {(drillDownTarget === 'CLOSED') && <th className="p-4 text-center">Contratado</th>}
+                              {(drillDownTarget === 'CANCELED') && <th className="p-4 text-center">Motivo Canc.</th>}
+                              {(drillDownTarget === 'FROZEN') && <th className="p-4 text-center">Data Cong.</th>}
                               <th className="p-4 text-right pr-6 rounded-r-xl">Ação</th>
                           </tr>
                       </thead>
@@ -162,6 +174,8 @@ export const StrategicReport: React.FC = () => {
                               const hiredId = j.hiredCandidateIds?.[0];
                               const hiredName = hiredId ? candidates.find(c => c.id === hiredId)?.name : '-';
                               const type = j.openingDetails?.reason || 'Aumento de Quadro';
+                              const sla = j.closedAt ? differenceInDays(parseISO(j.closedAt), parseISO(j.openedAt)) : 
+                                          differenceInDays(new Date(), parseISO(j.openedAt));
 
                               return (
                                   <tr key={j.id} className="hover:bg-slate-50 transition-colors">
@@ -174,13 +188,18 @@ export const StrategicReport: React.FC = () => {
                                       </td>
                                       <td className="p-4 text-center text-slate-600 font-bold">{new Date(j.openedAt).toLocaleDateString()}</td>
                                       
-                                      {drillDownTarget === 'CLOSED' && (
-                                          <>
-                                              <td className="p-4 text-center text-slate-600 font-bold">{j.closedAt ? new Date(j.closedAt).toLocaleDateString() : '-'}</td>
-                                              <td className="p-4 text-center text-emerald-700 font-black">{hiredName}</td>
-                                          </>
+                                      {(drillDownTarget === 'CLOSED' || drillDownTarget === 'SLA') && (
+                                          <td className="p-4 text-center">
+                                              <div className="font-bold text-slate-700">{j.closedAt ? new Date(j.closedAt).toLocaleDateString() : '-'}</div>
+                                              <div className="text-[10px] text-slate-400 font-black uppercase">{sla} dias</div>
+                                          </td>
                                       )}
-                                      {drillDownTarget === 'CANCELED' && <td className="p-4 text-center text-red-600 text-xs">{j.cancellationReason || 'N/I'}</td>}
+                                      
+                                      {drillDownTarget === 'CLOSED' && (
+                                          <td className="p-4 text-center text-emerald-700 font-black">{hiredName}</td>
+                                      )}
+                                      
+                                      {drillDownTarget === 'CANCELED' && <td className="p-4 text-center text-red-600 text-xs max-w-[150px] truncate" title={j.cancellationReason}>{j.cancellationReason || 'N/I'}</td>}
                                       {drillDownTarget === 'FROZEN' && <td className="p-4 text-center text-amber-600 font-bold">{j.frozenAt ? new Date(j.frozenAt).toLocaleDateString() : '-'}</td>}
                                       
                                       <td className="p-4 pr-6 text-right">
@@ -189,7 +208,7 @@ export const StrategicReport: React.FC = () => {
                                   </tr>
                               );
                           })}
-                          {list.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400 italic">Nenhum registro encontrado.</td></tr>}
+                          {list.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-slate-400 italic">Nenhum registro encontrado.</td></tr>}
                       </tbody>
                   </table>
               </div>
@@ -205,18 +224,17 @@ export const StrategicReport: React.FC = () => {
 
           return (
               <div className="overflow-x-auto">
-                 {/* ... PAINEL DE RANKING DE MOTIVOS (SE FOR REJEIÇÃO/DESISTÊNCIA) ... */}
+                 {/* RANKING DE MOTIVOS */}
                  {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
                     <div className="p-4 bg-slate-50 mb-4 rounded-xl border border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-2">
                         {Object.entries(drillDownTarget === 'REJECTED' ? kpis.rejected.reasons : kpis.withdrawn.reasons)
                             .sort(([,a], [,b]) => b - a).slice(0,4).map(([r, c]) => (
                                 <div key={r} className="bg-white p-2 rounded border border-slate-200 shadow-sm text-xs">
-                                    <span className="font-bold text-slate-700 block truncate">{r}</span>
+                                    <span className="font-bold text-slate-700 block truncate" title={r}>{r}</span>
                                     <span className="font-black text-slate-400">{c} ocorren.</span>
                                 </div>
                             ))
                         }
-                        {Object.keys(drillDownTarget === 'REJECTED' ? kpis.rejected.reasons : kpis.withdrawn.reasons).length === 0 && <div className="text-slate-400 text-xs italic p-2">Sem motivos registrados.</div>}
                     </div>
                  )}
 
@@ -293,28 +311,32 @@ export const StrategicReport: React.FC = () => {
           <div className="absolute top-0 right-0 p-8 opacity-10"><Briefcase size={180}/></div>
           
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
-              <div>
+              <div 
+                  onClick={() => setDrillDownTarget('ALL_ACTIVE')}
+                  className="cursor-pointer hover:opacity-90 transition-opacity"
+                  title="Ver todas as vagas ativas no período"
+              >
                   <p className="text-indigo-200 font-bold uppercase tracking-widest text-xs mb-1">Volume Total Trabalhado</p>
                   <h2 className="text-5xl font-black">{kpis.allActive.total} <span className="text-2xl font-medium text-indigo-300">vagas ativas</span></h2>
                   <p className="text-indigo-300 text-sm mt-2 max-w-md">Vagas que estiveram abertas em algum momento dentro do período selecionado (Novas + Backlog).</p>
               </div>
               
               <div className="flex gap-4">
-                  <div onClick={() => setDrillDownTarget('EXPANSION_REPLACEMENT')} className="bg-white/10 p-4 rounded-2xl border border-white/20 backdrop-blur-sm cursor-pointer hover:bg-white/20 transition-all text-center min-w-[140px]">
+                  <div onClick={() => setDrillDownTarget('EXPANSION')} className="bg-white/10 p-4 rounded-2xl border border-white/20 backdrop-blur-sm cursor-pointer hover:bg-white/20 transition-all text-center min-w-[140px]">
                       <TrendingUp className="text-emerald-400 mx-auto mb-2" size={24}/>
-                      <div className="text-2xl font-black">{kpis.allActive.expansion}</div>
+                      <div className="text-2xl font-black">{kpis.expansion.total}</div>
                       <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">Aumento Quadro</div>
                   </div>
-                  <div onClick={() => setDrillDownTarget('EXPANSION_REPLACEMENT')} className="bg-white/10 p-4 rounded-2xl border border-white/20 backdrop-blur-sm cursor-pointer hover:bg-white/20 transition-all text-center min-w-[140px]">
+                  <div onClick={() => setDrillDownTarget('REPLACEMENT')} className="bg-white/10 p-4 rounded-2xl border border-white/20 backdrop-blur-sm cursor-pointer hover:bg-white/20 transition-all text-center min-w-[140px]">
                       <UserMinus className="text-rose-400 mx-auto mb-2" size={24}/>
-                      <div className="text-2xl font-black">{kpis.allActive.replacement}</div>
+                      <div className="text-2xl font-black">{kpis.replacement.total}</div>
                       <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">Reposição</div>
                   </div>
               </div>
           </div>
       </div>
 
-      {/* --- BLOCO 2: FLUXO DE VAGAS (ABERTAS / FECHADAS / ETC) --- */}
+      {/* --- BLOCO 2: FLUXO DE VAGAS --- */}
       <div>
          <h3 className="text-lg font-black text-slate-700 uppercase tracking-tighter mb-4 flex items-center gap-2"><Activity size={20}/> Movimentação de Vagas</h3>
          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -336,9 +358,9 @@ export const StrategicReport: React.FC = () => {
          </div>
       </div>
 
-      {/* RELAÇÃO POR ÁREA (Mantido pois é útil) */}
+      {/* RELAÇÃO POR ÁREA */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex items-center gap-2 bg-slate-50/30"><Building2 size={20} className="text-slate-600"/><h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">Performance por Área</h3></div>
+          <div className="p-5 border-b border-slate-100 flex items-center gap-2 bg-slate-50/30"><TrendingUp size={20} className="text-indigo-600"/><h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">Relação por Área</h3></div>
           <div className="overflow-x-auto">
               <table className="w-full text-left text-[11px]">
                   <thead>
@@ -367,26 +389,29 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* MODAL DE DRILL DOWN */}
+      {/* MODAL DE DRILL DOWN (AJUSTADO: Centralizado e mais estreito) */}
       {drillDownTarget && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                       <div className="flex items-center gap-3">
                           <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg"><Search size={22} /></div>
                           <div>
                             <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
-                                {drillDownTarget === 'EXPANSION_REPLACEMENT' && "Detalhamento de Vagas Ativas"}
-                                {drillDownTarget === 'OPENED_NEW' && "Novas Vagas Abertas"}
+                                {drillDownTarget === 'ALL_ACTIVE' && "Vagas Ativas (Total)"}
+                                {drillDownTarget === 'OPENED_NEW' && "Novas Vagas"}
                                 {drillDownTarget === 'CLOSED' && "Vagas Finalizadas"}
                                 {drillDownTarget === 'CANCELED' && "Vagas Canceladas"}
                                 {drillDownTarget === 'FROZEN' && "Vagas Congeladas"}
-                                {drillDownTarget === 'INTERVIEWS' && "Entrevistas Realizadas"}
+                                {drillDownTarget === 'INTERVIEWS' && "Entrevistas"}
                                 {drillDownTarget === 'TESTS' && "Testes Técnicos"}
                                 {drillDownTarget === 'REJECTED' && "Reprovações"}
                                 {drillDownTarget === 'WITHDRAWN' && "Desistências"}
+                                {drillDownTarget === 'EXPANSION' && "Expansão de Quadro"}
+                                {drillDownTarget === 'REPLACEMENT' && "Substituição"}
+                                {drillDownTarget === 'SLA' && "Tempo de Fechamento"}
                             </h2>
-                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Registros encontrados no período</p>
+                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Detalhes dos registros</p>
                           </div>
                       </div>
                       <button onClick={() => setDrillDownTarget(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={26} /></button>
