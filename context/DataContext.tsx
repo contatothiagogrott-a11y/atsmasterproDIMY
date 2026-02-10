@@ -28,7 +28,7 @@ interface DataContextType {
 
   candidates: Candidate[];
   addCandidate: (c: Candidate) => Promise<void>;
-  updateCandidate: (c: Candidate, manualInteraction?: boolean) => Promise<void>;
+  updateCandidate: (c: Candidate) => Promise<void>; // <--- REMOVIDO O PARÂMETRO MANUALINTERACTION
   removeCandidate: (id: string) => Promise<void>;
 
   talents: TalentProfile[];
@@ -38,7 +38,7 @@ interface DataContextType {
 
   trash: any[];
   restoreItem: (id: string) => Promise<void>;
-  permanentlyDeleteItem: (id: string) => Promise<void>; // <--- NOVO
+  permanentlyDeleteItem: (id: string) => Promise<void>;
 
   refreshData: () => Promise<void>;
   loading: boolean;
@@ -249,17 +249,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
+  // --- CRUD CANDIDATOS CORRIGIDO ---
   const addCandidate = async (c: Candidate) => {
-    const newCandidate = { ...c, lastInteractionAt: new Date().toISOString() };
+    // CORREÇÃO: Não forçamos mais lastInteractionAt aqui.
+    const newCandidate = { ...c };
+    
+    // Opcional: Garante data de criação se não vier
+    if (!newCandidate.createdAt) newCandidate.createdAt = new Date().toISOString();
+
     setCandidates(prev => [...prev, newCandidate]);
     await saveEntity('candidate', newCandidate);
   };
-  const updateCandidate = async (c: Candidate, manualInteraction = false) => {
-    let updated = { ...c };
-    if (!manualInteraction) updated.lastInteractionAt = new Date().toISOString();
-    setCandidates(prev => prev.map(ex => ex.id === c.id ? updated : ex));
-    await saveEntity('candidate', updated);
+
+  const updateCandidate = async (c: Candidate) => {
+    // CORREÇÃO: Removemos a lógica automática de data.
+    // O backend/frontend agora tem total controle sobre os campos.
+    setCandidates(prev => prev.map(ex => ex.id === c.id ? c : ex));
+    await saveEntity('candidate', c);
   };
+
   const removeCandidate = async (id: string) => {
     setCandidates(prev => prev.filter(c => c.id !== id));
     await deleteEntity(id);
@@ -287,7 +295,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       jobs, addJob, updateJob, removeJob,
       candidates, addCandidate, updateCandidate, removeCandidate,
       talents, addTalent, removeTalent, updateTalent,
-      trash, restoreItem, permanentlyDeleteItem, // <--- EXPOSTO
+      trash, restoreItem, permanentlyDeleteItem,
       refreshData, loading
     }}>
       {children}
