@@ -5,7 +5,7 @@ import {
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, PieChart, TrendingUp, UserX, AlertTriangle, 
   Calendar, Building2, Lock, Unlock, X, ChevronRight, 
-  ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3
+  ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3, UserMinus
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
@@ -72,6 +72,28 @@ export const StrategicReport: React.FC = () => {
       return jobIds.has(c.jobId) || isGeneral;
   }), [candidates, jobIds, unitFilter]);
 
+  // --- CÁLCULO DE MÉTRICAS ADICIONAIS (SLA, EXPANSÃO, SUBSTITUIÇÃO) ---
+  const strategicStats = useMemo(() => {
+    // Vagas consideradas no período
+    const jobsInPeriod = accessibleJobs.filter(j => 
+        isWithin(j.openedAt) || (j.closedAt && isWithin(j.closedAt))
+    );
+
+    const expansion = jobsInPeriod.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro').length;
+    const replacement = jobsInPeriod.filter(j => j.openingDetails?.reason === 'Substituição').length;
+
+    // SLA (Apenas de vagas FECHADAS no período)
+    const closedJobs = accessibleJobs.filter(j => j.status === 'Fechada' && j.closedAt && isWithin(j.closedAt));
+    const totalDays = closedJobs.reduce((acc, j) => {
+        const days = differenceInDays(parseISO(j.closedAt!), parseISO(j.openedAt));
+        return acc + days;
+    }, 0);
+    const avgSla = closedJobs.length > 0 ? (totalDays / closedJobs.length).toFixed(1) : '0';
+
+    return { expansion, replacement, avgSla, closedCount: closedJobs.length };
+  }, [accessibleJobs, startDate, endDate]);
+
+
   const metrics = useMemo(() => {
     const jobsOpened = accessibleJobs.filter(j => isWithin(j.openedAt));
     const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
@@ -135,7 +157,40 @@ export const StrategicReport: React.FC = () => {
           <div className="flex items-center gap-2 px-2"><Building2 size={16} className="text-slate-400" /><select className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div>
       </div>
 
-      {/* CARDS */}
+      {/* --- NOVA SEÇÃO: CARDS ESTRATÉGICOS DE SLA/TIPO --- */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+            <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><Clock size={80} className="text-blue-600"/></div>
+            <div className="bg-blue-100 p-3 rounded-xl text-blue-600 z-10"><Clock size={24} /></div>
+            <div className="z-10">
+               <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Tempo Médio (SLA)</p>
+               <h4 className="text-3xl font-black text-slate-800">{strategicStats.avgSla} <span className="text-sm font-bold text-slate-400">dias</span></h4>
+               <p className="text-[10px] text-slate-400 font-medium">Baseado em {strategicStats.closedCount} vagas fechadas</p>
+            </div>
+         </div>
+
+         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+            <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><TrendingUp size={80} className="text-indigo-600"/></div>
+            <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600 z-10"><TrendingUp size={24} /></div>
+            <div className="z-10">
+               <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Expansão</p>
+               <h4 className="text-3xl font-black text-slate-800">{strategicStats.expansion} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
+               <p className="text-[10px] text-indigo-500 font-bold uppercase">Aumento de Quadro</p>
+            </div>
+         </div>
+
+         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+            <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><UserMinus size={80} className="text-rose-600"/></div>
+            <div className="bg-rose-100 p-3 rounded-xl text-rose-600 z-10"><UserMinus size={24} /></div>
+            <div className="z-10">
+               <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Reposição</p>
+               <h4 className="text-3xl font-black text-slate-800">{strategicStats.replacement} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
+               <p className="text-[10px] text-rose-500 font-bold uppercase">Substituição</p>
+            </div>
+         </div>
+      </div>
+
+      {/* CARDS OPERACIONAIS (MANTIDOS) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <StrategicCard title="Abertas" value={metrics.opened.total} color="blue" icon={Briefcase} subtitle={`+${metrics.opened.expansion} Novo | +${metrics.opened.replacement} Subst.`} />
           <StrategicCard title="Concluídas" value={metrics.closed.total} color="emerald" icon={CheckCircle} subtitle="Ver Contratações" onClick={() => setDrillDownTarget('CLOSED')} />
@@ -259,7 +314,6 @@ export const StrategicReport: React.FC = () => {
 
                                   {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].list.map(c => {
                                       const job = jobs.find(j => j.id === c.jobId);
-                                      // --- CORREÇÃO AQUI: Exibe "Entrevista Geral" se não tiver vaga ---
                                       const displayTitle = c.jobId === 'general' ? 'Entrevista Geral (Pool)' : job?.title;
                                       const displaySector = c.jobId === 'general' ? 'Sem vaga definida' : `${job?.sector} | ${job?.unit}`;
                                       
@@ -274,7 +328,6 @@ export const StrategicReport: React.FC = () => {
 
                                   {drillDownTarget === 'INTERVIEWS' && metrics.interviews.list.map(c => {
                                       const job = jobs.find(j => j.id === c.jobId);
-                                      // --- CORREÇÃO AQUI TAMBÉM ---
                                       const displayTitle = c.jobId === 'general' ? 'Entrevista Geral (Pool)' : job?.title;
 
                                       return (
