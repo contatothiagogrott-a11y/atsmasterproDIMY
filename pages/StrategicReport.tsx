@@ -4,9 +4,9 @@ import { useData } from '../context/DataContext';
 import { 
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, TrendingUp, UserX, 
-  Calendar, Building2, Lock, Unlock, X, 
+  Calendar, Building2, Lock, Unlock, X, ChevronRight, 
   ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3, 
-  UserMinus, PauseCircle, Activity, FileText
+  UserMinus, PauseCircle, Activity
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
