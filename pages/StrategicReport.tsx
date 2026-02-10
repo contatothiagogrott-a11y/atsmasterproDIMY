@@ -77,7 +77,6 @@ export const StrategicReport: React.FC = () => {
       const allActiveJobs = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
           const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
-          // Estava aberta em algum momento dentro do range
           return opened <= end && (!closed || closed >= start);
       });
 
@@ -109,10 +108,7 @@ export const StrategicReport: React.FC = () => {
       const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(j.frozenAt));
       const jobsCanceled = accessibleJobs.filter(j => j.status === 'Cancelada' && isWithin(j.closedAt));
 
-      // CORREÇÃO: SALDO EM ABERTO NO FIM DO PERÍODO
-      // Conta vagas que:
-      // 1. Abriram antes ou durante o fim do filtro
-      // 2. E (Não saíram OU saíram DEPOIS do fim do filtro)
+      // SALDO EM ABERTO NO FIM DO PERÍODO
       const jobsBalanceOpen = accessibleJobs.filter(j => {
         const opened = new Date(j.openedAt).getTime();
         
@@ -159,7 +155,7 @@ export const StrategicReport: React.FC = () => {
           frozen: { total: jobsFrozen.length, list: jobsFrozen },
           canceled: { total: jobsCanceled.length, list: jobsCanceled },
           
-          balanceOpen: { total: jobsBalanceOpen.length, list: jobsBalanceOpen }, // CORRIGIDO PARA BATER A CONTA
+          balanceOpen: { total: jobsBalanceOpen.length, list: jobsBalanceOpen },
 
           interviews: { total: interviews.length, list: interviews },
           tests: { total: tests.length, list: tests },
@@ -362,13 +358,13 @@ export const StrategicReport: React.FC = () => {
       <div>
          <h3 className="text-lg font-black text-slate-700 uppercase tracking-tighter mb-4 flex items-center gap-2"><Activity size={20}/> Movimentação de Vagas</h3>
          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-             {/* CARD CORRIGIDO: SALDO DO PERÍODO */}
-             <StrategicCard title="Abertas (Saldo Final)" value={kpis.balanceOpen.total} color="emerald" icon={Layers} subtitle="Continuam p/ futuro" onClick={() => setDrillDownTarget('BALANCE_OPEN')} />
-             <StrategicCard title="Backlog (Antigas)" value={kpis.backlog.total} color="violet" icon={History} subtitle="Vindas do mês anterior" onClick={() => setDrillDownTarget('BACKLOG')} />
+             {/* ORDEM DO FLUXO: Backlog -> Novas -> Canceladas -> Congeladas -> Fechadas -> Saldo Final */}
+             <StrategicCard title="Em Aberto (Antigas)" value={kpis.backlog.total} color="violet" icon={History} subtitle="Backlog anterior" onClick={() => setDrillDownTarget('BACKLOG')} />
              <StrategicCard title="Novas (Entrada)" value={kpis.openedNew.total} color="blue" icon={Briefcase} subtitle="Abertas neste intervalo" onClick={() => setDrillDownTarget('OPENED_NEW')} />
              <StrategicCard title="Canceladas" value={kpis.canceled.total} color="red" icon={XCircle} subtitle="Canceladas neste intervalo" onClick={() => setDrillDownTarget('CANCELED')} />
              <StrategicCard title="Congeladas" value={kpis.frozen.total} color="amber" icon={PauseCircle} subtitle="Congeladas neste intervalo" onClick={() => setDrillDownTarget('FROZEN')} />
              <StrategicCard title="Finalizadas (Saída)" value={kpis.closed.total} color="indigo" icon={CheckCircle} subtitle="Fechadas com sucesso" onClick={() => setDrillDownTarget('CLOSED')} />
+             <StrategicCard title="Abertas (Saldo Final)" value={kpis.balanceOpen.total} color="emerald" icon={Layers} subtitle="Continuam p/ futuro" onClick={() => setDrillDownTarget('BALANCE_OPEN')} />
          </div>
       </div>
 
