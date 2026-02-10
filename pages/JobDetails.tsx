@@ -2,11 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { 
-  ArrowLeft, User, Phone, Mail, Calendar, Clock, 
+  ArrowLeft, User, Calendar, 
   MessageSquare, Save, X, Search, Linkedin, Instagram, 
-  Globe, Users, UserPlus, MapPin, Briefcase, Filter,
-  CheckCircle, Award, DollarSign, Activity, Lock, Download,
-  Plus, Archive, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
+  Globe, Briefcase, 
+  CheckCircle, DollarSign, Activity, Lock, Download,
+  Plus, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
   Beaker, AlertTriangle, FileText, PauseCircle, Trash2, ShieldAlert
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType } from '../types';
@@ -39,8 +39,10 @@ const TECH_REJECTION_REASONS = [
   "Salário acima do budget"
 ];
 
+// Helper seguro para input de data
 const toInputDate = (isoString?: string) => {
   if (!isoString) return '';
+  // Garante que pega apenas a parte da data YYYY-MM-DD
   return isoString.split('T')[0];
 };
 
@@ -87,7 +89,6 @@ export const JobDetails: React.FC = () => {
   const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado', rejectionDetail: '' });
   const [techReasonType, setTechReasonType] = useState('');
 
-  // --- NOVOS STATES PARA CORRIGIR O BUG DO TELEFONE ---
   const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
   const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
   const [talentEmail, setTalentEmail] = useState(''); 
@@ -146,7 +147,7 @@ export const JobDetails: React.FC = () => {
     };
   }, [job, jobCandidates]);
 
-  // --- DELETE CANDIDATE LOGIC ---
+  // --- FUNÇÕES AUXILIARES ---
   const handleOpenDeleteCandidate = (c: Candidate) => {
     setCandidateToDelete(c);
     setDeletePassword('');
@@ -157,7 +158,6 @@ export const JobDetails: React.FC = () => {
   const handleConfirmCandidateDelete = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!candidateToDelete) return;
-
     const isValid = await verifyUserPassword(deletePassword);
     if (isValid) {
         await removeCandidate(candidateToDelete.id);
@@ -215,11 +215,12 @@ export const JobDetails: React.FC = () => {
   const handleOpenModal = (candidate?: Candidate) => {
     if (candidate) {
         setSelectedCandidate(candidate);
+        // CLONA O CANDIDATO PARA O FORM, garantindo que as datas venham corretamente
         setFormData({ ...candidate });
+        
         if (candidate.rejectionReason) {
             const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
             const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
-            
             if (isGeneral || isWithdrawal) {
                 setLossReasonType(candidate.rejectionReason);
             } else {
@@ -228,65 +229,64 @@ export const JobDetails: React.FC = () => {
         } else { setLossReasonType(''); }
     } else {
         setSelectedCandidate(null);
-        setFormData({ jobId: job?.id, status: 'Aguardando Triagem', origin: 'LinkedIn', contractType: 'CLT', createdAt: new Date().toISOString() });
+        // Inicializa com dados padrão
+        setFormData({ 
+            jobId: job?.id, 
+            status: 'Aguardando Triagem', 
+            origin: 'LinkedIn', 
+            contractType: 'CLT', 
+            createdAt: new Date().toISOString() 
+        });
         setLossReasonType('');
     }
     setIsModalOpen(true);
   };
 
-  // --- LÓGICA DE SALVAMENTO ATUALIZADA ---
+  // --- LÓGICA DE SALVAMENTO CORRIGIDA (SEM RESETAR DATAS) ---
   const handleSaveChanges = async () => {
-    const processedData = { ...formData };
+    // Cria uma cópia para processar
+    const dataToSave = { ...formData };
 
-    // Função auxiliar para processar datas do formulário
-    const processDateField = (field: keyof Candidate) => {
-        const inputVal = processedData[field];
-        
-        if (!inputVal) {
-            processedData[field] = undefined;
-            return;
-        }
-
-        // Se for edição e a data não mudou visualmente, mantém o original
-        if (selectedCandidate && selectedCandidate[field]) {
-             const originalDatePart = toInputDate(selectedCandidate[field] as string);
-             const newDatePart = toInputDate(inputVal as string);
-
-             if (originalDatePart === newDatePart) {
-                 processedData[field] = selectedCandidate[field];
-                 return;
-             }
-        }
-
-        // Se mudou ou é novo, formata
-        processedData[field] = `${toInputDate(inputVal as string)}T12:00:00.000Z`;
+    // Função simples para formatar a data se ela existir
+    const formatIfPresent = (dateValue?: string) => {
+        if (!dateValue) return undefined;
+        // Se já vier com T (ISO), pega só a parte da data e adiciona meio-dia
+        // Se vier só a data (do input), adiciona meio-dia
+        const cleanDate = dateValue.includes('T') ? dateValue.split('T')[0] : dateValue;
+        return `${cleanDate}T12:00:00.000Z`;
     };
 
-    processDateField('firstContactAt');
-    processDateField('interviewAt');
-    processDateField('lastInteractionAt'); 
+    // Atualiza as datas SOMENTE se houver valor no input
+    // Se o usuário limpou o input (string vazia), o campo vai como undefined (limpa no banco)
+    dataToSave.firstContactAt = formatIfPresent(dataToSave.firstContactAt);
+    dataToSave.interviewAt = formatIfPresent(dataToSave.interviewAt);
+    dataToSave.lastInteractionAt = formatIfPresent(dataToSave.lastInteractionAt);
 
-    // LÓGICA DE REPROVAÇÃO / DESISTÊNCIA
-    if (processedData.status === 'Reprovado' || processedData.status === 'Desistência') {
-        if (!processedData.rejectionReason) { alert("Por favor, informe o motivo da perda."); return; }
+    // Lógica para Reprovação e Desistência
+    if (dataToSave.status === 'Reprovado' || dataToSave.status === 'Desistência') {
+        if (!dataToSave.rejectionReason) { 
+            alert("Por favor, informe o motivo da perda."); 
+            return; 
+        }
         
-        processedData.rejectedBy = user?.name || 'Sistema';
+        dataToSave.rejectedBy = user?.name || 'Sistema';
         
-        // AQUI ESTÁ A CORREÇÃO:
-        // Se o recrutador informou uma data de "Último Contato", usamos ela como a data da Reprovação/Desistência.
-        // Isso permite retroagir a data para fins de relatório.
-        if (processedData.lastInteractionAt) {
-             processedData.rejectionDate = processedData.lastInteractionAt;
-        } else {
-             // Se não informou último contato, usa a data atual APENAS se for uma nova rejeição
-             if (!selectedCandidate?.rejectionDate || selectedCandidate.status !== processedData.status) {
-                 processedData.rejectionDate = new Date().toISOString();
-             }
+        // AQUI: Usa a data do ÚLTIMO CONTATO como a data do evento de reprovação/desistência.
+        // Se não tiver último contato, aí sim usa a data atual.
+        if (dataToSave.lastInteractionAt) {
+            dataToSave.rejectionDate = dataToSave.lastInteractionAt;
+        } else if (!selectedCandidate?.rejectionDate) {
+            // Se não tinha data antes, usa hoje. Se já tinha, mantém a original.
+            dataToSave.rejectionDate = new Date().toISOString();
         }
     }
 
-    if (selectedCandidate) await updateCandidate({ ...selectedCandidate, ...processedData } as Candidate);
-    else await addCandidate({ ...processedData, id: generateId() } as Candidate);
+    if (selectedCandidate) {
+        await updateCandidate({ ...selectedCandidate, ...dataToSave } as Candidate);
+    } else {
+        await addCandidate({ ...dataToSave, id: generateId() } as Candidate);
+    }
+    
     setIsModalOpen(false);
   };
 
@@ -324,7 +324,7 @@ export const JobDetails: React.FC = () => {
     if (techForm.didTest && techForm.result === 'Reprovado') {
         update.status = 'Reprovado';
         update.rejectionReason = techReasonType === 'Outros' ? techForm.rejectionDetail : techReasonType;
-        // Mesma lógica aqui: usa a data do teste como data de reprovação se houver
+        // Data da reprovação técnica é a data do teste
         update.rejectionDate = update.techTestDate || new Date().toISOString();
         update.rejectedBy = user?.name || 'Sistema';
     }
@@ -405,6 +405,7 @@ export const JobDetails: React.FC = () => {
             <option value="TODOS">Todos os Status</option>
             <option value="Aguardando Triagem">Aguardando Triagem</option>
             <option value="Em Análise">Em Análise</option>
+            <option value="Em Teste">Em Teste</option>
             <option value="Entrevista">Entrevista</option>
             <option value="Aprovado">Aprovado</option>
             <option value="Reprovado">Reprovado</option>
@@ -590,7 +591,7 @@ export const JobDetails: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL TESTE TÉCNICO (ATUALIZADO) --- */}
+      {/* --- MODAL TESTE TÉCNICO --- */}
       {isTechModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
            <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-2xl animate-fadeIn">
@@ -607,14 +608,10 @@ export const JobDetails: React.FC = () => {
                       <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Avaliador (Gestor)</label><input className="w-full border p-2 rounded-lg font-bold" value={techForm.evaluator} onChange={e => setTechForm({...techForm, evaluator: e.target.value})} /></div>
                       <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Veredito</label><select className="w-full border p-2 rounded-lg font-bold" value={techForm.result} onChange={e => setTechForm({...techForm, result: e.target.value})}><option value="Aprovado">Aprovado</option><option value="Reprovado">Reprovado</option></select></div>
                       
-                      {/* SE REPROVADO, MOSTRA SELETOR DE MOTIVO TÉCNICO */}
                       {techForm.result === 'Reprovado' && (
                           <div className="bg-red-50 p-3 rounded-lg border border-red-100 animate-fadeIn">
                               <label className="block text-[10px] font-black text-red-500 uppercase mb-1">Motivo da Reprovação</label>
-                              <select 
-                                  className="w-full border border-red-200 p-2 rounded-lg bg-white mb-2 text-sm text-red-800 font-medium outline-none focus:ring-2 focus:ring-red-300"
-                                  value={techReasonType}
-                                  onChange={(e) => {
+                              <select className="w-full border border-red-200 p-2 rounded-lg bg-white mb-2 text-sm text-red-800 font-medium outline-none focus:ring-2 focus:ring-red-300" value={techReasonType} onChange={(e) => {
                                       const val = e.target.value;
                                       setTechReasonType(val);
                                       if (val !== 'Outros') {
@@ -622,26 +619,18 @@ export const JobDetails: React.FC = () => {
                                       } else {
                                           setTechForm({...techForm, rejectionDetail: ''});
                                       }
-                                  }}
-                              >
+                                  }}>
                                   <option value="">Selecione...</option>
                                   {TECH_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                                   <option value="Outros">Outros (Escrever)</option>
                               </select>
-                              
                               {techReasonType === 'Outros' && (
-                                  <input 
-                                    className="w-full border border-red-200 p-2 rounded-lg bg-white text-red-700 font-bold placeholder-red-300" 
-                                    placeholder="Descreva o motivo..." 
-                                    value={techForm.rejectionDetail} 
-                                    onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} 
-                                  />
+                                  <input className="w-full border border-red-200 p-2 rounded-lg bg-white text-red-700 font-bold placeholder-red-300" placeholder="Descreva o motivo..." value={techForm.rejectionDetail} onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} />
                               )}
                           </div>
                       )}
                     </div>
                 )}
-                
                 <div className="flex justify-end gap-2 pt-4"><button onClick={() => setIsTechModalOpen(false)} className="px-5 py-2 text-slate-500 font-bold">Voltar</button><button onClick={saveTechTest} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-indigo-100">Salvar Avaliação</button></div>
              </div>
            </div>
@@ -677,7 +666,7 @@ export const JobDetails: React.FC = () => {
         </div>
       )}
 
-      {/* --- MODAL EXPORTAR PARA BANCO DE TALENTOS (ATUALIZADO) --- */}
+      {/* --- MODAL EXPORTAR PARA BANCO DE TALENTOS --- */}
       {isTalentModalOpen && (
         <div className="fixed inset-0 bg-indigo-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
            <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-fadeIn border-t-8 border-indigo-600">
@@ -686,7 +675,6 @@ export const JobDetails: React.FC = () => {
                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Nome do Candidato</label><div className="font-bold text-slate-700">{talentFormData.name}</div></div>
                  <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cidade</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Cidade de origem" value={talentFormData.city || ''} onChange={e => setTalentFormData({...talentFormData, city: e.target.value})} /></div>
                  
-                 {/* CAMPOS SEPARADOS NO MODAL PARA CORRIGIR O BUG DO TELEFONE */}
                  <div className="grid grid-cols-2 gap-4">
                      <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Email</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="email@..." value={talentEmail} onChange={e => setTalentEmail(e.target.value)} /></div>
                      <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Telefone</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="(XX)..." value={talentPhone} onChange={e => setTalentPhone(e.target.value)} /></div>
@@ -696,12 +684,10 @@ export const JobDetails: React.FC = () => {
                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
                     <button onClick={() => setIsTalentModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold uppercase text-[10px] tracking-widest">Voltar</button>
                     <button onClick={() => { 
-                        // JUNTA EMAIL E TELEFONE
                         const finalContact = [talentEmail, talentPhone].filter(Boolean).join(' | ');
-                        
                         addTalent({ 
                             ...talentFormData, 
-                            contact: finalContact, // SALVA UNIDO
+                            contact: finalContact, 
                             id: generateId(), 
                             createdAt: new Date().toISOString(),
                             tags: [],
