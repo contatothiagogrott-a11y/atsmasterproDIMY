@@ -90,8 +90,8 @@ export const JobDetails: React.FC = () => {
   // --- NOVOS STATES PARA CORRIGIR O BUG DO TELEFONE ---
   const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
   const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
-  const [talentEmail, setTalentEmail] = useState(''); // Separado
-  const [talentPhone, setTalentPhone] = useState(''); // Separado
+  const [talentEmail, setTalentEmail] = useState(''); 
+  const [talentPhone, setTalentPhone] = useState(''); 
 
   // DELETE STATES
   const [isDeleteCandidateModalOpen, setIsDeleteCandidateModalOpen] = useState(false);
@@ -215,9 +215,7 @@ export const JobDetails: React.FC = () => {
   const handleOpenModal = (candidate?: Candidate) => {
     if (candidate) {
         setSelectedCandidate(candidate);
-        // Garante que os dados do form são uma cópia exata, sem datas mágicas
         setFormData({ ...candidate });
-        
         if (candidate.rejectionReason) {
             const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
             const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
@@ -236,26 +234,49 @@ export const JobDetails: React.FC = () => {
     setIsModalOpen(true);
   };
 
+  // --- CORREÇÃO AQUI: Lógica de Salvamento Inteligente ---
   const handleSaveChanges = async () => {
     const processedData = { ...formData };
 
-    // --- CORREÇÃO AQUI ---
-    // Só formata a data se ela existir no input. Se vier vazia ou undefined, mantém como undefined ou remove.
-    if (processedData.firstContactAt) {
-        processedData.firstContactAt = `${toInputDate(processedData.firstContactAt)}T12:00:00.000Z`;
-    }
-    if (processedData.interviewAt) {
-        processedData.interviewAt = `${toInputDate(processedData.interviewAt)}T12:00:00.000Z`;
-    }
-    // IMPORTANTE: Só atualiza lastInteractionAt se o usuário mexeu no campo
-    if (processedData.lastInteractionAt) {
-        processedData.lastInteractionAt = `${toInputDate(processedData.lastInteractionAt)}T12:00:00.000Z`;
-    }
+    // Função auxiliar para verificar se a data mudou
+    // Se a data no input for igual à data original (apenas a parte YYYY-MM-DD),
+    // mantemos o valor ORIGINAL completo (com hora) para não contar como atualização.
+    const processDateField = (field: keyof Candidate) => {
+        const inputVal = processedData[field]; // O que está no form (string ou undefined)
+        
+        // Se estiver vazio no form, remove do objeto para limpar no banco
+        if (!inputVal) {
+            processedData[field] = undefined;
+            return;
+        }
+
+        // Se for edição, compara com o original
+        if (selectedCandidate && selectedCandidate[field]) {
+             const originalDatePart = toInputDate(selectedCandidate[field] as string);
+             const newDatePart = toInputDate(inputVal as string);
+
+             if (originalDatePart === newDatePart) {
+                 // SÃO IGUAIS: Mantém o original para não alterar timestamp
+                 processedData[field] = selectedCandidate[field];
+                 return;
+             }
+        }
+
+        // Se mudou ou é novo, formata com meio-dia UTC
+        processedData[field] = `${toInputDate(inputVal as string)}T12:00:00.000Z`;
+    };
+
+    processDateField('firstContactAt');
+    processDateField('interviewAt');
+    processDateField('lastInteractionAt'); // AQUI O ERRO ESTAVA ANTES
 
     if (processedData.status === 'Reprovado' || processedData.status === 'Desistência') {
         if (!processedData.rejectionReason) { alert("Por favor, informe o motivo da perda."); return; }
-        processedData.rejectedBy = user?.name || 'Sistema';
-        processedData.rejectionDate = new Date().toISOString();
+        // Só atualiza data de rejeição se não tinha antes ou se mudou o status
+        if (!selectedCandidate?.rejectionDate || selectedCandidate.status !== processedData.status) {
+            processedData.rejectedBy = user?.name || 'Sistema';
+            processedData.rejectionDate = new Date().toISOString();
+        }
     }
 
     if (selectedCandidate) await updateCandidate({ ...selectedCandidate, ...processedData } as Candidate);
@@ -419,11 +440,10 @@ export const JobDetails: React.FC = () => {
              <div className="flex gap-2 pt-2 mt-auto border-t border-slate-50">
                 <button onClick={() => handleOpenTechModal(c)} className={`flex-1 flex justify-center items-center gap-1 py-1.5 rounded text-[10px] font-bold border transition-colors ${c.techTest ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-white text-slate-500 border-slate-200'}`}><Beaker size={12}/> Teste</button>
                 
-                {/* --- BOTÃO CORRIGIDO: Agora carrega o Telefone e Email para os states separados --- */}
                 <button onClick={() => { 
                     setTalentFormData({ name: c.name, city: c.city, targetRole: job.title }); 
-                    setTalentEmail(c.email || ''); // Preenche o estado do email
-                    setTalentPhone(c.phone || ''); // Preenche o estado do telefone
+                    setTalentEmail(c.email || ''); 
+                    setTalentPhone(c.phone || ''); 
                     setIsTalentModalOpen(true); 
                 }} className="flex-1 flex justify-center items-center gap-1 bg-white hover:bg-orange-50 text-slate-500 hover:text-orange-600 py-1.5 rounded text-[10px] font-bold border border-slate-200 transition-colors"><Database size={12}/> Banco</button>
                 
