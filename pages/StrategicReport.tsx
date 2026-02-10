@@ -72,7 +72,6 @@ export const StrategicReport: React.FC = () => {
       return jobIds.has(c.jobId) || isGeneral;
   }), [candidates, jobIds, unitFilter]);
 
-
   const kpis = useMemo(() => {
       const allActiveJobs = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
@@ -280,7 +279,6 @@ export const StrategicReport: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate(-1)} className="p-2 hover:bg-white rounded-xl text-slate-500 hover:text-indigo-600 border border-transparent hover:border-slate-200 transition-all shadow-sm"><ArrowLeft size={22} /></button>
@@ -294,7 +292,6 @@ export const StrategicReport: React.FC = () => {
         </div>
       </div>
 
-      {/* FILTROS */}
       <div className="flex flex-wrap items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border border-slate-200 w-fit">
           <div className="flex items-center gap-2 px-2"><Calendar size={16} className="text-indigo-500" /><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent" /></div>
           <div className="w-px h-6 bg-slate-200"></div>
@@ -303,7 +300,6 @@ export const StrategicReport: React.FC = () => {
           <div className="flex items-center gap-2 px-2"><Building2 size={16} className="text-slate-400" /><select className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div>
       </div>
 
-      {/* --- BLOCO 1: VAGAS NO PERÍODO (DESTAQUE) --- */}
       <div className="bg-indigo-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 p-8 opacity-10"><Briefcase size={180}/></div>
           
@@ -333,7 +329,6 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* --- BLOCO 2: FLUXO DE VAGAS --- */}
       <div>
          <h3 className="text-lg font-black text-slate-700 uppercase tracking-tighter mb-4 flex items-center gap-2"><Activity size={20}/> Movimentação de Vagas</h3>
          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -345,7 +340,6 @@ export const StrategicReport: React.FC = () => {
          </div>
       </div>
 
-      {/* --- BLOCO 3: FLUXO DE CANDIDATOS --- */}
       <div>
          <h3 className="text-lg font-black text-slate-700 uppercase tracking-tighter mb-4 flex items-center gap-2"><Users size={20}/> Funil de Candidatos</h3>
          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -356,7 +350,6 @@ export const StrategicReport: React.FC = () => {
          </div>
       </div>
 
-      {/* RELAÇÃO POR ÁREA */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="p-5 border-b border-slate-100 flex items-center gap-2 bg-slate-50/30"><TrendingUp size={20} className="text-indigo-600"/><h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">Relação por Área</h3></div>
           <div className="overflow-x-auto">
@@ -364,7 +357,7 @@ export const StrategicReport: React.FC = () => {
                   <thead>
                       <tr className="bg-slate-50/80 text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
                           <th className="p-4 pl-6">Setor / Departamento</th>
-                          <th className="p-4 text-center">Abertas (Novas)</th>
+                          <th className="p-4 text-center">Abertas</th>
                           <th className="p-4 text-center">Fechadas</th>
                           <th className="p-4 text-center">Cong.</th>
                           <th className="p-4 text-center">Canc.</th>
@@ -387,10 +380,10 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* MODAL DE DRILL DOWN (CORRIGIDO: Menor e centralizado) */}
       {drillDownTarget && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20 mx-auto">
+              {/* CORRIGIDO: Largura menor (max-w-3xl) e centralizado (mx-auto) */}
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20 mx-auto">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                       <div className="flex items-center gap-3">
                           <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg"><Search size={22} /></div>
@@ -408,6 +401,7 @@ export const StrategicReport: React.FC = () => {
                                 {drillDownTarget === 'TESTS' && "Testes Técnicos"}
                                 {drillDownTarget === 'REJECTED' && "Reprovações"}
                                 {drillDownTarget === 'WITHDRAWN' && "Desistências"}
+                                {drillDownTarget === 'SLA' && "Tempo de Fechamento"}
                             </h2>
                             <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Registros encontrados no período</p>
                           </div>
@@ -421,7 +415,6 @@ export const StrategicReport: React.FC = () => {
           </div>
       )}
 
-      {/* MODAL DE SETOR (CORRIGIDO: Menor e centralizado) */}
       {selectedSector && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20 mx-auto">
@@ -457,7 +450,6 @@ export const StrategicReport: React.FC = () => {
           </div>
       )}
 
-      {/* MODAL DE SEGURANÇA */}
       {isUnlockModalOpen && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100000] p-4">
               <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-xs border-t-8 border-amber-500 text-center animate-fadeIn">
