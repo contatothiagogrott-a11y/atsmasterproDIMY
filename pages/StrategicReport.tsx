@@ -6,12 +6,11 @@ import {
   XCircle, TrendingUp, UserX, 
   Calendar, Building2, Lock, Unlock, X, ChevronRight, 
   ExternalLink, ClipboardCheck, Clock, Search, BarChart3, 
-  UserMinus, PauseCircle, Activity, History // Adicionado History
+  UserMinus, PauseCircle, Activity, History 
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
 
-// Tipos definidos separadamente
 type DrillDownType = 'ALL_ACTIVE' | 'BACKLOG' | 'OPENED_NEW' | 'CANCELED' | 'FROZEN' | 'CLOSED' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION' | 'REPLACEMENT' | 'SLA' | null;
 
 export const StrategicReport: React.FC = () => {
@@ -27,7 +26,6 @@ export const StrategicReport: React.FC = () => {
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
   const [drillDownTarget, setDrillDownTarget] = useState<DrillDownType>(null);
   
-  // States de Segurança
   const [isConfidentialUnlocked, setIsConfidentialUnlocked] = useState(false);
   const [isUnlockModalOpen, setIsUnlockModalOpen] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState('');
@@ -49,7 +47,6 @@ export const StrategicReport: React.FC = () => {
     }
   };
 
-  // --- DATAS E FILTROS GERAIS ---
   const start = new Date(startDate).getTime();
   const endDateTime = new Date(endDate);
   endDateTime.setHours(23, 59, 59, 999);
@@ -76,9 +73,7 @@ export const StrategicReport: React.FC = () => {
   }), [candidates, jobIds, unitFilter]);
 
 
-  // --- CÁLCULO DAS MÉTRICAS ---
   const kpis = useMemo(() => {
-      // 1. VAGAS ATIVAS NO PERÍODO (Total trabalhado)
       const allActiveJobs = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
           const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
@@ -88,7 +83,6 @@ export const StrategicReport: React.FC = () => {
       const expansionList = allActiveJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro');
       const replacementList = allActiveJobs.filter(j => j.openingDetails?.reason === 'Substituição');
 
-      // SLA (Fechadas no período)
       const closedInPeriodList = accessibleJobs.filter(j => j.status === 'Fechada' && j.closedAt && isWithin(j.closedAt));
       const totalDays = closedInPeriodList.reduce((acc, j) => {
           const days = differenceInDays(parseISO(j.closedAt!), parseISO(j.openedAt));
@@ -96,8 +90,6 @@ export const StrategicReport: React.FC = () => {
       }, 0);
       const avgSla = closedInPeriodList.length > 0 ? (totalDays / closedInPeriodList.length).toFixed(1) : '0';
 
-      // 2. FLUXO DE VAGAS
-      // Backlog: Abertas ANTES do inicio do filtro e que continuam abertas (ou fecharam depois do inicio)
       const jobsBacklog = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
           const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
@@ -109,7 +101,6 @@ export const StrategicReport: React.FC = () => {
       const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(j.frozenAt));
       const jobsCanceled = accessibleJobs.filter(j => j.status === 'Cancelada' && isWithin(j.closedAt));
 
-      // 3. FLUXO DE CANDIDATOS
       const interviews = accessibleCandidates.filter(c => isWithin(c.interviewAt));
       const tests = accessibleCandidates.filter(c => c.techTest && isWithin(c.techTestDate));
       const rejected = accessibleCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
@@ -133,10 +124,10 @@ export const StrategicReport: React.FC = () => {
       return {
           allActive: { total: allActiveJobs.length, list: allActiveJobs },
           expansion: { total: expansionList.length, list: expansionList },     
-          replacement: { total: replacementList.length, list: replacementList },
-          sla: { avg: avgSla, list: closedInPeriodList, count: closedInPeriodList.length },
+          replacement: { total: replacementList.length, list: replacementList }, 
+          sla: { avg: avgSla, list: closedInPeriodList, count: closedInPeriodList.length }, 
 
-          backlog: { total: jobsBacklog.length, list: jobsBacklog }, // NOVO
+          backlog: { total: jobsBacklog.length, list: jobsBacklog }, 
           openedNew: { total: jobsOpenedNew.length, list: jobsOpenedNew },
           closed: { total: jobsClosed.length, list: jobsClosed },
           frozen: { total: jobsFrozen.length, list: jobsFrozen },
@@ -150,9 +141,7 @@ export const StrategicReport: React.FC = () => {
       };
   }, [accessibleJobs, accessibleCandidates, start, end]);
 
-  // --- RENDERIZAÇÃO DO CONTEÚDO DO MODAL ---
   const getModalContent = () => {
-      // TIPO A: LISTA DE VAGAS
       if(['ALL_ACTIVE', 'BACKLOG', 'OPENED_NEW', 'CANCELED', 'FROZEN', 'CLOSED', 'EXPANSION', 'REPLACEMENT', 'SLA'].includes(drillDownTarget as string)) {
           let list = kpis.allActive.list;
           if(drillDownTarget === 'BACKLOG') list = kpis.backlog.list;
@@ -225,7 +214,6 @@ export const StrategicReport: React.FC = () => {
           );
       }
 
-      // TIPO B: LISTA DE CANDIDATOS
       if(['INTERVIEWS', 'TESTS', 'REJECTED', 'WITHDRAWN'].includes(drillDownTarget as string)) {
           let list = kpis.interviews.list;
           if(drillDownTarget === 'TESTS') list = kpis.tests.list;
@@ -234,7 +222,6 @@ export const StrategicReport: React.FC = () => {
 
           return (
               <div className="overflow-x-auto">
-                 {/* RANKING DE MOTIVOS */}
                  {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
                     <div className="p-4 bg-slate-50 mb-4 rounded-xl border border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-2">
                         {Object.entries(drillDownTarget === 'REJECTED' ? kpis.rejected.reasons : kpis.withdrawn.reasons)
@@ -400,10 +387,10 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* MODAL DE DRILL DOWN */}
+      {/* MODAL DE DRILL DOWN (CORRIGIDO: Menor e centralizado) */}
       {drillDownTarget && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20 mx-auto">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                       <div className="flex items-center gap-3">
                           <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg"><Search size={22} /></div>
@@ -429,6 +416,42 @@ export const StrategicReport: React.FC = () => {
                   </div>
                   <div className="flex-1 overflow-y-auto custom-scrollbar bg-white p-0">
                       {getModalContent()}
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL DE SETOR (CORRIGIDO: Menor e centralizado) */}
+      {selectedSector && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20 mx-auto">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                      <div className="text-left">
+                          <h2 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-tight">Área: {selectedSector}</h2>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resumo operacional por vaga</p>
+                      </div>
+                      <button onClick={() => setSelectedSector(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={26} /></button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-white">
+                      <table className="w-full text-left text-xs">
+                          <thead className="text-slate-400 font-black uppercase tracking-widest text-[9px] border-b border-slate-100">
+                              <tr><th className="p-3 pl-4">Vaga</th><th className="p-3 text-center bg-indigo-50/50">Ent.</th><th className="p-3 text-center bg-red-50/50">Rep.</th><th className="p-3 text-center bg-orange-50/50">Des.</th><th className="p-3 pr-4 text-right">Ação</th></tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                              {accessibleJobs.filter(j => j.sector === selectedSector && (isWithin(j.openedAt) || (j.closedAt && isWithin(j.closedAt)))).map(vaga => {
+                                  const cands = candidates.filter(c => c.jobId === vaga.id);
+                                  return (
+                                      <tr key={vaga.id} className="hover:bg-slate-50 transition-colors text-left">
+                                          <td className="p-3 pl-4 font-black text-slate-700 text-sm truncate max-w-[220px]">{vaga.title}</td>
+                                          <td className="p-3 text-center font-black text-indigo-600 bg-indigo-50/10">{cands.filter(c => isWithin(c.interviewAt)).length}</td>
+                                          <td className="p-3 text-center font-black text-red-600 bg-red-50/10">{cands.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate)).length}</td>
+                                          <td className="p-3 text-center font-black text-orange-600 bg-orange-50/10">{cands.filter(c => c.status === 'Desistência' && isWithin(c.rejectionDate)).length}</td>
+                                          <td className="p-3 pr-4 text-right"><button onClick={() => navigate(`/jobs/${vaga.id}`)} className="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded-lg shadow-sm font-black uppercase text-[9px] flex items-center gap-1 ml-auto"><ExternalLink size={14} /> Gestão</button></td>
+                                      </tr>
+                                  );
+                              })}
+                          </tbody>
+                      </table>
                   </div>
               </div>
           </div>
