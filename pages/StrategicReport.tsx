@@ -5,12 +5,13 @@ import {
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, PieChart, TrendingUp, UserX, AlertTriangle, 
   Calendar, Building2, Lock, Unlock, X, ChevronRight, 
-  ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3, UserMinus
+  ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3, UserMinus, PauseCircle
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
 
-type DrillDownType = 'CLOSED' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | null;
+// Tipos expandidos para cobrir todos os cenários
+type DrillDownType = 'CLOSED' | 'OPEN' | 'FROZEN' | 'CANCELED' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION' | 'REPLACEMENT' | 'SLA' | null;
 
 export const StrategicReport: React.FC = () => {
   const navigate = useNavigate();
@@ -47,9 +48,8 @@ export const StrategicReport: React.FC = () => {
     }
   };
 
-  // Funções de data auxiliares
+  // Funções de data
   const start = new Date(startDate).getTime();
-  // Ajuste: Fim do dia para garantir que pegue ações do dia atual
   const endDateTime = new Date(endDate);
   endDateTime.setHours(23, 59, 59, 999);
   const end = endDateTime.getTime();
@@ -74,42 +74,45 @@ export const StrategicReport: React.FC = () => {
       return jobIds.has(c.jobId) || isGeneral;
   }), [candidates, jobIds, unitFilter]);
 
-  // --- CORREÇÃO DA LÓGICA DE ESTATÍSTICAS ESTRATÉGICAS ---
+  // --- ESTATÍSTICAS ESTRATÉGICAS (SLA, EXPANSÃO, SUBSTITUIÇÃO) ---
   const strategicStats = useMemo(() => {
-    // Agora consideramos VAGAS ATIVAS no período (não só as que abriram/fecharam)
-    // Uma vaga é ativa se:
-    // 1. Abriu antes do fim do filtro
-    // 2. E (Ainda está aberta OU fechou depois do inicio do filtro)
     const jobsInPeriod = accessibleJobs.filter(j => {
         const opened = new Date(j.openedAt).getTime();
         const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
-
         const isOpenBeforeEnd = opened <= end;
         const isNotClosedBeforeStart = !closed || closed >= start;
-
         return isOpenBeforeEnd && isNotClosedBeforeStart;
     });
 
-    const expansion = jobsInPeriod.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro').length;
-    const replacement = jobsInPeriod.filter(j => j.openingDetails?.reason === 'Substituição').length;
+    const expansionList = jobsInPeriod.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro');
+    const replacementList = jobsInPeriod.filter(j => j.openingDetails?.reason === 'Substituição');
 
-    // SLA (Mantemos apenas vagas FECHADAS no período para cálculo de tempo real)
-    const closedJobs = accessibleJobs.filter(j => j.status === 'Fechada' && j.closedAt && isWithin(j.closedAt));
-    const totalDays = closedJobs.reduce((acc, j) => {
+    const closedInPeriod = accessibleJobs.filter(j => j.status === 'Fechada' && j.closedAt && isWithin(j.closedAt));
+    const totalDays = closedInPeriod.reduce((acc, j) => {
         const days = differenceInDays(parseISO(j.closedAt!), parseISO(j.openedAt));
         return acc + days;
     }, 0);
-    const avgSla = closedJobs.length > 0 ? (totalDays / closedJobs.length).toFixed(1) : '0';
+    const avgSla = closedInPeriod.length > 0 ? (totalDays / closedInPeriod.length).toFixed(1) : '0';
 
-    return { expansion, replacement, avgSla, closedCount: closedJobs.length };
-  }, [accessibleJobs, startDate, endDate, start, end]); // Dependências atualizadas
+    return { 
+        expansionCount: expansionList.length, 
+        replacementCount: replacementList.length, 
+        avgSla, 
+        closedCount: closedInPeriod.length,
+        expansionList,
+        replacementList,
+        closedList: closedInPeriod
+    };
+  }, [accessibleJobs, start, end]);
 
-
+  // --- MÉTRICAS OPERACIONAIS ---
   const metrics = useMemo(() => {
+    // Filtros de Vagas por Status E Data
     const jobsOpened = accessibleJobs.filter(j => isWithin(j.openedAt));
     const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
-    
-    // Filtros de candidatos também ajustados para usar a função isWithin correta
+    const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(j.frozenAt)); // Assumindo que você salva frozenAt
+    const jobsCanceled = accessibleJobs.filter(j => j.status === 'Cancelada' && isWithin(j.closedAt)); // Cancelamento usa closedAt
+
     const interviewsList = accessibleCandidates.filter(c => isWithin(c.interviewAt));
     const testsList = accessibleCandidates.filter(c => c.techTest && isWithin(c.techTestDate));
     const rejectedList = accessibleCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
@@ -137,15 +140,165 @@ export const StrategicReport: React.FC = () => {
     });
 
     return {
-        opened: { total: jobsOpened.length, expansion: jobsOpened.filter(j => j.openingDetails?.reason === 'Aumento de Quadro').length, replacement: jobsOpened.filter(j => j.openingDetails?.reason === 'Substituição').length },
+        opened: { total: jobsOpened.length, list: jobsOpened },
         closed: { total: jobsClosed.length, list: jobsClosed },
+        frozen: { total: jobsFrozen.length, list: jobsFrozen },
+        canceled: { total: jobsCanceled.length, list: jobsCanceled },
         interviews: { total: interviewsList.length, list: interviewsList },
         tests: { total: testsList.length, list: testsList },
         rejected: { total: rejectedList.length, reasons: rejectionReasons, list: rejectedList },
         withdrawn: { total: withdrawnList.length, reasons: withdrawalReasons, list: withdrawnList },
         bySector
     };
-  }, [accessibleJobs, accessibleCandidates, startDate, endDate]); // Start/End como dependencias para re-renderizar ao mudar filtro
+  }, [accessibleJobs, accessibleCandidates, startDate, endDate]);
+
+  // --- HELPER PARA DRILL DOWN ---
+  const getDrillDownContent = () => {
+      // 1. LISTAS DE VAGAS (Expandida com mais detalhes)
+      if (['OPEN', 'CLOSED', 'FROZEN', 'CANCELED', 'EXPANSION', 'REPLACEMENT', 'SLA'].includes(drillDownTarget as string)) {
+          let list: any[] = [];
+          if (drillDownTarget === 'OPEN') list = metrics.opened.list;
+          if (drillDownTarget === 'CLOSED' || drillDownTarget === 'SLA') list = metrics.closed.list;
+          if (drillDownTarget === 'FROZEN') list = metrics.frozen.list;
+          if (drillDownTarget === 'CANCELED') list = metrics.canceled.list;
+          if (drillDownTarget === 'EXPANSION') list = strategicStats.expansionList;
+          if (drillDownTarget === 'REPLACEMENT') list = strategicStats.replacementList;
+
+          return (
+             <div className="overflow-x-auto">
+             <table className="w-full text-left text-xs">
+                 <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px]">
+                     <tr>
+                         <th className="p-4 pl-6 rounded-l-xl">Vaga</th>
+                         <th className="p-4 text-center">Status</th>
+                         <th className="p-4 text-center">Abertura</th>
+                         {(drillDownTarget === 'CLOSED' || drillDownTarget === 'SLA') && <th className="p-4 text-center">Fechamento (SLA)</th>}
+                         {(drillDownTarget === 'CLOSED') && <th className="p-4 text-center">Contratado</th>}
+                         {(drillDownTarget === 'CANCELED') && <th className="p-4 text-center">Motivo Canc.</th>}
+                         <th className="p-4 text-right pr-6 rounded-r-xl">Ação</th>
+                     </tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100">
+                     {list.map(j => {
+                         const sla = j.closedAt ? differenceInDays(parseISO(j.closedAt), parseISO(j.openedAt)) : 
+                                     differenceInDays(new Date(), parseISO(j.openedAt)); // SLA atual se aberta
+                         
+                         const hiredId = j.hiredCandidateIds?.[0];
+                         const hiredCandidate = hiredId ? candidates.find(c => c.id === hiredId) : null;
+
+                         return (
+                             <tr key={j.id} className="hover:bg-slate-50 transition-colors">
+                                 <td className="p-4 pl-6">
+                                     <div className="font-black text-slate-700 text-sm">{j.title}</div>
+                                     <div className="text-[10px] text-slate-400 font-bold uppercase">{j.sector} | {j.unit}</div>
+                                 </td>
+                                 <td className="p-4 text-center">
+                                     <span className={`px-2 py-1 rounded text-[10px] font-black uppercase border ${
+                                         j.status === 'Aberta' ? 'bg-blue-50 text-blue-700 border-blue-100' : 
+                                         j.status === 'Fechada' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 
+                                         j.status === 'Congelada' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                         'bg-red-50 text-red-700 border-red-100'
+                                     }`}>{j.status}</span>
+                                 </td>
+                                 <td className="p-4 text-center text-slate-600 font-medium">
+                                     {new Date(j.openedAt).toLocaleDateString()}
+                                 </td>
+                                 
+                                 {(drillDownTarget === 'CLOSED' || drillDownTarget === 'SLA') && (
+                                     <td className="p-4 text-center">
+                                         <div className="font-bold text-slate-700">{new Date(j.closedAt).toLocaleDateString()}</div>
+                                         <div className="text-[10px] text-slate-400 font-black uppercase">{sla} dias</div>
+                                     </td>
+                                 )}
+
+                                 {(drillDownTarget === 'CLOSED') && (
+                                     <td className="p-4 text-center">
+                                         {hiredCandidate ? (
+                                             <div className="flex items-center justify-center gap-1 text-emerald-700 font-bold text-xs">
+                                                 <UserCheck size={14}/> {hiredCandidate.name}
+                                             </div>
+                                         ) : <span className="text-slate-300">-</span>}
+                                     </td>
+                                 )}
+
+                                 {(drillDownTarget === 'CANCELED') && (
+                                     <td className="p-4 text-center text-red-600 font-medium text-xs max-w-[150px] truncate" title={j.cancellationReason}>
+                                         {j.cancellationReason || 'Não informado'}
+                                     </td>
+                                 )}
+
+                                 <td className="p-4 pr-6 text-right">
+                                     <button onClick={() => navigate(`/jobs/${j.id}`)} className="text-indigo-600 font-bold hover:underline flex items-center justify-end gap-1 ml-auto">
+                                         <ExternalLink size={14}/> Abrir
+                                     </button>
+                                 </td>
+                             </tr>
+                         );
+                     })}
+                     {list.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400 italic">Nenhum registro encontrado para este filtro.</td></tr>}
+                 </tbody>
+             </table>
+             </div>
+          );
+      }
+      
+      // 2. LISTAS DE CANDIDATOS (INTERVISTAS, TESTES, REPROVADOS...)
+      // ... Código de candidatos mantido igual, mas garantindo a coluna de data ...
+      const candidateList = 
+          drillDownTarget === 'INTERVIEWS' ? metrics.interviews.list :
+          drillDownTarget === 'TESTS' ? metrics.tests.list :
+          drillDownTarget === 'REJECTED' ? metrics.rejected.list :
+          drillDownTarget === 'WITHDRAWN' ? metrics.withdrawn.list : [];
+
+      return (
+         <div className="overflow-x-auto">
+         <table className="w-full text-left text-xs">
+            <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px]">
+                  <tr>
+                      <th className="p-4 pl-6 rounded-l-xl">Candidato</th>
+                      <th className="p-4">Vaga / Origem</th>
+                      {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && <th className="p-4">Motivo</th>}
+                      {(drillDownTarget === 'TESTS') && <th className="p-4">Avaliador</th>}
+                      <th className="p-4 text-right pr-6 rounded-r-xl">Data Evento</th>
+                  </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+                  {candidateList.map(c => {
+                      const job = jobs.find(j => j.id === c.jobId);
+                      const displayTitle = c.jobId === 'general' ? 'Entrevista Geral (Pool)' : job?.title;
+                      
+                      let eventDate = '-';
+                      if(drillDownTarget === 'INTERVIEWS') eventDate = c.interviewAt ? new Date(c.interviewAt).toLocaleDateString() : '-';
+                      if(drillDownTarget === 'TESTS') eventDate = c.techTestDate ? new Date(c.techTestDate).toLocaleDateString() : '-';
+                      if(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') eventDate = c.rejectionDate ? new Date(c.rejectionDate).toLocaleDateString() : '-';
+
+                      return (
+                          <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-4 pl-6 font-black text-slate-700">{c.name}</td>
+                              <td className="p-4 text-slate-600">{displayTitle}</td>
+                              
+                              {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
+                                  <td className="p-4">
+                                      <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>
+                                          {c.rejectionReason || 'Sem motivo'}
+                                      </span>
+                                  </td>
+                              )}
+
+                              {(drillDownTarget === 'TESTS') && (
+                                  <td className="p-4 text-slate-600 font-medium">{c.techEvaluator || '-'}</td>
+                              )}
+
+                              <td className="p-4 pr-6 text-right font-black text-slate-600">{eventDate}</td>
+                          </tr>
+                      );
+                  })}
+                  {candidateList.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic">Nenhum registro encontrado.</td></tr>}
+            </tbody>
+         </table>
+         </div>
+      );
+  };
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
@@ -169,9 +322,12 @@ export const StrategicReport: React.FC = () => {
           <div className="flex items-center gap-2 px-2"><Building2 size={16} className="text-slate-400" /><select className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div>
       </div>
 
-      {/* CARDS ESTRATÉGICOS (SLA / EXPANSÃO / SUBSTITUIÇÃO) */}
+      {/* CARDS ESTRATÉGICOS (CLICÁVEIS) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+         <div 
+            onClick={() => setDrillDownTarget('SLA')}
+            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all hover:-translate-y-1"
+         >
             <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><Clock size={80} className="text-blue-600"/></div>
             <div className="bg-blue-100 p-3 rounded-xl text-blue-600 z-10"><Clock size={24} /></div>
             <div className="z-10">
@@ -181,34 +337,40 @@ export const StrategicReport: React.FC = () => {
             </div>
          </div>
 
-         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+         <div 
+            onClick={() => setDrillDownTarget('EXPANSION')}
+            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all hover:-translate-y-1"
+         >
             <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><TrendingUp size={80} className="text-indigo-600"/></div>
             <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600 z-10"><TrendingUp size={24} /></div>
             <div className="z-10">
                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Expansão</p>
-               <h4 className="text-3xl font-black text-slate-800">{strategicStats.expansion} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
+               <h4 className="text-3xl font-black text-slate-800">{strategicStats.expansionCount} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
                <p className="text-[10px] text-indigo-500 font-bold uppercase">Aumento de Quadro (Ativas)</p>
             </div>
          </div>
 
-         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+         <div 
+            onClick={() => setDrillDownTarget('REPLACEMENT')}
+            className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group cursor-pointer hover:shadow-md transition-all hover:-translate-y-1"
+         >
             <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><UserMinus size={80} className="text-rose-600"/></div>
             <div className="bg-rose-100 p-3 rounded-xl text-rose-600 z-10"><UserMinus size={24} /></div>
             <div className="z-10">
                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Reposição</p>
-               <h4 className="text-3xl font-black text-slate-800">{strategicStats.replacement} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
+               <h4 className="text-3xl font-black text-slate-800">{strategicStats.replacementCount} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
                <p className="text-[10px] text-rose-500 font-bold uppercase">Substituição (Ativas)</p>
             </div>
          </div>
       </div>
 
-      {/* CARDS OPERACIONAIS */}
+      {/* CARDS OPERACIONAIS (AGORA CLICÁVEIS) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <StrategicCard title="Abertas" value={metrics.opened.total} color="blue" icon={Briefcase} subtitle={`+${metrics.opened.expansion} Novo | +${metrics.opened.replacement} Subst.`} />
+          <StrategicCard title="Abertas" value={metrics.opened.total} color="blue" icon={Briefcase} subtitle="Novas no período" onClick={() => setDrillDownTarget('OPEN')} />
           <StrategicCard title="Concluídas" value={metrics.closed.total} color="emerald" icon={CheckCircle} subtitle="Ver Contratações" onClick={() => setDrillDownTarget('CLOSED')} />
-          <StrategicCard title="Entrevistas" value={metrics.interviews.total} color="amber" icon={Users} subtitle="Ver Agendas" onClick={() => setDrillDownTarget('INTERVIEWS')} />
-          <StrategicCard title="Testes" value={metrics.tests.total} color="indigo" icon={ClipboardCheck} subtitle="Ver Resultados" onClick={() => setDrillDownTarget('TESTS')} />
-          <StrategicCard title="Reprovações" value={metrics.rejected.total} color="red" icon={XCircle} subtitle="Ver Motivos" onClick={() => setDrillDownTarget('REJECTED')} />
+          <StrategicCard title="Congeladas" value={metrics.bySector ? Object.values(metrics.bySector).reduce((a: any, b: any) => a + b.frozen, 0) : 0} color="amber" icon={PauseCircle} subtitle="Ver Motivos" onClick={() => setDrillDownTarget('FROZEN')} />
+          <StrategicCard title="Canceladas" value={metrics.bySector ? Object.values(metrics.bySector).reduce((a: any, b: any) => a + b.canceled, 0) : 0} color="red" icon={XCircle} subtitle="Ver Motivos" onClick={() => setDrillDownTarget('CANCELED')} />
+          <StrategicCard title="Entrevistas" value={metrics.interviews.total} color="indigo" icon={Users} subtitle="Ver Agendas" onClick={() => setDrillDownTarget('INTERVIEWS')} />
           <StrategicCard title="Desistências" value={metrics.withdrawn.total} color="orange" icon={UserX} subtitle="Ver Detalhes" onClick={() => setDrillDownTarget('WITHDRAWN')} />
       </div>
 
@@ -246,15 +408,26 @@ export const StrategicReport: React.FC = () => {
       {/* JANELA DE DRILL-DOWN DOS CARDS */}
       {drillDownTarget && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
+              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                      <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
-                        {drillDownTarget === 'CLOSED' && "Contratações Efetuadas"}
-                        {drillDownTarget === 'INTERVIEWS' && "Entrevistas no Período"}
-                        {drillDownTarget === 'TESTS' && "Testes Técnicos"}
-                        {drillDownTarget === 'REJECTED' && "Reprovações pela Empresa"}
-                        {drillDownTarget === 'WITHDRAWN' && "Desistências do Candidato"}
-                      </h2>
+                      <div className="flex items-center gap-3">
+                          <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg"><Search size={22} /></div>
+                          <div>
+                            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
+                                {drillDownTarget === 'CLOSED' && "Vagas Concluídas"}
+                                {drillDownTarget === 'OPEN' && "Vagas Abertas no Período"}
+                                {drillDownTarget === 'FROZEN' && "Vagas Congeladas"}
+                                {drillDownTarget === 'CANCELED' && "Vagas Canceladas"}
+                                {drillDownTarget === 'INTERVIEWS' && "Entrevistas Realizadas"}
+                                {drillDownTarget === 'REJECTED' && "Reprovações"}
+                                {drillDownTarget === 'WITHDRAWN' && "Desistências"}
+                                {drillDownTarget === 'EXPANSION' && "Aumento de Quadro"}
+                                {drillDownTarget === 'REPLACEMENT' && "Substituição"}
+                                {drillDownTarget === 'SLA' && "SLA - Vagas Fechadas"}
+                            </h2>
+                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Detalhamento dos dados</p>
+                          </div>
+                      </div>
                       <button onClick={() => setDrillDownTarget(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={26} /></button>
                   </div>
 
@@ -287,85 +460,12 @@ export const StrategicReport: React.FC = () => {
                                           </div>
                                       ))
                                   }
-                                  {Object.keys(metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].reasons).length === 0 && (
-                                      <div className="col-span-full text-center text-slate-400 text-xs italic py-2">Sem motivos registrados neste período.</div>
-                                  )}
                               </div>
                           </div>
                       )}
 
-                      <div className="p-4">
-                          <table className="w-full text-left text-xs">
-                              <thead className="text-slate-400 font-black uppercase tracking-widest text-[9px] border-b border-slate-100">
-                                  {drillDownTarget === 'CLOSED' && (
-                                      <tr><th className="p-3 pl-4">Vaga</th><th className="p-3">Colaborador Escolhido</th><th className="p-3 text-center">Data Fech.</th><th className="p-3 text-right pr-4">SLA Líquido</th></tr>
-                                  )}
-                                  {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
-                                      <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga</th><th className="p-3">Motivo</th><th className="p-3 pr-4 text-right">Data Evento</th></tr>
-                                  )}
-                                  {drillDownTarget === 'INTERVIEWS' && (
-                                      <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga</th><th className="p-3 text-right pr-4">Data Entrevista</th></tr>
-                                  )}
-                                  {drillDownTarget === 'TESTS' && (
-                                      <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Avaliador Técnico</th><th className="p-3 text-center">Data Teste</th><th className="p-3 text-right pr-4">Resultado</th></tr>
-                                  )}
-                              </thead>
-                              <tbody className="divide-y divide-slate-50">
-                                  {drillDownTarget === 'CLOSED' && metrics.closed.list.map(job => {
-                                      const hired = candidates.find(c => c.jobId === job.id && c.status === 'Contratado');
-                                      const sla = job.closedAt ? differenceInDays(parseISO(job.closedAt), parseISO(job.openedAt)) : '-';
-                                      return (
-                                          <tr key={job.id} className="hover:bg-slate-50 transition-colors">
-                                              <td className="p-3 pl-4 font-black text-slate-700">{job.title}</td>
-                                              <td className="p-3"><span className="bg-emerald-50 text-emerald-700 px-2 py-1 rounded font-bold">{hired?.name || 'Não identificado'}</span></td>
-                                              <td className="p-3 text-center font-bold text-slate-500">{job.closedAt ? new Date(job.closedAt).toLocaleDateString() : '-'}</td>
-                                              <td className="p-3 text-right pr-4 font-black text-indigo-600">{sla} dias</td>
-                                          </tr>
-                                      );
-                                  })}
-
-                                  {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].list.map(c => {
-                                      const job = jobs.find(j => j.id === c.jobId);
-                                      const displayTitle = c.jobId === 'general' ? 'Entrevista Geral (Pool)' : job?.title;
-                                      
-                                      // Data do Evento
-                                      const eventDate = c.rejectionDate ? new Date(c.rejectionDate).toLocaleDateString() : '-';
-
-                                      return (
-                                          <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                                              <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                              <td className="p-3 text-slate-500 font-medium">{displayTitle}</td>
-                                              <td className="p-3"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>{c.rejectionReason || 'Sem motivo'}</span></td>
-                                              <td className="p-3 pr-4 text-right font-black text-slate-600">{eventDate}</td>
-                                          </tr>
-                                      );
-                                  })}
-
-                                  {drillDownTarget === 'INTERVIEWS' && metrics.interviews.list.map(c => {
-                                      const job = jobs.find(j => j.id === c.jobId);
-                                      const displayTitle = c.jobId === 'general' ? 'Entrevista Geral (Pool)' : job?.title;
-
-                                      return (
-                                          <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                                              <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                              <td className="p-3 text-slate-500 font-medium">{displayTitle}</td>
-                                              <td className="p-3 text-right pr-4 font-bold text-amber-600">{c.interviewAt ? new Date(c.interviewAt).toLocaleDateString() : '-'}</td>
-                                          </tr>
-                                      );
-                                  })}
-
-                                  {drillDownTarget === 'TESTS' && metrics.tests.list.map(c => (
-                                      <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                                          <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                          <td className="p-3 font-bold text-slate-500">{c.techEvaluator || 'Não informado'}</td>
-                                          <td className="p-3 text-center font-medium text-slate-400">{c.techTestDate ? new Date(c.techTestDate).toLocaleDateString() : '-'}</td>
-                                          <td className="p-3 text-right pr-4">
-                                              <span className={`font-black uppercase text-[10px] ${c.techTestResult === 'Aprovado' ? 'text-emerald-600' : 'text-red-500'}`}>{c.techTestResult || 'Pendente'}</span>
-                                          </td>
-                                      </tr>
-                                  ))}
-                              </tbody>
-                          </table>
+                      <div className="p-0">
+                          {getDrillDownContent()}
                       </div>
                   </div>
               </div>
