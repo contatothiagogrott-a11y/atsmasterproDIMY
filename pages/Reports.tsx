@@ -1,41 +1,45 @@
 import React, { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { exportToExcel } from '../services/excelService';
-import { Download, Activity, TrendingDown, UserX, Building, Filter, TrendingUp, UserMinus, LayoutList, Lock, Unlock, X, PieChart } from 'lucide-react';
+import { 
+  Download, Activity, TrendingDown, UserX, Building, Filter, 
+  TrendingUp, UserMinus, LayoutList, Lock, Unlock, X, 
+  PieChart, Clock, CheckCircle 
+} from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { isWithinInterval, parseISO, endOfDay, startOfDay } from 'date-fns';
-import { useNavigate } from 'react-router-dom'; // <--- PASSO 3: IMPORTAÇÃO DO NAVIGATE
+import { isWithinInterval, parseISO, endOfDay, startOfDay, differenceInDays } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 
 export const Reports: React.FC = () => {
   const { jobs, candidates, settings, user, users } = useData();
-  const navigate = useNavigate(); // <--- PASSO 3: INICIALIZAÇÃO DO HOOK
+  const navigate = useNavigate();
   
-  // GLOBAL FILTERS
+  // --- 1. CONFIGURAÇÃO DE DATAS (Padrão: Mês Atual) ---
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+
   const [sectorFilter, setSectorFilter] = useState('');
   const [unitFilter, setUnitFilter] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(firstDay.toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
   
-  // Report Type Logic
+  // Tipos de Relatório
   const [reportType, setReportType] = useState<'HYBRID' | 'BACKLOG' | 'FLOW'>('HYBRID');
 
-  // Confidential Security
+  // Segurança (Confidencial)
   const [isConfidentialUnlocked, setIsConfidentialUnlocked] = useState(false);
   const [isUnlockModalOpen, setIsUnlockModalOpen] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState('');
 
   const filteredData = useMemo(() => {
-    // SECURITY: STRICT FILTER - ONLY SHOW CONFIDENTIAL IF UNLOCKED
+    // FILTRO DE SEGURANÇA
     let fJobs = jobs.filter(j => !j.isHidden && (isConfidentialUnlocked || !j.isConfidential));
     
-    // Apply filters
-    if (sectorFilter) {
-      fJobs = fJobs.filter(j => j.sector === sectorFilter);
-    }
-    if (unitFilter) {
-      fJobs = fJobs.filter(j => j.unit === unitFilter);
-    }
+    // Filtros Básicos
+    if (sectorFilter) fJobs = fJobs.filter(j => j.sector === sectorFilter);
+    if (unitFilter) fJobs = fJobs.filter(j => j.unit === unitFilter);
 
+    // Filtro de Datas Avançado
     if (startDate && endDate) {
       const filterStart = startOfDay(parseISO(startDate));
       const filterEnd = endOfDay(parseISO(endDate));
@@ -45,12 +49,15 @@ export const Reports: React.FC = () => {
          const closed = j.closedAt ? parseISO(j.closedAt) : null;
          
          if (reportType === 'FLOW') {
+            // Apenas o que entrou no período
             return isWithinInterval(opened, { start: filterStart, end: filterEnd });
          } else if (reportType === 'BACKLOG') {
+            // O que estava aberto durante o período (mesmo que tenha fechado depois ou aberto antes)
             const isOpenBeforeEnd = opened <= filterEnd;
             const isClosedAfterStart = !closed || closed >= filterStart;
             return isOpenBeforeEnd && isClosedAfterStart;
          } else {
+            // HIBRIDO: Abriu, Fechou ou esteve ativo no período
             const openInRange = isWithinInterval(opened, { start: filterStart, end: filterEnd });
             const closeInRange = closed ? isWithinInterval(closed, { start: filterStart, end: filterEnd }) : false;
             const spansPeriod = opened <= filterEnd && (!closed || closed >= filterStart);
@@ -68,10 +75,22 @@ export const Reports: React.FC = () => {
 
   const { fJobs, fCandidates } = filteredData;
 
-  const summary = useMemo(() => {
+  // --- CÁLCULOS ESTRATÉGICOS ---
+  const stats = useMemo(() => {
+    // 1. Tipos de Vaga
     const expansion = fJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro').length;
     const replacement = fJobs.filter(j => j.openingDetails?.reason === 'Substituição').length;
-    return { expansion, replacement };
+
+    // 2. SLA (Tempo Médio de Fechamento)
+    // Considera apenas vagas FECHADAS que estão no filtro atual
+    const closedJobs = fJobs.filter(j => j.status === 'Fechada' && j.closedAt);
+    const totalDays = closedJobs.reduce((acc, j) => {
+        const days = differenceInDays(parseISO(j.closedAt!), parseISO(j.openedAt));
+        return acc + days;
+    }, 0);
+    const avgSla = closedJobs.length > 0 ? (totalDays / closedJobs.length).toFixed(1) : '0';
+
+    return { expansion, replacement, avgSla, closedCount: closedJobs.length };
   }, [fJobs]);
 
   const charts = useMemo(() => {
@@ -88,7 +107,7 @@ export const Reports: React.FC = () => {
       });
       return Object.entries(counts)
         .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value);
+        .sort((a, b) => b.value - a.value); // Ordena maior para menor
     };
 
     return {
@@ -114,11 +133,12 @@ export const Reports: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12 animate-fadeIn">
+      {/* HEADER E TÍTULO */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-            <h1 className="text-2xl font-bold text-slate-800">Relatórios Inteligentes</h1>
-            <p className="text-slate-500 text-sm">Análise de SLA, Funil de Conversão e Gestão de Perdas.</p>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight">Relatórios & SLA</h1>
+            <p className="text-slate-500 text-sm">Análise unificada de performance, tempo de fechamento e motivos de perda.</p>
         </div>
         
         <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
@@ -127,39 +147,31 @@ export const Reports: React.FC = () => {
               className={`p-2 rounded-lg transition-colors border flex items-center gap-2 text-xs font-bold ${isConfidentialUnlocked ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-300 text-slate-400'}`}
             >
               {isConfidentialUnlocked ? <Unlock size={16} /> : <Lock size={16} />}
-              <span className="hidden sm:inline">{isConfidentialUnlocked ? "Modo Sigiloso Ativo" : "Ativar Sigilo"}</span>
+              <span className="hidden sm:inline">{isConfidentialUnlocked ? "Modo Sigiloso" : "Sigilo"}</span>
             </button>
 
             <div className="w-px h-6 bg-slate-200 mx-1"></div>
 
-            <select className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none font-bold text-slate-700" value={reportType} onChange={e => setReportType(e.target.value as any)}>
-              <option value="HYBRID">Visão Geral (Híbrido)</option>
-              <option value="BACKLOG">Em Aberto (Backlog)</option>
-              <option value="FLOW">Novas (Fluxo Entrada)</option>
+            <select className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none font-bold text-slate-700 cursor-pointer" value={reportType} onChange={e => setReportType(e.target.value as any)}>
+              <option value="HYBRID">Geral (Híbrido)</option>
+              <option value="BACKLOG">Backlog (Abertas)</option>
+              <option value="FLOW">Fluxo (Entrada)</option>
             </select>
 
-            <select className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}>
+            <select className="bg-slate-50 border-slate-200 rounded-lg text-sm p-2 outline-none cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}>
               <option value="">Todas Unidades</option>
               {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
 
             <div className="flex items-center gap-1 bg-slate-50 rounded-lg border border-slate-200 px-2">
               <span className="text-xs text-slate-400 font-bold">DE</span>
-              <input type="date" className="bg-transparent text-sm p-2 outline-none" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <input type="date" className="bg-transparent text-sm p-2 outline-none font-bold text-slate-700" value={startDate} onChange={e => setStartDate(e.target.value)} />
               <span className="text-xs text-slate-400 font-bold">ATÉ</span>
-              <input type="date" className="bg-transparent text-sm p-2 outline-none" value={endDate} onChange={e => setEndDate(e.target.value)} />
+              <input type="date" className="bg-transparent text-sm p-2 outline-none font-bold text-slate-700" value={endDate} onChange={e => setEndDate(e.target.value)} />
             </div>
             
-            {/* BOTÃO ATUALIZADO: AGORA NAVEGA PARA A SUBPÁGINA */}
-            <button 
-              onClick={() => navigate('/strategic-report')} 
-              className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-indigo-700 ml-2 shadow transition-all active:scale-95"
-            >
-              <PieChart size={18}/> Análise Estratégica (BI)
-            </button>
-
-            <button onClick={() => exportToExcel(fJobs, fCandidates, users)} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-green-700 ml-2 shadow transition-all hover:scale-105 active:scale-95">
-              <Download size={18}/> Excel
+            <button onClick={() => exportToExcel(fJobs, fCandidates, users)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 font-bold hover:bg-emerald-700 ml-2 shadow transition-all hover:scale-105 active:scale-95 text-xs uppercase tracking-wider">
+              <Download size={16}/> Excel
             </button>
         </div>
       </div>
@@ -167,9 +179,7 @@ export const Reports: React.FC = () => {
       {isUnlockModalOpen && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
               <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm border-t-4 border-amber-500">
-                  <div className="flex justify-center mb-4 bg-amber-100 w-16 h-16 rounded-full items-center mx-auto text-amber-600">
-                      <Lock size={32} />
-                  </div>
+                  <div className="flex justify-center mb-4 bg-amber-100 w-16 h-16 rounded-full items-center mx-auto text-amber-600"><Lock size={32} /></div>
                   <h3 className="text-lg font-bold text-center mb-2">Segurança de Dados</h3>
                   <p className="text-center text-slate-500 text-sm mb-6">Confirme sua senha para incluir vagas sigilosas no relatório.</p>
                   <form onSubmit={handleUnlockConfidential}>
@@ -181,36 +191,52 @@ export const Reports: React.FC = () => {
           </div>
       )}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-            <div className="bg-indigo-100 p-3 rounded-full text-indigo-600"><TrendingUp size={24} /></div>
-            <div>
-               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Vagas de Expansão</p>
-               <h4 className="text-2xl font-black text-slate-800">{summary.expansion} <span className="text-sm font-normal text-slate-400">vagas selecionadas</span></h4>
+      {/* CARDS DE DESTAQUE (KPIs) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+            <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><Activity size={80} className="text-blue-600"/></div>
+            <div className="bg-blue-100 p-3 rounded-xl text-blue-600 z-10"><Clock size={24} /></div>
+            <div className="z-10">
+               <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Tempo Médio (SLA)</p>
+               <h4 className="text-3xl font-black text-slate-800">{stats.avgSla} <span className="text-sm font-bold text-slate-400">dias</span></h4>
+               <p className="text-[10px] text-slate-400 font-medium">Considerando {stats.closedCount} vagas fechadas no período</p>
             </div>
          </div>
-         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center gap-4">
-            <div className="bg-rose-100 p-3 rounded-full text-rose-600"><UserMinus size={24} /></div>
-            <div>
-               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Vagas de Reposição</p>
-               <h4 className="text-2xl font-black text-slate-800">{summary.replacement} <span className="text-sm font-normal text-slate-400">vagas selecionadas</span></h4>
+
+         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+            <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><TrendingUp size={80} className="text-indigo-600"/></div>
+            <div className="bg-indigo-100 p-3 rounded-xl text-indigo-600 z-10"><TrendingUp size={24} /></div>
+            <div className="z-10">
+               <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Expansão</p>
+               <h4 className="text-3xl font-black text-slate-800">{stats.expansion} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
+               <p className="text-[10px] text-indigo-500 font-bold uppercase">Aumento de Quadro</p>
+            </div>
+         </div>
+
+         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
+            <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><UserMinus size={80} className="text-rose-600"/></div>
+            <div className="bg-rose-100 p-3 rounded-xl text-rose-600 z-10"><UserMinus size={24} /></div>
+            <div className="z-10">
+               <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Reposição</p>
+               <h4 className="text-3xl font-black text-slate-800">{stats.replacement} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
+               <p className="text-[10px] text-rose-500 font-bold uppercase">Substituição</p>
             </div>
          </div>
       </div>
 
-      {/* Funnel and Rejections */}
+      {/* GRÁFICOS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm col-span-1 md:col-span-2">
-           <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-800"><Activity size={20} className="text-blue-600"/> Funil Geral (Seleção)</h3>
+        {/* FUNIL */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm col-span-1 md:col-span-2">
+           <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-slate-800"><Activity size={20} className="text-blue-600"/> Funil de Conversão do Período</h3>
            <div className="h-64 w-full" style={{ minHeight: '300px' }}>
               <ResponsiveContainer width="100%" height="100%">
-                 <BarChart data={charts.funnel} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
+                 <BarChart data={charts.funnel} layout="vertical" margin={{top: 0, right: 30, left: 20, bottom: 0}}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9"/>
                     <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" width={100} fontSize={12} fontWeight={600} tickLine={false} axisLine={false} />
-                    <Tooltip cursor={{fill: 'transparent'}} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={30}>
+                    <YAxis dataKey="name" type="category" width={100} fontSize={12} fontWeight={700} tickLine={false} axisLine={false} tick={{fill: '#64748b'}} />
+                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={40}>
                        {charts.funnel.map((entry, index) => <Cell key={index} fill={entry.color} />)}
                     </Bar>
                  </BarChart>
@@ -218,79 +244,93 @@ export const Reports: React.FC = () => {
            </div>
         </div>
 
-        {/* Reprovações Empresa */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-           <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-red-600"><Building size={20}/> Reprovações (Empresa)</h3>
-           <div className="space-y-3 h-64 overflow-y-auto pr-2 custom-scrollbar">
+        {/* MOTIVOS DE REPROVAÇÃO */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+           <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-red-600"><Building size={20}/> Motivos de Reprovação (Empresa)</h3>
+           <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar" style={{maxHeight: '300px'}}>
               {charts.companyDecisions.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-4">
-                  <span className="w-40 text-sm font-medium text-slate-600 truncate">{item.name}</span>
-                  <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-red-500" style={{width: `${Math.min((item.value/(fCandidates.length || 1))*100 * 5, 100)}%`}}></div></div>
-                  <span className="text-xs font-bold">{item.value}</span>
+                  <span className="w-40 text-xs font-bold text-slate-600 truncate" title={item.name}>{item.name}</span>
+                  <div className="flex-1 h-3 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+                      <div className="h-full bg-red-500 rounded-full" style={{width: `${Math.min((item.value/(fCandidates.length || 1))*100 * 5, 100)}%`}}></div>
+                  </div>
+                  <span className="text-xs font-black text-slate-800">{item.value}</span>
                 </div>
               ))}
-              {charts.companyDecisions.length === 0 && <p className="text-slate-400 text-sm italic">Sem dados registrados.</p>}
+              {charts.companyDecisions.length === 0 && <p className="text-slate-400 text-sm italic text-center mt-10">Sem reprovações registradas.</p>}
            </div>
         </div>
 
-        {/* Desistências Candidato */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-           <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-amber-600"><UserX size={20}/> Desistências (Candidato)</h3>
-           <div className="space-y-3 h-64 overflow-y-auto pr-2 custom-scrollbar">
+        {/* MOTIVOS DE DESISTÊNCIA */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col">
+           <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-amber-600"><UserX size={20}/> Motivos de Desistência (Candidato)</h3>
+           <div className="space-y-3 flex-1 overflow-y-auto pr-2 custom-scrollbar" style={{maxHeight: '300px'}}>
               {charts.candidateDecisions.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-4">
-                  <span className="w-40 text-sm font-medium text-slate-600 truncate">{item.name}</span>
-                  <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-amber-500" style={{width: `${Math.min((item.value/(fCandidates.length || 1))*100 * 5, 100)}%`}}></div></div>
-                  <span className="text-xs font-bold">{item.value}</span>
+                  <span className="w-40 text-xs font-bold text-slate-600 truncate" title={item.name}>{item.name}</span>
+                  <div className="flex-1 h-3 bg-slate-50 rounded-full overflow-hidden border border-slate-100">
+                      <div className="h-full bg-amber-500 rounded-full" style={{width: `${Math.min((item.value/(fCandidates.length || 1))*100 * 5, 100)}%`}}></div>
+                  </div>
+                  <span className="text-xs font-black text-slate-800">{item.value}</span>
                 </div>
               ))}
-              {charts.candidateDecisions.length === 0 && <p className="text-slate-400 text-sm italic">Sem dados registrados.</p>}
+              {charts.candidateDecisions.length === 0 && <p className="text-slate-400 text-sm italic text-center mt-10">Sem desistências registradas.</p>}
            </div>
         </div>
       </div>
 
-      {/* Detailed Opening Table */}
-      <div className={`bg-white rounded-xl border shadow-sm overflow-hidden transition-all ${isConfidentialUnlocked ? 'border-amber-300 ring-2 ring-amber-50' : 'border-slate-200'}`}>
+      {/* TABELA DETALHADA DE VAGAS */}
+      <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${isConfidentialUnlocked ? 'border-amber-300 ring-2 ring-amber-50' : 'border-slate-200'}`}>
         <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-           <h3 className="font-bold text-lg flex items-center gap-2 text-slate-800"><LayoutList size={20} className="text-indigo-600" /> Detalhamento de Aberturas</h3>
+           <h3 className="font-bold text-lg flex items-center gap-2 text-slate-800"><LayoutList size={20} className="text-indigo-600" /> Detalhamento de Vagas no Período</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
-            <thead className="bg-slate-100 text-slate-600 font-bold text-xs uppercase tracking-wider">
+            <thead className="bg-slate-100 text-slate-500 font-bold text-[10px] uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-4">Vaga</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Motivo Abertura</th>
-                <th className="px-6 py-4">Substituído</th>
+                <th className="px-6 py-4 text-center">Status</th>
+                <th className="px-6 py-4 text-center">Motivo Abertura</th>
+                <th className="px-6 py-4 text-center">SLA (Dias)</th>
+                <th className="px-6 py-4 text-right">Abertura</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {fJobs.map(job => (
-                <tr key={job.id} className={`hover:bg-slate-50/80 transition-colors ${job.isConfidential ? 'bg-amber-50/20' : ''}`}>
-                  <td className="px-6 py-4 font-bold text-slate-700 flex items-center gap-2">
-                    {job.title}
-                    {job.isConfidential && <Lock size={12} className="text-amber-500" />}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      job.status === 'Aberta' ? 'bg-blue-100 text-blue-700' : 
-                      job.status === 'Fechada' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      {job.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
-                      job.openingDetails?.reason === 'Substituição' ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100'
-                    }`}>
-                      {job.openingDetails?.reason || 'Aumento de Quadro'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-slate-600">
-                    {job.openingDetails?.reason === 'Substituição' ? (job.openingDetails.replacedEmployee || '-') : '-'}
-                  </td>
-                </tr>
-              ))}
+              {fJobs.map(job => {
+                const sla = job.closedAt ? differenceInDays(parseISO(job.closedAt), parseISO(job.openedAt)) : '-';
+                return (
+                  <tr key={job.id} className={`hover:bg-slate-50/80 transition-colors ${job.isConfidential ? 'bg-amber-50/20' : ''}`}>
+                    <td className="px-6 py-4 font-bold text-slate-700 flex items-center gap-2">
+                      {job.title}
+                      {job.isConfidential && <Lock size={12} className="text-amber-500" />}
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        job.status === 'Aberta' ? 'bg-blue-100 text-blue-700' : 
+                        job.status === 'Fechada' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {job.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                        job.openingDetails?.reason === 'Substituição' ? 'bg-rose-50 text-rose-700 border-rose-100' : 'bg-indigo-50 text-indigo-700 border-indigo-100'
+                      }`}>
+                        {job.openingDetails?.reason || 'Aumento de Quadro'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center font-black text-slate-700">
+                      {job.status === 'Fechada' ? sla : <span className="text-slate-300">-</span>}
+                    </td>
+                    <td className="px-6 py-4 text-right text-slate-500 font-medium text-xs">
+                      {new Date(job.openedAt).toLocaleDateString()}
+                    </td>
+                  </tr>
+                );
+              })}
+              {fJobs.length === 0 && (
+                  <tr><td colSpan={5} className="text-center p-8 text-slate-400 italic">Nenhuma vaga encontrada neste período.</td></tr>
+              )}
             </tbody>
           </table>
         </div>
