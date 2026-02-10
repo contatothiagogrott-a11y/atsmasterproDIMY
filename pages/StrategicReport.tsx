@@ -47,8 +47,13 @@ export const StrategicReport: React.FC = () => {
     }
   };
 
+  // Funções de data auxiliares
   const start = new Date(startDate).getTime();
-  const end = new Date(endDate).getTime() + (24 * 60 * 60 * 1000);
+  // Ajuste: Fim do dia para garantir que pegue ações do dia atual
+  const endDateTime = new Date(endDate);
+  endDateTime.setHours(23, 59, 59, 999);
+  const end = endDateTime.getTime();
+
   const isWithin = (dateStr?: string) => {
       if (!dateStr) return false;
       const d = new Date(dateStr).getTime();
@@ -64,25 +69,31 @@ export const StrategicReport: React.FC = () => {
 
   const jobIds = useMemo(() => new Set(accessibleJobs.map(j => j.id)), [accessibleJobs]);
   
-  // --- CORREÇÃO AQUI: Incluir candidatos do Pool Geral ---
   const accessibleCandidates = useMemo(() => candidates.filter(c => {
-      // Se tiver filtro de unidade, o Geral só aparece se a unidade for vazia (Global) 
-      // ou se você quiser que apareça sempre, remova a verificação do unitFilter.
       const isGeneral = c.jobId === 'general' && (!unitFilter || unitFilter === ''); 
       return jobIds.has(c.jobId) || isGeneral;
   }), [candidates, jobIds, unitFilter]);
 
-  // --- CÁLCULO DE MÉTRICAS ADICIONAIS (SLA, EXPANSÃO, SUBSTITUIÇÃO) ---
+  // --- CORREÇÃO DA LÓGICA DE ESTATÍSTICAS ESTRATÉGICAS ---
   const strategicStats = useMemo(() => {
-    // Vagas consideradas no período
-    const jobsInPeriod = accessibleJobs.filter(j => 
-        isWithin(j.openedAt) || (j.closedAt && isWithin(j.closedAt))
-    );
+    // Agora consideramos VAGAS ATIVAS no período (não só as que abriram/fecharam)
+    // Uma vaga é ativa se:
+    // 1. Abriu antes do fim do filtro
+    // 2. E (Ainda está aberta OU fechou depois do inicio do filtro)
+    const jobsInPeriod = accessibleJobs.filter(j => {
+        const opened = new Date(j.openedAt).getTime();
+        const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
+
+        const isOpenBeforeEnd = opened <= end;
+        const isNotClosedBeforeStart = !closed || closed >= start;
+
+        return isOpenBeforeEnd && isNotClosedBeforeStart;
+    });
 
     const expansion = jobsInPeriod.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro').length;
     const replacement = jobsInPeriod.filter(j => j.openingDetails?.reason === 'Substituição').length;
 
-    // SLA (Apenas de vagas FECHADAS no período)
+    // SLA (Mantemos apenas vagas FECHADAS no período para cálculo de tempo real)
     const closedJobs = accessibleJobs.filter(j => j.status === 'Fechada' && j.closedAt && isWithin(j.closedAt));
     const totalDays = closedJobs.reduce((acc, j) => {
         const days = differenceInDays(parseISO(j.closedAt!), parseISO(j.openedAt));
@@ -91,13 +102,14 @@ export const StrategicReport: React.FC = () => {
     const avgSla = closedJobs.length > 0 ? (totalDays / closedJobs.length).toFixed(1) : '0';
 
     return { expansion, replacement, avgSla, closedCount: closedJobs.length };
-  }, [accessibleJobs, startDate, endDate]);
+  }, [accessibleJobs, startDate, endDate, start, end]); // Dependências atualizadas
 
 
   const metrics = useMemo(() => {
     const jobsOpened = accessibleJobs.filter(j => isWithin(j.openedAt));
     const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
     
+    // Filtros de candidatos também ajustados para usar a função isWithin correta
     const interviewsList = accessibleCandidates.filter(c => isWithin(c.interviewAt));
     const testsList = accessibleCandidates.filter(c => c.techTest && isWithin(c.techTestDate));
     const rejectedList = accessibleCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
@@ -133,7 +145,7 @@ export const StrategicReport: React.FC = () => {
         withdrawn: { total: withdrawnList.length, reasons: withdrawalReasons, list: withdrawnList },
         bySector
     };
-  }, [accessibleJobs, accessibleCandidates, startDate, endDate]);
+  }, [accessibleJobs, accessibleCandidates, startDate, endDate]); // Start/End como dependencias para re-renderizar ao mudar filtro
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
@@ -157,7 +169,7 @@ export const StrategicReport: React.FC = () => {
           <div className="flex items-center gap-2 px-2"><Building2 size={16} className="text-slate-400" /><select className="text-sm font-bold text-slate-700 outline-none bg-transparent cursor-pointer" value={unitFilter} onChange={e => setUnitFilter(e.target.value)}><option value="">Todas Unidades</option>{settings.filter(s => s.type === 'UNIT').map(u => (<option key={u.id} value={u.name}>{u.name}</option>))}</select></div>
       </div>
 
-      {/* --- NOVA SEÇÃO: CARDS ESTRATÉGICOS DE SLA/TIPO --- */}
+      {/* CARDS ESTRATÉGICOS (SLA / EXPANSÃO / SUBSTITUIÇÃO) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 relative overflow-hidden group">
             <div className="absolute right-0 bottom-0 opacity-10 group-hover:opacity-20 transition-opacity"><Clock size={80} className="text-blue-600"/></div>
@@ -175,7 +187,7 @@ export const StrategicReport: React.FC = () => {
             <div className="z-10">
                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Expansão</p>
                <h4 className="text-3xl font-black text-slate-800">{strategicStats.expansion} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
-               <p className="text-[10px] text-indigo-500 font-bold uppercase">Aumento de Quadro</p>
+               <p className="text-[10px] text-indigo-500 font-bold uppercase">Aumento de Quadro (Ativas)</p>
             </div>
          </div>
 
@@ -185,12 +197,12 @@ export const StrategicReport: React.FC = () => {
             <div className="z-10">
                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Reposição</p>
                <h4 className="text-3xl font-black text-slate-800">{strategicStats.replacement} <span className="text-sm font-bold text-slate-400">vagas</span></h4>
-               <p className="text-[10px] text-rose-500 font-bold uppercase">Substituição</p>
+               <p className="text-[10px] text-rose-500 font-bold uppercase">Substituição (Ativas)</p>
             </div>
          </div>
       </div>
 
-      {/* CARDS OPERACIONAIS (MANTIDOS) */}
+      {/* CARDS OPERACIONAIS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <StrategicCard title="Abertas" value={metrics.opened.total} color="blue" icon={Briefcase} subtitle={`+${metrics.opened.expansion} Novo | +${metrics.opened.replacement} Subst.`} />
           <StrategicCard title="Concluídas" value={metrics.closed.total} color="emerald" icon={CheckCircle} subtitle="Ver Contratações" onClick={() => setDrillDownTarget('CLOSED')} />
@@ -289,7 +301,7 @@ export const StrategicReport: React.FC = () => {
                                       <tr><th className="p-3 pl-4">Vaga</th><th className="p-3">Colaborador Escolhido</th><th className="p-3 text-center">Data Fech.</th><th className="p-3 text-right pr-4">SLA Líquido</th></tr>
                                   )}
                                   {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
-                                      <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga / Setor / Unidade</th><th className="p-3 pr-4">Motivo do Desligamento</th></tr>
+                                      <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga</th><th className="p-3">Motivo</th><th className="p-3 pr-4 text-right">Data Evento</th></tr>
                                   )}
                                   {drillDownTarget === 'INTERVIEWS' && (
                                       <tr><th className="p-3 pl-4">Candidato</th><th className="p-3">Vaga</th><th className="p-3 text-right pr-4">Data Entrevista</th></tr>
@@ -315,13 +327,16 @@ export const StrategicReport: React.FC = () => {
                                   {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && metrics[drillDownTarget === 'REJECTED' ? 'rejected' : 'withdrawn'].list.map(c => {
                                       const job = jobs.find(j => j.id === c.jobId);
                                       const displayTitle = c.jobId === 'general' ? 'Entrevista Geral (Pool)' : job?.title;
-                                      const displaySector = c.jobId === 'general' ? 'Sem vaga definida' : `${job?.sector} | ${job?.unit}`;
                                       
+                                      // Data do Evento
+                                      const eventDate = c.rejectionDate ? new Date(c.rejectionDate).toLocaleDateString() : '-';
+
                                       return (
                                           <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                                               <td className="p-3 pl-4 font-black text-slate-700">{c.name}</td>
-                                              <td className="p-3 text-slate-500 font-medium">{displayTitle} <br/> <span className="text-[10px] text-slate-400 uppercase">{displaySector}</span></td>
-                                              <td className="p-3 pr-4"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>{c.rejectionReason || 'Sem motivo detalhado'}</span></td>
+                                              <td className="p-3 text-slate-500 font-medium">{displayTitle}</td>
+                                              <td className="p-3"><span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${drillDownTarget === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-orange-50 text-orange-700'}`}>{c.rejectionReason || 'Sem motivo'}</span></td>
+                                              <td className="p-3 pr-4 text-right font-black text-slate-600">{eventDate}</td>
                                           </tr>
                                       );
                                   })}
