@@ -234,48 +234,54 @@ export const JobDetails: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  // --- CORREÇÃO AQUI: Lógica de Salvamento Inteligente ---
+  // --- LÓGICA DE SALVAMENTO ATUALIZADA ---
   const handleSaveChanges = async () => {
     const processedData = { ...formData };
 
-    // Função auxiliar para verificar se a data mudou
-    // Se a data no input for igual à data original (apenas a parte YYYY-MM-DD),
-    // mantemos o valor ORIGINAL completo (com hora) para não contar como atualização.
+    // Função auxiliar para processar datas do formulário
     const processDateField = (field: keyof Candidate) => {
-        const inputVal = processedData[field]; // O que está no form (string ou undefined)
+        const inputVal = processedData[field];
         
-        // Se estiver vazio no form, remove do objeto para limpar no banco
         if (!inputVal) {
             processedData[field] = undefined;
             return;
         }
 
-        // Se for edição, compara com o original
+        // Se for edição e a data não mudou visualmente, mantém o original
         if (selectedCandidate && selectedCandidate[field]) {
              const originalDatePart = toInputDate(selectedCandidate[field] as string);
              const newDatePart = toInputDate(inputVal as string);
 
              if (originalDatePart === newDatePart) {
-                 // SÃO IGUAIS: Mantém o original para não alterar timestamp
                  processedData[field] = selectedCandidate[field];
                  return;
              }
         }
 
-        // Se mudou ou é novo, formata com meio-dia UTC
+        // Se mudou ou é novo, formata
         processedData[field] = `${toInputDate(inputVal as string)}T12:00:00.000Z`;
     };
 
     processDateField('firstContactAt');
     processDateField('interviewAt');
-    processDateField('lastInteractionAt'); // AQUI O ERRO ESTAVA ANTES
+    processDateField('lastInteractionAt'); 
 
+    // LÓGICA DE REPROVAÇÃO / DESISTÊNCIA
     if (processedData.status === 'Reprovado' || processedData.status === 'Desistência') {
         if (!processedData.rejectionReason) { alert("Por favor, informe o motivo da perda."); return; }
-        // Só atualiza data de rejeição se não tinha antes ou se mudou o status
-        if (!selectedCandidate?.rejectionDate || selectedCandidate.status !== processedData.status) {
-            processedData.rejectedBy = user?.name || 'Sistema';
-            processedData.rejectionDate = new Date().toISOString();
+        
+        processedData.rejectedBy = user?.name || 'Sistema';
+        
+        // AQUI ESTÁ A CORREÇÃO:
+        // Se o recrutador informou uma data de "Último Contato", usamos ela como a data da Reprovação/Desistência.
+        // Isso permite retroagir a data para fins de relatório.
+        if (processedData.lastInteractionAt) {
+             processedData.rejectionDate = processedData.lastInteractionAt;
+        } else {
+             // Se não informou último contato, usa a data atual APENAS se for uma nova rejeição
+             if (!selectedCandidate?.rejectionDate || selectedCandidate.status !== processedData.status) {
+                 processedData.rejectionDate = new Date().toISOString();
+             }
         }
     }
 
@@ -318,7 +324,8 @@ export const JobDetails: React.FC = () => {
     if (techForm.didTest && techForm.result === 'Reprovado') {
         update.status = 'Reprovado';
         update.rejectionReason = techReasonType === 'Outros' ? techForm.rejectionDetail : techReasonType;
-        update.rejectionDate = new Date().toISOString();
+        // Mesma lógica aqui: usa a data do teste como data de reprovação se houver
+        update.rejectionDate = update.techTestDate || new Date().toISOString();
         update.rejectedBy = user?.name || 'Sistema';
     }
     updateCandidate(update);
