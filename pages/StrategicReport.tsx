@@ -11,7 +11,7 @@ import {
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
 
-type DrillDownType = 'ALL_ACTIVE' | 'BACKLOG' | 'OPENED_NEW' | 'CANCELED' | 'FROZEN' | 'CLOSED' | 'OPEN_NOW' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION' | 'REPLACEMENT' | 'SLA' | null;
+type DrillDownType = 'ALL_ACTIVE' | 'BACKLOG' | 'OPENED_NEW' | 'CANCELED' | 'FROZEN' | 'CLOSED' | 'BALANCE_OPEN' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION' | 'REPLACEMENT' | 'SLA' | null;
 
 export const StrategicReport: React.FC = () => {
   const navigate = useNavigate();
@@ -72,19 +72,19 @@ export const StrategicReport: React.FC = () => {
       return jobIds.has(c.jobId) || isGeneral;
   }), [candidates, jobIds, unitFilter]);
 
-
   const kpis = useMemo(() => {
-      // 1. VAGAS ATIVAS NO PERÍODO (Total trabalhado)
+      // 1. VAGAS ATIVAS (BACKLOG + NOVAS)
       const allActiveJobs = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
           const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
+          // Estava aberta em algum momento dentro do range
           return opened <= end && (!closed || closed >= start);
       });
 
       const expansionList = allActiveJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro');
       const replacementList = allActiveJobs.filter(j => j.openingDetails?.reason === 'Substituição');
 
-      // SLA (Fechadas no período)
+      // SLA (Apenas fechadas no range)
       const closedInPeriodList = accessibleJobs.filter(j => j.status === 'Fechada' && j.closedAt && isWithin(j.closedAt));
       const totalDays = closedInPeriodList.reduce((acc, j) => {
           const days = differenceInDays(parseISO(j.closedAt!), parseISO(j.openedAt));
@@ -92,23 +92,41 @@ export const StrategicReport: React.FC = () => {
       }, 0);
       const avgSla = closedInPeriodList.length > 0 ? (totalDays / closedInPeriodList.length).toFixed(1) : '0';
 
-      // 2. FLUXO DE VAGAS
+      // 2. FLUXO DETALHADO
+      
+      // Backlog: Abertas ANTES do início
       const jobsBacklog = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
           const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
           return opened < start && (!closed || closed >= start);
       });
 
+      // Novas: Abertas DURANTE
       const jobsOpenedNew = accessibleJobs.filter(j => isWithin(j.openedAt));
+      
+      // Saídas DURANTE
       const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
       const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(j.frozenAt));
       const jobsCanceled = accessibleJobs.filter(j => j.status === 'Cancelada' && isWithin(j.closedAt));
 
-      // NOVO: VAGAS ABERTAS AGORA (Snapshot atual)
-      // Conta todas que estão com status 'Aberta', independente da data, mas respeitando o filtro de unidade/confidencialidade
-      const jobsOpenNow = accessibleJobs.filter(j => j.status === 'Aberta');
+      // CORREÇÃO: SALDO EM ABERTO NO FIM DO PERÍODO
+      // Conta vagas que:
+      // 1. Abriram antes ou durante o fim do filtro
+      // 2. E (Não saíram OU saíram DEPOIS do fim do filtro)
+      const jobsBalanceOpen = accessibleJobs.filter(j => {
+        const opened = new Date(j.openedAt).getTime();
+        
+        let exitDate = null;
+        if (j.status === 'Fechada' || j.status === 'Cancelada') {
+            exitDate = j.closedAt ? new Date(j.closedAt).getTime() : null;
+        } else if (j.status === 'Congelada') {
+            exitDate = j.frozenAt ? new Date(j.frozenAt).getTime() : null;
+        }
 
-      // 3. FLUXO DE CANDIDATOS
+        return opened <= end && (!exitDate || exitDate > end);
+      });
+
+      // 3. CANDIDATOS
       const interviews = accessibleCandidates.filter(c => isWithin(c.interviewAt));
       const tests = accessibleCandidates.filter(c => c.techTest && isWithin(c.techTestDate));
       const rejected = accessibleCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
@@ -140,8 +158,9 @@ export const StrategicReport: React.FC = () => {
           closed: { total: jobsClosed.length, list: jobsClosed },
           frozen: { total: jobsFrozen.length, list: jobsFrozen },
           canceled: { total: jobsCanceled.length, list: jobsCanceled },
-          openNow: { total: jobsOpenNow.length, list: jobsOpenNow }, // Nova Métrica
           
+          balanceOpen: { total: jobsBalanceOpen.length, list: jobsBalanceOpen }, // CORRIGIDO PARA BATER A CONTA
+
           interviews: { total: interviews.length, list: interviews },
           tests: { total: tests.length, list: tests },
           rejected: { total: rejected.length, list: rejected, reasons: rejectionReasons },
@@ -151,7 +170,7 @@ export const StrategicReport: React.FC = () => {
   }, [accessibleJobs, accessibleCandidates, start, end]);
 
   const getModalContent = () => {
-      if(['ALL_ACTIVE', 'BACKLOG', 'OPENED_NEW', 'CANCELED', 'FROZEN', 'CLOSED', 'EXPANSION', 'REPLACEMENT', 'SLA', 'OPEN_NOW'].includes(drillDownTarget as string)) {
+      if(['ALL_ACTIVE', 'BACKLOG', 'OPENED_NEW', 'CANCELED', 'FROZEN', 'CLOSED', 'EXPANSION', 'REPLACEMENT', 'SLA', 'BALANCE_OPEN'].includes(drillDownTarget as string)) {
           let list = kpis.allActive.list;
           if(drillDownTarget === 'BACKLOG') list = kpis.backlog.list;
           if(drillDownTarget === 'OPENED_NEW') list = kpis.openedNew.list;
@@ -161,7 +180,7 @@ export const StrategicReport: React.FC = () => {
           if(drillDownTarget === 'EXPANSION') list = kpis.expansion.list;     
           if(drillDownTarget === 'REPLACEMENT') list = kpis.replacement.list; 
           if(drillDownTarget === 'SLA') list = kpis.sla.list;
-          if(drillDownTarget === 'OPEN_NOW') list = kpis.openNow.list;                 
+          if(drillDownTarget === 'BALANCE_OPEN') list = kpis.balanceOpen.list;
 
           return (
               <div className="overflow-x-auto">
@@ -343,8 +362,8 @@ export const StrategicReport: React.FC = () => {
       <div>
          <h3 className="text-lg font-black text-slate-700 uppercase tracking-tighter mb-4 flex items-center gap-2"><Activity size={20}/> Movimentação de Vagas</h3>
          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-             {/* NOVO CARD: Em Aberto (Atual) */}
-             <StrategicCard title="Abertas (Hoje)" value={kpis.openNow.total} color="emerald" icon={Layers} subtitle="Status Atual" onClick={() => setDrillDownTarget('OPEN_NOW')} />
+             {/* CARD CORRIGIDO: SALDO DO PERÍODO */}
+             <StrategicCard title="Abertas (Saldo Final)" value={kpis.balanceOpen.total} color="emerald" icon={Layers} subtitle="Continuam p/ futuro" onClick={() => setDrillDownTarget('BALANCE_OPEN')} />
              <StrategicCard title="Backlog (Antigas)" value={kpis.backlog.total} color="violet" icon={History} subtitle="Vindas do mês anterior" onClick={() => setDrillDownTarget('BACKLOG')} />
              <StrategicCard title="Novas (Entrada)" value={kpis.openedNew.total} color="blue" icon={Briefcase} subtitle="Abertas neste intervalo" onClick={() => setDrillDownTarget('OPENED_NEW')} />
              <StrategicCard title="Canceladas" value={kpis.canceled.total} color="red" icon={XCircle} subtitle="Canceladas neste intervalo" onClick={() => setDrillDownTarget('CANCELED')} />
@@ -370,7 +389,7 @@ export const StrategicReport: React.FC = () => {
                   <thead>
                       <tr className="bg-slate-50/80 text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
                           <th className="p-4 pl-6">Setor / Departamento</th>
-                          <th className="p-4 text-center">Abertas (Novas)</th>
+                          <th className="p-4 text-center">Abertas</th>
                           <th className="p-4 text-center">Fechadas</th>
                           <th className="p-4 text-center">Cong.</th>
                           <th className="p-4 text-center">Canc.</th>
@@ -414,9 +433,9 @@ export const StrategicReport: React.FC = () => {
                                 {drillDownTarget === 'REJECTED' && "Reprovações"}
                                 {drillDownTarget === 'WITHDRAWN' && "Desistências"}
                                 {drillDownTarget === 'SLA' && "Tempo de Fechamento"}
-                                {drillDownTarget === 'OPEN_NOW' && "Vagas em Aberto (Status Atual)"}
+                                {drillDownTarget === 'BALANCE_OPEN' && "Saldo em Aberto (Final)"}
                             </h2>
-                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Registros encontrados</p>
+                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Registros encontrados no período</p>
                           </div>
                       </div>
                       <button onClick={() => setDrillDownTarget(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={26} /></button>
