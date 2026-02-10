@@ -2,11 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { 
-  ArrowLeft, User, Calendar, 
+  ArrowLeft, User, Phone, Mail, Calendar, Clock, 
   MessageSquare, Save, X, Search, Linkedin, Instagram, 
-  Globe, Briefcase, 
-  CheckCircle, DollarSign, Activity, Lock, Download,
-  Plus, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
+  Globe, Users, UserPlus, MapPin, Briefcase, Filter,
+  CheckCircle, Award, DollarSign, Activity, Lock, Download,
+  Plus, Archive, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
   Beaker, AlertTriangle, FileText, PauseCircle, Trash2, ShieldAlert
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType } from '../types';
@@ -42,7 +42,6 @@ const TECH_REJECTION_REASONS = [
 // Helper seguro para input de data
 const toInputDate = (isoString?: string) => {
   if (!isoString) return '';
-  // Garante que pega apenas a parte da data YYYY-MM-DD
   return isoString.split('T')[0];
 };
 
@@ -215,12 +214,11 @@ export const JobDetails: React.FC = () => {
   const handleOpenModal = (candidate?: Candidate) => {
     if (candidate) {
         setSelectedCandidate(candidate);
-        // CLONA O CANDIDATO PARA O FORM, garantindo que as datas venham corretamente
         setFormData({ ...candidate });
-        
         if (candidate.rejectionReason) {
             const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
             const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
+            
             if (isGeneral || isWithdrawal) {
                 setLossReasonType(candidate.rejectionReason);
             } else {
@@ -229,40 +227,35 @@ export const JobDetails: React.FC = () => {
         } else { setLossReasonType(''); }
     } else {
         setSelectedCandidate(null);
-        // Inicializa com dados padrão
-        setFormData({ 
-            jobId: job?.id, 
-            status: 'Aguardando Triagem', 
-            origin: 'LinkedIn', 
-            contractType: 'CLT', 
-            createdAt: new Date().toISOString() 
-        });
+        setFormData({ jobId: job?.id, status: 'Aguardando Triagem', origin: 'LinkedIn', contractType: 'CLT', createdAt: new Date().toISOString() });
         setLossReasonType('');
     }
     setIsModalOpen(true);
   };
 
-  // --- LÓGICA DE SALVAMENTO CORRIGIDA (SEM RESETAR DATAS) ---
+  // --- LÓGICA DE SALVAMENTO CORRIGIDA E ROBUSTA ---
   const handleSaveChanges = async () => {
-    // Cria uma cópia para processar
+    // 1. Clona os dados do form
     const dataToSave = { ...formData };
 
-    // Função simples para formatar a data se ela existir
-    const formatIfPresent = (dateValue?: string) => {
-        if (!dateValue) return undefined;
-        // Se já vier com T (ISO), pega só a parte da data e adiciona meio-dia
-        // Se vier só a data (do input), adiciona meio-dia
-        const cleanDate = dateValue.includes('T') ? dateValue.split('T')[0] : dateValue;
-        return `${cleanDate}T12:00:00.000Z`;
+    // 2. Helper para forçar a data que está no input
+    const forceInputDate = (inputValue?: string) => {
+        // Se o input estiver vazio, retorna undefined para limpar o campo
+        if (!inputValue) return undefined;
+        
+        // Se o valor já vier como ISO completo (caso não tenha sido editado), pega só a data
+        const datePart = inputValue.split('T')[0];
+        
+        // Retorna a data exata com meio-dia UTC para evitar problemas de fuso
+        return `${datePart}T12:00:00.000Z`;
     };
 
-    // Atualiza as datas SOMENTE se houver valor no input
-    // Se o usuário limpou o input (string vazia), o campo vai como undefined (limpa no banco)
-    dataToSave.firstContactAt = formatIfPresent(dataToSave.firstContactAt);
-    dataToSave.interviewAt = formatIfPresent(dataToSave.interviewAt);
-    dataToSave.lastInteractionAt = formatIfPresent(dataToSave.lastInteractionAt);
+    // 3. Aplica a formatação forçada nos campos de data
+    dataToSave.firstContactAt = forceInputDate(dataToSave.firstContactAt);
+    dataToSave.interviewAt = forceInputDate(dataToSave.interviewAt);
+    dataToSave.lastInteractionAt = forceInputDate(dataToSave.lastInteractionAt);
 
-    // Lógica para Reprovação e Desistência
+    // 4. Lógica de Reprovação/Desistência
     if (dataToSave.status === 'Reprovado' || dataToSave.status === 'Desistência') {
         if (!dataToSave.rejectionReason) { 
             alert("Por favor, informe o motivo da perda."); 
@@ -271,12 +264,12 @@ export const JobDetails: React.FC = () => {
         
         dataToSave.rejectedBy = user?.name || 'Sistema';
         
-        // AQUI: Usa a data do ÚLTIMO CONTATO como a data do evento de reprovação/desistência.
-        // Se não tiver último contato, aí sim usa a data atual.
+        // IMPORTANTE: Se houver uma data de último contato informada no formulário,
+        // use-a como a data oficial da reprovação/desistência.
+        // Se não houver, e o candidato ainda não tinha data de reprovação, use hoje.
         if (dataToSave.lastInteractionAt) {
             dataToSave.rejectionDate = dataToSave.lastInteractionAt;
         } else if (!selectedCandidate?.rejectionDate) {
-            // Se não tinha data antes, usa hoje. Se já tinha, mantém a original.
             dataToSave.rejectionDate = new Date().toISOString();
         }
     }
@@ -405,7 +398,6 @@ export const JobDetails: React.FC = () => {
             <option value="TODOS">Todos os Status</option>
             <option value="Aguardando Triagem">Aguardando Triagem</option>
             <option value="Em Análise">Em Análise</option>
-            <option value="Em Teste">Em Teste</option>
             <option value="Entrevista">Entrevista</option>
             <option value="Aprovado">Aprovado</option>
             <option value="Reprovado">Reprovado</option>
