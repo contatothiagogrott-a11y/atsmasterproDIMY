@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Link } from 'react-router-dom';
-// Adicionei RotateCcw e FileQuestion e AlertTriangle aos imports
 import { Plus, Search, MapPin, Briefcase, Filter, X, Download, ChevronDown, ChevronRight, Trash2, Eye, EyeOff, Lock, Unlock, Shield, Users, AlertTriangle, ShieldCheck, Edit2, RotateCcw, FileQuestion, XCircle } from 'lucide-react';
 import { Job, JobStatus, OpeningDetails, Candidate } from '../types';
 import { exportJobsList, exportToExcel } from '../services/excelService';
@@ -143,7 +142,6 @@ const JobCard: React.FC<JobCardProps> = ({ job, candidates, onEdit, onDelete }) 
 };
 
 export const Jobs: React.FC = () => {
-  // ADICIONEI TRASH, RESTORE E PERMANENT DELETE AQUI
   const { jobs, addJob, updateJob, removeJob, verifyUserPassword, settings, candidates, user, users, trash, restoreItem, permanentlyDeleteItem } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
   
@@ -184,9 +182,7 @@ export const Jobs: React.FC = () => {
 
   // LÓGICA DA LIXEIRA DE VAGAS
   const deletedJobs = useMemo(() => {
-    // 1. Filtra só o que é vaga na lixeira global
     const onlyJobs = trash.filter(item => item.originalType === 'job');
-    // 2. Aplica regra de visualização (Master vê tudo, User vê o que deletou)
     if (user?.role === 'MASTER') return onlyJobs;
     return onlyJobs.filter(j => j.deletedBy === user?.id);
   }, [trash, user]);
@@ -197,9 +193,9 @@ export const Jobs: React.FC = () => {
     return jobs.some(j => j.isConfidential && (j.createdBy === user.id || j.allowedUserIds?.includes(user.id)));
   }, [jobs, user]);
 
+  // --- LÓGICA DE FILTRO ATUALIZADA (BUSCA POR NOME DE CANDIDATO) ---
   const filteredJobs = useMemo(() => {
-    // AQUI MUDOU: Não filtramos mais lixeira aqui. Jobs são sempre ativos.
-    let result = jobs; // A API já devolve sem os deletados.
+    let result = jobs; 
     
     // SECURITY FILTER
     result = result.filter(j => {
@@ -213,7 +209,18 @@ export const Jobs: React.FC = () => {
     }
 
     if (searchTerm) {
-      result = result.filter(j => j.title.toLowerCase().includes(searchTerm.toLowerCase()));
+      const lowerTerm = searchTerm.toLowerCase();
+      result = result.filter(j => {
+          // Verifica se o termo bate com o Título da Vaga
+          const matchesTitle = j.title.toLowerCase().includes(lowerTerm);
+          
+          // Verifica se o termo bate com algum Candidato desta vaga
+          const matchesCandidate = candidates.some(c => 
+              c.jobId === j.id && c.name.toLowerCase().includes(lowerTerm)
+          );
+
+          return matchesTitle || matchesCandidate;
+      });
     }
 
     if (selectedSector) {
@@ -224,7 +231,7 @@ export const Jobs: React.FC = () => {
     }
 
     return result;
-  }, [jobs, searchTerm, showConfidential, selectedSector, selectedUnit, user]);
+  }, [jobs, searchTerm, showConfidential, selectedSector, selectedUnit, user, candidates]); // candidates adicionado às dependências
 
   const groupedJobs = useMemo(() => {
     return {
@@ -340,7 +347,6 @@ export const Jobs: React.FC = () => {
     }
   };
 
-  // Funções da Lixeira no Modal
   const handleRestoreFromTrash = async (id: string) => {
     if(confirm("Restaurar esta vaga?")) {
         await restoreItem(id);
@@ -372,7 +378,6 @@ export const Jobs: React.FC = () => {
              </button>
            )}
 
-           {/* BOTÃO DA LIXEIRA - AGORA ABRE MODAL */}
            <button 
              onClick={() => setIsTrashModalOpen(true)} 
              className="p-2 rounded-lg transition-colors flex items-center gap-2 border bg-white border-slate-300 text-slate-500 hover:text-red-600 hover:bg-red-50"
@@ -406,7 +411,7 @@ export const Jobs: React.FC = () => {
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
           <input 
             type="text" 
-            placeholder="Buscar vagas por título..." 
+            placeholder="Buscar por título ou candidato..." 
             className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm text-slate-700"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -587,48 +592,48 @@ export const Jobs: React.FC = () => {
       {jobToDelete && (
         <div className="fixed inset-0 bg-red-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border-t-4 border-red-500">
-             <div className="flex justify-center mb-4">
-               <div className="bg-red-100 p-3 rounded-full text-red-600">
-                 <AlertTriangle size={32} />
-               </div>
-             </div>
-             <h3 className="text-xl font-bold text-slate-800 text-center mb-2">Excluir Vaga?</h3>
-             <p className="text-sm text-slate-600 text-center mb-6">
-               Tem certeza que deseja remover esta vaga? Ela sairá da lista de disponíveis e irá para a Lixeira.
-             </p>
-             
-             <form onSubmit={confirmDelete} className="space-y-4">
-               <div>
-                 <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">
-                   Digite <span className="text-red-600">DELETE</span> para confirmar:
-                 </label>
-                 <input 
-                   autoFocus
-                   type="text" 
-                   className="w-full border border-slate-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 text-center font-bold tracking-widest uppercase"
-                   value={deleteConfirmation}
-                   onChange={e => setDeleteConfirmation(e.target.value)}
-                   placeholder="Confirmação"
-                 />
-               </div>
-               
-               <div className="flex gap-2 pt-2">
-                 <button 
-                   type="button" 
-                   onClick={() => { setJobToDelete(null); setDeleteConfirmation(''); }} 
-                   className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors"
-                 >
-                   Cancelar
-                 </button>
-                 <button 
-                   type="submit" 
-                   disabled={deleteConfirmation.toUpperCase() !== 'DELETE'}
-                   className="flex-1 bg-red-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3 rounded-xl shadow-lg transition-all transform enabled:hover:bg-red-700 enabled:active:scale-95"
-                 >
-                   Confirmar Exclusão
-                 </button>
-               </div>
-             </form>
+              <div className="flex justify-center mb-4">
+                <div className="bg-red-100 p-3 rounded-full text-red-600">
+                  <AlertTriangle size={32} />
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-slate-800 text-center mb-2">Excluir Vaga?</h3>
+              <p className="text-sm text-slate-600 text-center mb-6">
+                Tem certeza que deseja remover esta vaga? Ela sairá da lista de disponíveis e irá para a Lixeira.
+              </p>
+              
+              <form onSubmit={confirmDelete} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">
+                    Digite <span className="text-red-600">DELETE</span> para confirmar:
+                  </label>
+                  <input 
+                    autoFocus
+                    type="text" 
+                    className="w-full border border-slate-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 text-center font-bold tracking-widest uppercase"
+                    value={deleteConfirmation}
+                    onChange={e => setDeleteConfirmation(e.target.value)}
+                    placeholder="Confirmação"
+                  />
+                </div>
+                
+                <div className="flex gap-2 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => { setJobToDelete(null); setDeleteConfirmation(''); }} 
+                    className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={deleteConfirmation.toUpperCase() !== 'DELETE'}
+                    className="flex-1 bg-red-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3 rounded-xl shadow-lg transition-all transform enabled:hover:bg-red-700 enabled:active:scale-95"
+                  >
+                    Confirmar Exclusão
+                  </button>
+                </div>
+              </form>
           </div>
         </div>
       )}
