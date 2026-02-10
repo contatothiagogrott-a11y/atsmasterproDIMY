@@ -2,11 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { 
-  ArrowLeft, User, Phone, Mail, Calendar, Clock, 
+  ArrowLeft, User, Calendar, 
   MessageSquare, Save, X, Search, Linkedin, Instagram, 
-  Globe, Users, UserPlus, MapPin, Briefcase, Filter,
-  CheckCircle, Award, DollarSign, Activity, Lock, Download,
-  Plus, Archive, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
+  Globe, Briefcase, 
+  CheckCircle, DollarSign, Activity, Lock, Download,
+  Plus, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
   Beaker, AlertTriangle, FileText, PauseCircle, Trash2, ShieldAlert
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType } from '../types';
@@ -15,8 +15,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 
 const generateId = () => crypto.randomUUID();
 
-// --- LISTAS DE DIAGNÓSTICO DE DHO ---
-
+// --- CONSTANTES ---
 const WITHDRAWAL_REASONS = [
   "Aceitou outra proposta", 
   "Salário abaixo da pretensão", 
@@ -39,15 +38,21 @@ const TECH_REJECTION_REASONS = [
   "Salário acima do budget"
 ];
 
-// Helper seguro para input de data
+// --- HELPERS PUROS ---
+
+// Extrai YYYY-MM-DD de uma string ISO para exibir no input
 const toInputDate = (isoString?: string) => {
   if (!isoString) return '';
   return isoString.split('T')[0];
 };
 
+// Formata para exibição PT-BR
 const formatDate = (isoString?: string) => {
   if (!isoString) return '-';
-  return new Date(isoString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+  // Ajuste de timezone para evitar exibir dia anterior
+  const datePart = isoString.split('T')[0];
+  const [year, month, day] = datePart.split('-');
+  return `${day}/${month}/${year}`;
 };
 
 const getSourceIcon = (origin: string) => {
@@ -70,44 +75,143 @@ export const JobDetails: React.FC = () => {
   const [job, setJob] = useState<Job | undefined>(undefined);
   const [jobCandidates, setJobCandidates] = useState<Candidate[]>([]);
   
+  // Modais de Status da Vaga
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [targetStatus, setTargetStatus] = useState<'Cancelada' | 'Congelada' | 'Aberta' | null>(null);
   const [statusFormData, setStatusFormData] = useState({ requester: '', reason: '', date: toInputDate(new Date().toISOString()) });
 
+  // Modal de Contratação
   const [isHiringModalOpen, setIsHiringModalOpen] = useState(false);
   const [candidateToHire, setCandidateToHire] = useState<Candidate | null>(null);
   const [hiringData, setHiringData] = useState({ contractType: 'CLT' as ContractType, finalSalary: '', startDate: '' });
 
+  // Modal de Edição de Candidato (PRINCIPAL)
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Candidate>>({});
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [lossReasonType, setLossReasonType] = useState(''); 
 
+  // Modal Técnico
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [techCandidate, setTechCandidate] = useState<Candidate | null>(null);
   const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado', rejectionDetail: '' });
   const [techReasonType, setTechReasonType] = useState('');
 
+  // Modal Banco de Talentos
   const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
   const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
   const [talentEmail, setTalentEmail] = useState(''); 
   const [talentPhone, setTalentPhone] = useState(''); 
 
-  // DELETE STATES
+  // Modal Exclusão
   const [isDeleteCandidateModalOpen, setIsDeleteCandidateModalOpen] = useState(false);
   const [candidateToDelete, setCandidateToDelete] = useState<Candidate | null>(null);
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
 
+  // Filtros de Tela
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('TODOS');
 
+  // Carregar dados
   useEffect(() => {
     const foundJob = jobs.find(j => j.id === id);
     setJob(foundJob);
     if (foundJob) setJobCandidates(candidates.filter(c => c.jobId === foundJob.id));
   }, [jobs, candidates, id]);
 
+  // --- LÓGICA DE SALVAMENTO BLINDADA (SEM DATAS AUTOMÁTICAS) ---
+  const handleSaveChanges = async () => {
+    // 1. Clona os dados do formulário para não mutar o state diretamente
+    const payload = { ...formData };
+
+    // 2. Helper puro para normalizar datas
+    // REGRA: Recebe string (YYYY-MM-DD ou ISO). Retorna ISO T12:00 ou undefined.
+    // Se o input estiver vazio (""), retorna undefined (limpa o campo no banco).
+    // NUNCA usa new Date() aqui.
+    const normalizeDate = (dateValue?: string) => {
+        if (!dateValue) return undefined; 
+        
+        // Se vier "2024-02-10T15:00..." (ISO) ou "2024-02-10" (Input), pegamos só a data
+        const cleanDatePart = dateValue.split('T')[0];
+        
+        // Retorna normalizado meio-dia UTC para persistência
+        return `${cleanDatePart}T12:00:00.000Z`;
+    };
+
+    // 3. Aplica a normalização SOMENTE nos campos de data permitidos
+    // Isso garante que salvamos exatamente o que o usuário viu/editou no input
+    payload.firstContactAt = normalizeDate(payload.firstContactAt);
+    payload.interviewAt = normalizeDate(payload.interviewAt);
+    payload.lastInteractionAt = normalizeDate(payload.lastInteractionAt);
+
+    // 4. Regras de Reprovação/Desistência
+    if (payload.status === 'Reprovado' || payload.status === 'Desistência') {
+        if (!payload.rejectionReason) { 
+            alert("Por favor, informe o motivo da perda."); 
+            return; 
+        }
+        
+        payload.rejectedBy = user?.name || 'Sistema';
+        
+        // REGRA ABSOLUTA: A data de reprovação deve ser igual à data do último contato se ela existir.
+        // Se o usuário preencheu "Último Contato" no form, usamos essa data.
+        // Se o campo estiver vazio, não inventamos data (o campo fica undefined ou mantém o anterior).
+        if (payload.lastInteractionAt) {
+            payload.rejectionDate = payload.lastInteractionAt;
+        } 
+        // Nota: Se não houver lastInteractionAt, a rejectionDate não é alterada (mantém a que estava ou undefined)
+        // Isso remove o bug de "setar hoje" automaticamente.
+    }
+
+    // 5. Persistência
+    if (selectedCandidate) {
+        await updateCandidate({ ...selectedCandidate, ...payload } as Candidate);
+    } else {
+        await addCandidate({ ...payload, id: generateId() } as Candidate);
+    }
+    
+    setIsModalOpen(false);
+  };
+
+  // --- ABERTURA DO MODAL (CARREGA DADOS SEM ALTERAR) ---
+  const handleOpenModal = (candidate?: Candidate) => {
+    if (candidate) {
+        setSelectedCandidate(candidate);
+        // Carrega os dados EXATOS do candidato. 
+        // Se candidate.lastInteractionAt for "2024-01-01...", o input mostrará "01/01/2024".
+        setFormData({ ...candidate });
+        
+        // Lógica visual para o dropdown de motivos
+        if (candidate.rejectionReason) {
+            const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
+            const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
+            if (isGeneral || isWithdrawal) {
+                setLossReasonType(candidate.rejectionReason);
+            } else {
+                setLossReasonType('Outros');
+            }
+        } else { 
+            setLossReasonType(''); 
+        }
+    } else {
+        // Novo candidato (Campos de data iniciam VAZIOS/UNDEFINED)
+        setSelectedCandidate(null);
+        setFormData({ 
+            jobId: job?.id, 
+            status: 'Aguardando Triagem', 
+            origin: 'LinkedIn', 
+            contractType: 'CLT', 
+            createdAt: new Date().toISOString() 
+            // Datas explicitamente não definidas aqui para evitar "hoje"
+        });
+        setLossReasonType('');
+    }
+    setIsModalOpen(true);
+  };
+
+  // --- OUTRAS FUNÇÕES DO SISTEMA (CONTRATAÇÃO, STATUS, DELETE...) ---
+  
   const hiredCandidate = useMemo(() => {
       return jobCandidates.find(c => c.status === 'Contratado' || job?.hiredCandidateIds?.includes(c.id));
   }, [jobCandidates, job]);
@@ -117,7 +221,6 @@ export const JobDetails: React.FC = () => {
     const endDate = job.status === 'Fechada' && job.closedAt ? new Date(job.closedAt).getTime() : new Date().getTime();
     const startDate = new Date(job.openedAt).getTime();
     const daysOpenBruto = Math.ceil((endDate - startDate) / (1000 * 3600 * 24));
-
     let totalFrozenMilliseconds = 0;
     if (job.freezeHistory) {
         job.freezeHistory.forEach(freeze => {
@@ -128,13 +231,11 @@ export const JobDetails: React.FC = () => {
     }
     const daysFrozen = Math.floor(totalFrozenMilliseconds / (1000 * 3600 * 24));
     const daysNet = Math.max(0, daysOpenBruto - daysFrozen);
-
     const origins: Record<string, number> = { 'LinkedIn': 0, 'Instagram': 0, 'Indicação': 0, 'SINE': 0, 'Banco de Talentos': 0, 'Recrutamento Interno': 0, 'Busca espontânea': 0, 'Outros': 0 };
     jobCandidates.forEach(c => {
         const o = c.origin || 'Outros';
         if (origins[o] !== undefined) origins[o]++; else origins['Outros']++;
     });
-
     return {
         daysOpen: daysOpenBruto, daysFrozen, daysNet,
         enrolled: jobCandidates.length,
@@ -146,7 +247,6 @@ export const JobDetails: React.FC = () => {
     };
   }, [job, jobCandidates]);
 
-  // --- FUNÇÕES AUXILIARES ---
   const handleOpenDeleteCandidate = (c: Candidate) => {
     setCandidateToDelete(c);
     setDeletePassword('');
@@ -211,78 +311,6 @@ export const JobDetails: React.FC = () => {
     setIsHiringModalOpen(false);
   };
 
-  const handleOpenModal = (candidate?: Candidate) => {
-    if (candidate) {
-        setSelectedCandidate(candidate);
-        setFormData({ ...candidate });
-        if (candidate.rejectionReason) {
-            const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
-            const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
-            
-            if (isGeneral || isWithdrawal) {
-                setLossReasonType(candidate.rejectionReason);
-            } else {
-                setLossReasonType('Outros');
-            }
-        } else { setLossReasonType(''); }
-    } else {
-        setSelectedCandidate(null);
-        setFormData({ jobId: job?.id, status: 'Aguardando Triagem', origin: 'LinkedIn', contractType: 'CLT', createdAt: new Date().toISOString() });
-        setLossReasonType('');
-    }
-    setIsModalOpen(true);
-  };
-
-  // --- LÓGICA DE SALVAMENTO CORRIGIDA E ROBUSTA ---
-  const handleSaveChanges = async () => {
-    // 1. Clona os dados do form
-    const dataToSave = { ...formData };
-
-    // 2. Helper para forçar a data que está no input
-    const forceInputDate = (inputValue?: string) => {
-        // Se o input estiver vazio, retorna undefined para limpar o campo
-        if (!inputValue) return undefined;
-        
-        // Se o valor já vier como ISO completo (caso não tenha sido editado), pega só a data
-        const datePart = inputValue.split('T')[0];
-        
-        // Retorna a data exata com meio-dia UTC para evitar problemas de fuso
-        return `${datePart}T12:00:00.000Z`;
-    };
-
-    // 3. Aplica a formatação forçada nos campos de data
-    dataToSave.firstContactAt = forceInputDate(dataToSave.firstContactAt);
-    dataToSave.interviewAt = forceInputDate(dataToSave.interviewAt);
-    dataToSave.lastInteractionAt = forceInputDate(dataToSave.lastInteractionAt);
-
-    // 4. Lógica de Reprovação/Desistência
-    if (dataToSave.status === 'Reprovado' || dataToSave.status === 'Desistência') {
-        if (!dataToSave.rejectionReason) { 
-            alert("Por favor, informe o motivo da perda."); 
-            return; 
-        }
-        
-        dataToSave.rejectedBy = user?.name || 'Sistema';
-        
-        // IMPORTANTE: Se houver uma data de último contato informada no formulário,
-        // use-a como a data oficial da reprovação/desistência.
-        // Se não houver, e o candidato ainda não tinha data de reprovação, use hoje.
-        if (dataToSave.lastInteractionAt) {
-            dataToSave.rejectionDate = dataToSave.lastInteractionAt;
-        } else if (!selectedCandidate?.rejectionDate) {
-            dataToSave.rejectionDate = new Date().toISOString();
-        }
-    }
-
-    if (selectedCandidate) {
-        await updateCandidate({ ...selectedCandidate, ...dataToSave } as Candidate);
-    } else {
-        await addCandidate({ ...dataToSave, id: generateId() } as Candidate);
-    }
-    
-    setIsModalOpen(false);
-  };
-
   const handleOpenTechModal = (c: Candidate) => {
     setTechCandidate(c);
     setTechForm({ 
@@ -292,7 +320,6 @@ export const JobDetails: React.FC = () => {
         result: c.techTestResult || 'Aprovado', 
         rejectionDetail: c.rejectionReason || '' 
     });
-    
     if (c.rejectionReason && TECH_REJECTION_REASONS.includes(c.rejectionReason)) {
         setTechReasonType(c.rejectionReason);
     } else if (c.rejectionReason) {
@@ -300,7 +327,6 @@ export const JobDetails: React.FC = () => {
     } else {
         setTechReasonType('');
     }
-    
     setIsTechModalOpen(true);
   };
 
@@ -313,11 +339,9 @@ export const JobDetails: React.FC = () => {
         techTestEvaluator: techForm.didTest ? techForm.evaluator : undefined, 
         techTestResult: techForm.didTest ? techForm.result : undefined 
     };
-    
     if (techForm.didTest && techForm.result === 'Reprovado') {
         update.status = 'Reprovado';
         update.rejectionReason = techReasonType === 'Outros' ? techForm.rejectionDetail : techReasonType;
-        // Data da reprovação técnica é a data do teste
         update.rejectionDate = update.techTestDate || new Date().toISOString();
         update.rejectedBy = user?.name || 'Sistema';
     }
@@ -454,7 +478,7 @@ export const JobDetails: React.FC = () => {
         ))}
       </div>
 
-      {/* --- MODAL DE DELETAR CANDIDATO COM SENHA --- */}
+      {/* --- MODAL DE DELETAR CANDIDATO --- */}
       {isDeleteCandidateModalOpen && (
         <div className="fixed inset-0 bg-red-900/40 backdrop-blur-sm flex items-center justify-center z-[250] p-4">
            <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border-t-4 border-red-500 animate-fadeIn">
@@ -625,35 +649,6 @@ export const JobDetails: React.FC = () => {
                 )}
                 <div className="flex justify-end gap-2 pt-4"><button onClick={() => setIsTechModalOpen(false)} className="px-5 py-2 text-slate-500 font-bold">Voltar</button><button onClick={saveTechTest} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-indigo-100">Salvar Avaliação</button></div>
              </div>
-           </div>
-        </div>
-      )}
-
-      {/* --- MODAL FECHAR VAGA / CONTRATAÇÃO --- */}
-      {isHiringModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
-           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 border-t-8 border-emerald-500 text-center animate-fadeIn">
-              <div className="flex justify-center mb-4 text-emerald-600 bg-emerald-50 w-16 h-16 rounded-full items-center mx-auto shadow-inner"><CheckCircle size={36}/></div>
-              <h3 className="text-xl font-black text-emerald-800 mb-2 uppercase tracking-tighter">Concluir Contratação</h3>
-              <p className="text-slate-500 text-xs mb-6 font-bold uppercase tracking-widest">Confirme os dados finais para encerrar a vaga</p>
-              
-              <div className="text-left space-y-4">
-                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Colaborador Escolhido</label>
-                    <select className="w-full border border-slate-200 p-3 rounded-xl font-black text-slate-700 bg-slate-50" value={candidateToHire?.id || ''} onChange={e => setCandidateToHire(jobCandidates.find(c => c.id === e.target.value) || null)}>
-                        <option value="">-- Selecione o Vencedor --</option>
-                        {jobCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                </div>
-                {candidateToHire && ( <div className="space-y-4 animate-fadeIn">
-                    <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Salário Combinado</label><input className="w-full border p-3 rounded-xl font-bold" value={hiringData.finalSalary} onChange={e => setHiringData({...hiringData, finalSalary: e.target.value})} placeholder="R$ 0.000,00" /></div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Contrato</label><select className="w-full border p-3 rounded-xl font-bold" value={hiringData.contractType} onChange={e => setHiringData({...hiringData, contractType: e.target.value as ContractType})}><option value="CLT">CLT</option><option value="PJ">PJ</option><option value="Estágio">Estágio</option></select></div>
-                        <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Data Início</label><input type="date" className="w-full border p-3 rounded-xl font-bold" value={hiringData.startDate} onChange={e => setHiringData({...hiringData, startDate: e.target.value})} /></div>
-                    </div>
-                    <button onClick={handleHiringSubmit} className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-emerald-100 uppercase tracking-widest mt-4 hover:bg-emerald-700 transition-all active:scale-95">Confirmar e Finalizar Vaga</button>
-                </div>)}
-              </div>
-              <button onClick={() => setIsHiringModalOpen(false)} className="w-full py-3 text-slate-400 mt-2 font-bold uppercase text-[10px] tracking-widest hover:text-slate-600">Voltar</button>
            </div>
         </div>
       )}
