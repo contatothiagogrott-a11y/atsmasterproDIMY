@@ -1,765 +1,719 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { Link } from 'react-router-dom';
-// Adicionei RotateCcw e FileQuestion e AlertTriangle aos imports
-import { Plus, Search, MapPin, Briefcase, Filter, X, Download, ChevronDown, ChevronRight, Trash2, Eye, EyeOff, Lock, Unlock, Shield, Users, AlertTriangle, ShieldCheck, Edit2, RotateCcw, FileQuestion, XCircle } from 'lucide-react';
-import { Job, JobStatus, OpeningDetails, Candidate } from '../types';
-import { exportJobsList, exportToExcel } from '../services/excelService';
+import { 
+  ArrowLeft, User, Calendar, 
+  MessageSquare, Save, X, Search, Linkedin, Instagram, 
+  Globe, Briefcase, 
+  CheckCircle, DollarSign, Activity, Lock, Download,
+  Plus, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
+  Beaker, AlertTriangle, FileText, PauseCircle, Trash2, ShieldAlert
+} from 'lucide-react';
+import { Candidate, Job, TalentProfile, ContractType } from '../types';
+import { exportJobCandidates } from '../services/excelService';
+import { differenceInDays, parseISO } from 'date-fns';
 
 const generateId = () => crypto.randomUUID();
 
-const formatDateDisplay = (isoString: string) => {
-  if (!isoString) return 'N/A';
+// --- CONSTANTES ---
+const WITHDRAWAL_REASONS = [
+  "Aceitou outra proposta", 
+  "Salário abaixo da pretensão", 
+  "Distância / Localização", 
+  "Desinteresse na vaga",
+  "Problemas pessoais"
+];
+
+const GENERAL_REJECTION_REASONS = [
+  "Perfil Técnico Insuficiente",
+  "Sem Fit Cultural",
+  "Reprovado no Teste Técnico",
+  "Salário acima do budget"
+];
+
+const TECH_REJECTION_REASONS = [
+  "Perfil Técnico Insuficiente",
+  "Sem Fit Cultural",
+  "Reprovado no Teste Técnico",
+  "Salário acima do budget"
+];
+
+// --- HELPERS PUROS ---
+
+// Extrai YYYY-MM-DD de uma string ISO para exibir no input type="date"
+const toInputDate = (isoString?: string) => {
+  if (!isoString) return '';
+  return isoString.split('T')[0];
+};
+
+// Formata para exibição PT-BR na interface (DD/MM/AAAA)
+const formatDate = (isoString?: string) => {
+  if (!isoString) return '-';
   const datePart = isoString.split('T')[0];
-  if (!datePart) return 'N/A';
   const [year, month, day] = datePart.split('-');
   return `${day}/${month}/${year}`;
 };
 
-interface CollapsibleSectionProps {
-  title: string;
-  count: number;
-  children: React.ReactNode;
-  isOpenDefault?: boolean;
-  color: string;
-}
+const getSourceIcon = (origin: string) => {
+  const norm = origin?.toLowerCase() || '';
+  if (norm.includes('linkedin')) return <Linkedin size={16} className="text-blue-600" />;
+  if (norm.includes('instagram')) return <Instagram size={16} className="text-pink-600" />;
+  if (norm.includes('indicação') || norm.includes('indicacao')) return <LinkIcon size={16} className="text-teal-600" />;
+  if (norm.includes('interno')) return <Briefcase size={16} className="text-slate-600" />;
+  if (norm.includes('banco')) return <Database size={16} className="text-orange-600" />;
+  if (norm.includes('sine')) return <Globe size={16} className="text-green-600" />;
+  if (norm.includes('espontânea') || norm.includes('espontanea')) return <Search size={16} className="text-purple-600" />;
+  return <Target size={16} className="text-gray-400" />;
+};
 
-const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ title, count, children, isOpenDefault = false, color }) => {
-  const [isOpen, setIsOpen] = useState(isOpenDefault);
+export const JobDetails: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const { jobs, candidates, updateCandidate, addCandidate, addTalent, updateJob, removeCandidate, user, verifyUserPassword } = useData();
   
-  const colorMap: Record<string, string> = {
-      blue: 'bg-blue-50 border-blue-200 text-blue-800',
-      emerald: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-      amber: 'bg-amber-50 border-amber-200 text-amber-800',
-      red: 'bg-red-50 border-red-200 text-red-800'
-  };
+  const [job, setJob] = useState<Job | undefined>(undefined);
+  const [jobCandidates, setJobCandidates] = useState<Candidate[]>([]);
+  
+  // States de Modais e Formulários
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [targetStatus, setTargetStatus] = useState<'Cancelada' | 'Congelada' | 'Aberta' | null>(null);
+  const [statusFormData, setStatusFormData] = useState({ requester: '', reason: '', date: toInputDate(new Date().toISOString()) });
 
-  return (
-    <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className={`w-full flex items-center justify-between p-4 transition-colors ${isOpen ? 'bg-slate-50' : 'bg-white hover:bg-slate-50'}`}
-      >
-        <div className="flex items-center gap-3">
-          {isOpen ? <ChevronDown size={20} className="text-slate-400"/> : <ChevronRight size={20} className="text-slate-400"/>}
-          <h3 className="font-bold text-slate-700 text-lg">{title}</h3>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-bold border ${colorMap[color] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-            {count}
-          </span>
-        </div>
-      </button>
-      {isOpen && (
-        <div className="p-6 bg-slate-50/50 border-t border-slate-100 animate-fadeIn">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-};
+  const [isHiringModalOpen, setIsHiringModalOpen] = useState(false);
+  const [candidateToHire, setCandidateToHire] = useState<Candidate | null>(null);
+  const [hiringData, setHiringData] = useState({ contractType: 'CLT' as ContractType, finalSalary: '', startDate: '' });
 
-interface JobCardProps {
-  job: Job;
-  candidates: Candidate[];
-  onEdit: () => void;
-  onDelete: (e: React.MouseEvent) => void;
-}
-
-const JobCard: React.FC<JobCardProps> = ({ job, candidates, onEdit, onDelete }) => {
-    const jobCandidates = candidates.filter(c => c.jobId === job.id);
-    const hired = jobCandidates.find(c => c.status === 'Contratado');
-    
-    const getStatusColor = (s: string) => {
-        switch(s) {
-            case 'Aberta': return 'bg-blue-100 text-blue-700';
-            case 'Fechada': return 'bg-emerald-100 text-emerald-700';
-            case 'Congelada': return 'bg-amber-100 text-amber-700';
-            case 'Cancelada': return 'bg-red-100 text-red-700';
-            default: return 'bg-slate-100 text-slate-700';
-        }
-    };
-
-    return (
-        <Link to={`/jobs/${job.id}`} className={`block bg-white rounded-xl border p-5 shadow-sm hover:shadow-md transition-all group relative ${job.isConfidential ? 'border-amber-200 bg-amber-50/30' : 'border-slate-200'}`}>
-            <div className="flex justify-between items-start mb-3">
-                <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                          {job.isConfidential && <span title="Confidencial"><Lock size={14} className="text-amber-500" /></span>}
-                          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${getStatusColor(job.status)}`}>
-                              {job.status}
-                          </span>
-                          {job.openingDetails?.reason === 'Substituição' && <span className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded bg-rose-100 text-rose-700">Substituição</span>}
-                    </div>
-                    <h3 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-600 transition-colors">{job.title}</h3>
-                    <p className="text-xs text-slate-500 font-medium mt-1">{job.sector} &bull; {job.unit}</p>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 my-4 py-3 border-t border-b border-slate-100 border-dashed">
-                <div>
-                   <span className="block text-[10px] font-bold text-slate-400 uppercase">Candidatos</span>
-                   <div className="flex items-center gap-1.5 text-slate-700 font-bold">
-                      <Users size={16} className="text-blue-500"/> {jobCandidates.length}
-                   </div>
-                </div>
-                <div>
-                   <span className="block text-[10px] font-bold text-slate-400 uppercase">Abertura</span>
-                   <div className="flex items-center gap-1.5 text-slate-700 font-bold">
-                      <Briefcase size={16} className="text-slate-400"/> {formatDateDisplay(job.openedAt)}
-                   </div>
-                </div>
-            </div>
-
-            <div className="flex justify-between items-center mt-2">
-                {hired ? (
-                    <div className="text-xs flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2 py-1 rounded border border-emerald-100">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                        {hired.name.split(' ')[0]} Contratado
-                    </div>
-                ) : (
-                    <span className="text-xs text-slate-400 font-medium italic">
-                        {job.status === 'Fechada' ? 'Processo Finalizado' : 'Em andamento...'}
-                    </span>
-                )}
-                
-                <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                    <button 
-                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(); }}
-                       className="p-2 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-blue-600 transition-colors"
-                       title="Editar Vaga"
-                    >
-                       <Edit2 size={16} />
-                    </button>
-                    <button 
-                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(e); }}
-                       className="p-2 hover:bg-red-50 rounded-lg transition-colors text-slate-400 hover:text-red-600"
-                       title="Mover para Lixeira"
-                    >
-                       <Trash2 size={16} />
-                    </button>
-                </div>
-            </div>
-        </Link>
-    );
-};
-
-export const Jobs: React.FC = () => {
-  // ADICIONEI TRASH, RESTORE E PERMANENT DELETE AQUI
-  const { jobs, addJob, updateJob, removeJob, verifyUserPassword, settings, candidates, user, users, trash, restoreItem, permanentlyDeleteItem } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
-  // State para o Modal da Lixeira
-  const [isTrashModalOpen, setIsTrashModalOpen] = useState(false);
+  const [formData, setFormData] = useState<Partial<Candidate>>({});
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [lossReasonType, setLossReasonType] = useState(''); 
 
+  const [isTechModalOpen, setIsTechModalOpen] = useState(false);
+  const [techCandidate, setTechCandidate] = useState<Candidate | null>(null);
+  const [techForm, setTechForm] = useState({ didTest: false, date: '', evaluator: '', result: 'Aprovado', rejectionDetail: '' });
+  const [techReasonType, setTechReasonType] = useState('');
+
+  const [isTalentModalOpen, setIsTalentModalOpen] = useState(false);
+  const [talentFormData, setTalentFormData] = useState<Partial<TalentProfile>>({});
+  const [talentEmail, setTalentEmail] = useState(''); 
+  const [talentPhone, setTalentPhone] = useState(''); 
+
+  // Delete States
+  const [isDeleteCandidateModalOpen, setIsDeleteCandidateModalOpen] = useState(false);
+  const [candidateToDelete, setCandidateToDelete] = useState<Candidate | null>(null);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteError, setDeleteError] = useState('');
+
+  // Filtros
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Filters
-  const [selectedSector, setSelectedSector] = useState('');
-  const [selectedUnit, setSelectedUnit] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('TODOS');
 
-  // Security
-  const [showConfidential, setShowConfidential] = useState(false);
-  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
-  const [securityPassword, setSecurityPassword] = useState('');
-  const [securityError, setSecurityError] = useState('');
+  useEffect(() => {
+    const foundJob = jobs.find(j => j.id === id);
+    setJob(foundJob);
+    if (foundJob) setJobCandidates(candidates.filter(c => c.jobId === foundJob.id));
+  }, [jobs, candidates, id]);
 
-  // Deletion
-  const [jobToDelete, setJobToDelete] = useState<string | null>(null);
-  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  // --- LÓGICA DE SALVAMENTO REESTRUTURADA (STRICT MODE) ---
+  const handleSaveChanges = async () => {
+    // 1. Clona o objeto para manipulação segura
+    const payload = { ...formData };
 
-  // Form State
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
-  const [sector, setSector] = useState('');
-  const [unit, setUnit] = useState('');
-  const [status, setStatus] = useState<JobStatus>('Aberta');
-  const [description, setDescription] = useState('');
-  const [openedAt, setOpenedAt] = useState('');
-  const [requesterName, setRequesterName] = useState('');
-  const [isConfidential, setIsConfidential] = useState(false);
-  const [allowedUserIds, setAllowedUserIds] = useState<string[]>([]);
-  const [openingDetails, setOpeningDetails] = useState<OpeningDetails>({ reason: 'Aumento de Quadro' });
-
-  const sectors = settings.filter(s => s.type === 'SECTOR');
-  const units = settings.filter(s => s.type === 'UNIT');
-
-  // LÓGICA DA LIXEIRA DE VAGAS
-  const deletedJobs = useMemo(() => {
-    // 1. Filtra só o que é vaga na lixeira global
-    const onlyJobs = trash.filter(item => item.originalType === 'job');
-    // 2. Aplica regra de visualização (Master vê tudo, User vê o que deletou)
-    if (user?.role === 'MASTER') return onlyJobs;
-    return onlyJobs.filter(j => j.deletedBy === user?.id);
-  }, [trash, user]);
-
-  const hasConfidentialAccess = useMemo(() => {
-    if (!user) return false;
-    if (user.role === 'MASTER') return true;
-    return jobs.some(j => j.isConfidential && (j.createdBy === user.id || j.allowedUserIds?.includes(user.id)));
-  }, [jobs, user]);
-
-  const filteredJobs = useMemo(() => {
-    // AQUI MUDOU: Não filtramos mais lixeira aqui. Jobs são sempre ativos.
-    let result = jobs; // A API já devolve sem os deletados.
-    
-    // SECURITY FILTER
-    result = result.filter(j => {
-      if (!j.isConfidential) return true;
-      if (!user) return false;
-      return user.role === 'MASTER' || j.createdBy === user.id || j.allowedUserIds?.includes(user.id);
-    });
-
-    if (!showConfidential) {
-       result = result.filter(j => !j.isConfidential);
-    }
-
-    if (searchTerm) {
-      result = result.filter(j => j.title.toLowerCase().includes(searchTerm.toLowerCase()));
-    }
-
-    if (selectedSector) {
-      result = result.filter(j => j.sector === selectedSector);
-    }
-    if (selectedUnit) {
-      result = result.filter(j => j.unit === selectedUnit);
-    }
-
-    return result;
-  }, [jobs, searchTerm, showConfidential, selectedSector, selectedUnit, user]);
-
-  const groupedJobs = useMemo(() => {
-    return {
-      OPEN: filteredJobs.filter(j => j.status === 'Aberta'),
-      CLOSED: filteredJobs.filter(j => j.status === 'Fechada'),
-      FROZEN: filteredJobs.filter(j => j.status === 'Congelada'),
-      CANCELED: filteredJobs.filter(j => j.status === 'Cancelada'),
+    /**
+     * Função auxiliar para normalizar datas para persistência (Banco de Dados).
+     * Regra: Se o valor existe, formata para ISO com meio-dia UTC (T12:00:00.000Z) para evitar problemas de fuso.
+     * Se o valor já for uma string ISO (vinda do banco e não editada), mantém como está.
+     * Se o valor for vazio, retorna undefined.
+     */
+    const normalizeDateForPersistence = (value?: string) => {
+        if (!value) return undefined;
+        // Se já tiver "T", assume que é ISO e mantém a integridade.
+        // Se não tiver "T" (formato YYYY-MM-DD do input), adiciona a hora fixa.
+        return value.includes('T') ? value : `${value}T12:00:00.000Z`;
     };
-  }, [filteredJobs]);
 
-  // --- Handlers ---
+    // 2. Aplica a normalização nas datas de contato explicitamente
+    payload.firstContactAt = normalizeDateForPersistence(payload.firstContactAt);
+    payload.interviewAt = normalizeDateForPersistence(payload.interviewAt);
+    payload.lastInteractionAt = normalizeDateForPersistence(payload.lastInteractionAt);
 
-  const handleConfidentialToggle = () => {
-    if (showConfidential) {
-      setShowConfidential(false);
-    } else {
-      setSecurityPassword('');
-      setSecurityError('');
-      setIsSecurityModalOpen(true);
+    // 3. Regra de Negócio: Reprovação e Desistência
+    if (payload.status === 'Reprovado' || payload.status === 'Desistência') {
+        if (!payload.rejectionReason) { 
+            alert("Por favor, informe o motivo da perda."); 
+            return; 
+        }
+        
+        payload.rejectedBy = user?.name || 'Sistema';
+        
+        // REGRA ABSOLUTA: rejectionDate DEVE SER IGUAL A lastInteractionAt (se existir).
+        // Se o usuário digitou uma data de último contato, essa é a data do fato (reprovação/desistência).
+        if (payload.lastInteractionAt) {
+            payload.rejectionDate = payload.lastInteractionAt;
+        } else {
+            // Se NÃO tem data de último contato, mantemos a rejectionDate existente (se houver) ou deixamos undefined.
+            // NÃO INVENTAMOS DATA ATUAL AQUI.
+            // Se for necessário ter uma data de rejeição obrigatória, o usuário deve preencher o "Último Contato".
+            if (!payload.rejectionDate && selectedCandidate?.rejectionDate) {
+                 payload.rejectionDate = selectedCandidate.rejectionDate;
+            }
+        }
     }
+
+    // 4. Executa a persistência
+    if (selectedCandidate) {
+        await updateCandidate({ ...selectedCandidate, ...payload } as Candidate);
+    } else {
+        await addCandidate({ ...payload, id: generateId() } as Candidate);
+    }
+    
+    setIsModalOpen(false);
   };
 
-  const handleSecurityUnlock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const isValid = await verifyUserPassword(securityPassword);
-    if (isValid) {
-      setShowConfidential(true);
-      setIsSecurityModalOpen(false);
-      setSecurityPassword('');
-    } else {
-      setSecurityError('Senha incorreta. Tente novamente.');
-    }
-  };
+  // --- HANDLERS DIVERSOS ---
 
-  const openModal = (job?: Job) => {
-    if (job) {
-      setEditingId(job.id);
-      setTitle(job.title);
-      setSector(job.sector);
-      setUnit(job.unit);
-      setStatus(job.status);
-      setDescription(job.description || '');
-      setOpenedAt(job.openedAt ? new Date(job.openedAt).toISOString().split('T')[0] : '');
-      setRequesterName(job.requesterName || '');
-      setIsConfidential(job.isConfidential || false);
-      setAllowedUserIds(job.allowedUserIds || []);
-      setOpeningDetails(job.openingDetails || { reason: 'Aumento de Quadro' });
+  const handleOpenModal = (candidate?: Candidate) => {
+    if (candidate) {
+        setSelectedCandidate(candidate);
+        // Carrega os dados crus. O "toInputDate" no JSX cuidará da exibição visual.
+        setFormData({ ...candidate });
+        
+        if (candidate.rejectionReason) {
+            const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
+            const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
+            if (isGeneral || isWithdrawal) {
+                setLossReasonType(candidate.rejectionReason);
+            } else {
+                setLossReasonType('Outros');
+            }
+        } else { setLossReasonType(''); }
     } else {
-      setEditingId(null);
-      setTitle('');
-      setSector(sectors[0]?.name || '');
-      setUnit(units[0]?.name || '');
-      setStatus('Aberta');
-      setDescription('');
-      setOpenedAt(new Date().toISOString().split('T')[0]);
-      setRequesterName(''); 
-      setIsConfidential(false);
-      setAllowedUserIds([]);
-      setOpeningDetails({ reason: 'Aumento de Quadro' });
+        setSelectedCandidate(null);
+        // Novo candidato: datas indefinidas (não usa new Date())
+        setFormData({ 
+            jobId: job?.id, 
+            status: 'Aguardando Triagem', 
+            origin: 'LinkedIn', 
+            contractType: 'CLT', 
+            createdAt: new Date().toISOString() // Apenas data de criação do registro é automática
+        });
+        setLossReasonType('');
     }
     setIsModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    const baseData = {
-      title,
-      sector: sector || sectors[0]?.name || 'N/A',
-      unit: unit || units[0]?.name || 'N/A',
-      status: editingId ? status : 'Aberta', 
-      description,
-      openedAt: new Date(openedAt).toISOString(),
-      requesterName,
-      isConfidential,
-      allowedUserIds: isConfidential ? allowedUserIds : [],
-      openingDetails
+  const hiredCandidate = useMemo(() => {
+      return jobCandidates.find(c => c.status === 'Contratado' || job?.hiredCandidateIds?.includes(c.id));
+  }, [jobCandidates, job]);
+
+  const metrics = useMemo(() => {
+    if (!job) return { daysOpen: 0, daysFrozen: 0, daysNet: 0, enrolled: 0, interviewed: 0, finalists: 0, rejected: 0, withdrawn: 0, origins: {} as any };
+    const endDate = job.status === 'Fechada' && job.closedAt ? new Date(job.closedAt).getTime() : new Date().getTime();
+    const startDate = new Date(job.openedAt).getTime();
+    const daysOpenBruto = Math.ceil((endDate - startDate) / (1000 * 3600 * 24));
+
+    let totalFrozenMilliseconds = 0;
+    if (job.freezeHistory) {
+        job.freezeHistory.forEach(freeze => {
+            const startFreeze = new Date(freeze.startDate).getTime();
+            const endFreeze = freeze.endDate ? new Date(freeze.endDate).getTime() : endDate;
+            if (endFreeze > startFreeze) totalFrozenMilliseconds += (endFreeze - startFreeze);
+        });
+    }
+    const daysFrozen = Math.floor(totalFrozenMilliseconds / (1000 * 3600 * 24));
+    const daysNet = Math.max(0, daysOpenBruto - daysFrozen);
+
+    const origins: Record<string, number> = { 'LinkedIn': 0, 'Instagram': 0, 'Indicação': 0, 'SINE': 0, 'Banco de Talentos': 0, 'Recrutamento Interno': 0, 'Busca espontânea': 0, 'Outros': 0 };
+    jobCandidates.forEach(c => {
+        const o = c.origin || 'Outros';
+        if (origins[o] !== undefined) origins[o]++; else origins['Outros']++;
+    });
+
+    return {
+        daysOpen: daysOpenBruto, daysFrozen, daysNet,
+        enrolled: jobCandidates.length,
+        interviewed: jobCandidates.filter(c => c.interviewAt).length, 
+        finalists: jobCandidates.filter(c => ['Em Teste', 'Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).length,
+        rejected: jobCandidates.filter(c => c.status === 'Reprovado').length,
+        withdrawn: jobCandidates.filter(c => c.status === 'Desistência').length,
+        origins
     };
+  }, [job, jobCandidates]);
 
-    if (editingId) {
-      const existing = jobs.find(j => j.id === editingId);
-      if (existing) {
-        updateJob({ ...existing, ...baseData });
-      }
-    } else {
-      addJob({ id: generateId(), ...baseData } as Job);
-    }
-    setIsModalOpen(false);
+  const handleOpenDeleteCandidate = (c: Candidate) => {
+    setCandidateToDelete(c);
+    setDeletePassword('');
+    setDeleteError('');
+    setIsDeleteCandidateModalOpen(true);
   };
 
-  const initiateDelete = (e: React.MouseEvent, id: string) => {
+  const handleConfirmCandidateDelete = async (e: React.FormEvent) => {
     e.preventDefault();
-    e.stopPropagation();
-    setJobToDelete(id);
-    setDeleteConfirmation('');
+    if (!candidateToDelete) return;
+    const isValid = await verifyUserPassword(deletePassword);
+    if (isValid) {
+        await removeCandidate(candidateToDelete.id);
+        setIsDeleteCandidateModalOpen(false);
+        setCandidateToDelete(null);
+    } else {
+        setDeleteError('Senha incorreta.');
+    }
   };
 
-  const confirmDelete = (e: React.FormEvent) => {
+  const initiateStatusChange = (newStatus: string) => {
+    if (!job || newStatus === job.status) return;
+    if (newStatus === 'Fechada') {
+        setIsHiringModalOpen(true);
+        setCandidateToHire(jobCandidates.find(c => c.status === 'Aprovado' || c.status === 'Proposta Aceita') || null);
+        return;
+    }
+    if (['Congelada', 'Cancelada'].includes(newStatus) || (newStatus === 'Aberta' && job.status === 'Congelada')) {
+        setTargetStatus(newStatus as any);
+        setStatusFormData({ requester: '', reason: '', date: toInputDate(new Date().toISOString()) });
+        setIsStatusModalOpen(true);
+        return;
+    }
+    updateJob({ ...job, status: newStatus as any });
+  };
+
+  const handleStatusSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (deleteConfirmation.toUpperCase() === 'DELETE' && jobToDelete) {
-       removeJob(jobToDelete);
-       setJobToDelete(null);
-       setDeleteConfirmation('');
+    if (!job || !targetStatus) return;
+    const actionDateISO = `${statusFormData.date}T12:00:00.000Z`;
+    const updatedJob = { ...job, status: targetStatus };
+    if (targetStatus === 'Congelada') {
+        updatedJob.freezeHistory = [...(job.freezeHistory || []), { startDate: actionDateISO, reason: statusFormData.reason, requester: statusFormData.requester }];
+    } else if (targetStatus === 'Aberta' && job.status === 'Congelada') {
+        const history = [...(updatedJob.freezeHistory || [])];
+        if (history.length > 0) history[history.length - 1].endDate = actionDateISO;
+        updatedJob.freezeHistory = history;
+    } else if (targetStatus === 'Cancelada') {
+        updatedJob.closedAt = actionDateISO;
+        updatedJob.cancellationReason = statusFormData.reason;
+    }
+    updateJob(updatedJob);
+    setIsStatusModalOpen(false);
+  };
+
+  const handleHiringSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!candidateToHire || !job) return;
+    const startDateISO = hiringData.startDate ? `${hiringData.startDate}T12:00:00.000Z` : new Date().toISOString();
+    updateCandidate({ ...candidateToHire, status: 'Contratado', contractType: hiringData.contractType, finalSalary: hiringData.finalSalary, timeline: { ...candidateToHire.timeline, startDate: startDateISO } } as Candidate);
+    updateJob({ ...job, status: 'Fechada', closedAt: startDateISO, hiredCandidateIds: [candidateToHire.id] });
+    setIsHiringModalOpen(false);
+  };
+
+  const handleOpenTechModal = (c: Candidate) => {
+    setTechCandidate(c);
+    setTechForm({ 
+        didTest: c.techTest || false, 
+        date: toInputDate(c.techTestDate || new Date().toISOString()), 
+        evaluator: c.techTestEvaluator || '', 
+        result: c.techTestResult || 'Aprovado', 
+        rejectionDetail: c.rejectionReason || '' 
+    });
+    if (c.rejectionReason && TECH_REJECTION_REASONS.includes(c.rejectionReason)) {
+        setTechReasonType(c.rejectionReason);
+    } else if (c.rejectionReason) {
+        setTechReasonType('Outros');
     } else {
-      alert('Texto de confirmação incorreto.');
+        setTechReasonType('');
     }
+    setIsTechModalOpen(true);
   };
 
-  const toggleUserAccess = (userId: string) => {
-    if (allowedUserIds.includes(userId)) {
-      setAllowedUserIds(allowedUserIds.filter(id => id !== userId));
-    } else {
-      setAllowedUserIds([...allowedUserIds, userId]);
+  const saveTechTest = () => {
+    if (!techCandidate) return;
+    const update = { 
+        ...techCandidate, 
+        techTest: techForm.didTest, 
+        techTestDate: techForm.didTest ? `${techForm.date}T12:00:00.000Z` : undefined, 
+        techTestEvaluator: techForm.didTest ? techForm.evaluator : undefined, 
+        techTestResult: techForm.didTest ? techForm.result : undefined 
+    };
+    if (techForm.didTest && techForm.result === 'Reprovado') {
+        update.status = 'Reprovado';
+        update.rejectionReason = techReasonType === 'Outros' ? techForm.rejectionDetail : techReasonType;
+        // Data da reprovação técnica também usa a data manual do teste
+        update.rejectionDate = update.techTestDate;
+        update.rejectedBy = user?.name || 'Sistema';
     }
+    updateCandidate(update);
+    setIsTechModalOpen(false);
   };
 
-  // Funções da Lixeira no Modal
-  const handleRestoreFromTrash = async (id: string) => {
-    if(confirm("Restaurar esta vaga?")) {
-        await restoreItem(id);
-    }
-  };
+  if (!job) return <div className="p-8 text-center">Vaga não encontrada</div>;
 
-  const handlePermanentDelete = async (id: string) => {
-    if(confirm("TEM CERTEZA? Isso apagará a vaga e seus dados PARA SEMPRE.")) {
-        await permanentlyDeleteItem(id);
-    }
-  };
+  const filteredList = jobCandidates.filter(c => {
+    const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'TODOS' || c.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   return (
-    <div>
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Gestão de Vagas</h1>
-          <p className="text-slate-500 mt-1">Visão hierárquica do pipeline de vagas</p>
+    <div className="pb-12">
+      {/* HEADER DA VAGA */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <div className="flex items-center gap-4">
+            <button onClick={() => navigate('/jobs')} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><ArrowLeft size={24} /></button>
+            <div>
+                <h1 className="text-2xl font-bold text-slate-800">{job.title}</h1>
+                <div className="text-sm text-slate-500 flex gap-2 items-center">
+                    <span>{job.sector}</span> &bull; <span>{job.unit}</span> &bull; 
+                    <select value={job.status} onChange={(e) => initiateStatusChange(e.target.value)} className={`text-xs font-bold px-2 py-1 rounded cursor-pointer border ${job.status === 'Aberta' ? 'bg-blue-100 text-blue-700' : job.status === 'Fechada' ? 'bg-emerald-100 text-emerald-700' : job.status === 'Congelada' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
+                        <option value="Aberta">Aberta</option>
+                        <option value="Fechada">Fechada</option>
+                        <option value="Congelada">Congelada</option>
+                        <option value="Cancelada">Cancelada</option>
+                    </select>
+                </div>
+            </div>
         </div>
-        <div className="flex gap-3">
-           {hasConfidentialAccess && (
-             <button 
-               onClick={handleConfidentialToggle}
-               className={`p-2 rounded-lg transition-colors border flex items-center gap-2 text-sm font-bold ${showConfidential ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-300 text-slate-400'}`}
-               title={showConfidential ? "Ocultar Confidenciais" : "Exibir Confidenciais"}
-             >
-               {showConfidential ? <Unlock size={20} /> : <Lock size={20} />}
-               <span className="hidden sm:inline">{showConfidential ? "Sigilo Aberto" : "Ativar Sigilo"}</span>
-             </button>
-           )}
-
-           {/* BOTÃO DA LIXEIRA - AGORA ABRE MODAL */}
-           <button 
-             onClick={() => setIsTrashModalOpen(true)} 
-             className="p-2 rounded-lg transition-colors flex items-center gap-2 border bg-white border-slate-300 text-slate-500 hover:text-red-600 hover:bg-red-50"
-             title="Lixeira de Vagas"
-           >
-             <Trash2 size={20} />
-             {deletedJobs.length > 0 && (
-                <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 rounded-full -ml-1">
-                    {deletedJobs.length}
-                </span>
-             )}
-           </button>
-
-          <button 
-            onClick={() => exportToExcel(filteredJobs, candidates, users)}
-            className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-2.5 rounded-lg flex items-center gap-2 font-medium shadow-sm transition-all"
-          >
-            <Download size={18} /> Exportar SLA
-          </button>
-          <button 
-            onClick={() => openModal()} 
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg flex items-center gap-2 shadow-md transition-all font-semibold"
-          >
-            <Plus size={20} /> Nova Vaga
-          </button>
+        <div className="flex gap-2">
+            <button onClick={() => exportJobCandidates(job, jobCandidates)} className="bg-white border p-2 rounded-lg flex items-center gap-2 text-sm font-bold shadow-sm hover:bg-slate-50"><Download size={18} /> Excel</button>
+            <button onClick={() => handleOpenModal()} className="bg-blue-600 text-white p-2 px-4 rounded-lg flex items-center gap-2 text-sm font-bold shadow-md hover:bg-blue-700"><Plus size={18} /> Adicionar</button>
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-8">
-        <div className="relative flex-1">
-          <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
-          <input 
-            type="text" 
-            placeholder="Buscar vagas por título..." 
-            className="w-full pl-12 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-sm text-slate-700"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        
-        <select 
-            value={selectedUnit} 
-            onChange={e => setSelectedUnit(e.target.value)}
-            className="px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm text-slate-600 font-medium cursor-pointer"
-        >
-            <option value="">Todas as Unidades</option>
-            {units.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-        </select>
-
-        <select 
-            value={selectedSector} 
-            onChange={e => setSelectedSector(e.target.value)}
-            className="px-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm text-slate-600 font-medium cursor-pointer"
-        >
-            <option value="">Todos os Setores</option>
-            {sectors.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-        </select>
-
-        {(selectedSector || selectedUnit) && (
-            <button 
-                onClick={() => { setSelectedSector(''); setSelectedUnit(''); }}
-                className="px-4 py-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 font-bold transition-colors flex items-center gap-2"
-                title="Limpar Filtros"
-            >
-                <X size={18} /> Limpar
-            </button>
-        )}
+      {/* DASHBOARD DE MÉTRICAS */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-4 grid grid-cols-2 md:grid-cols-7 divide-x gap-y-4 md:gap-y-0">
+             <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Dias Bruto</div><div className="text-xl font-bold text-slate-600">{metrics.daysOpen}</div></div>
+             <div className="px-2 text-center bg-amber-50/50 rounded"><div className="text-[10px] font-bold text-amber-600 uppercase">Dias Cong.</div><div className="text-xl font-bold text-amber-700">{metrics.daysFrozen}</div></div>
+             <div className="px-2 text-center bg-blue-50/50 rounded"><div className="text-[10px] font-bold text-blue-600 uppercase">SLA Líquido</div><div className="text-xl font-bold text-blue-700">{metrics.daysNet}</div></div>
+             <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Entrevistas</div><div className="text-xl font-bold text-slate-700">{metrics.interviewed}</div></div>
+             <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Finalistas</div><div className="text-xl font-bold text-slate-700">{metrics.finalists}</div></div>
+             <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Reprovados</div><div className="text-xl font-bold text-red-600">{metrics.rejected}</div></div>
+             <div className="px-2 text-center"><div className="text-[10px] font-bold text-slate-400 uppercase">Desistentes</div><div className="text-xl font-bold text-amber-500">{metrics.withdrawn}</div></div>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border p-4 grid grid-cols-4 gap-2">
+             {Object.entries(metrics.origins).map(([name, count]) => (<div key={name} className="text-center flex flex-col items-center">{getSourceIcon(name)}<span className="text-[10px] font-bold mt-1">{count}</span></div>))}
+          </div>
       </div>
 
-      <div className="space-y-6">
-        <CollapsibleSection title="Vagas Abertas / Em Andamento" count={groupedJobs.OPEN.length} isOpenDefault={true} color="blue">
-           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {groupedJobs.OPEN.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
-             {groupedJobs.OPEN.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga encontrada.</p>}
-           </div>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Vagas Concluídas / Fechadas" count={groupedJobs.CLOSED.length} color="emerald">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {groupedJobs.CLOSED.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
-            {groupedJobs.CLOSED.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga fechada encontrada.</p>}
-          </div>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Vagas Congeladas" count={groupedJobs.FROZEN.length} color="amber">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {groupedJobs.FROZEN.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
-            {groupedJobs.FROZEN.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga congelada encontrada.</p>}
-          </div>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Vagas Canceladas" count={groupedJobs.CANCELED.length} color="red">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {groupedJobs.CANCELED.map(job => <JobCard key={job.id} job={job} candidates={candidates} onEdit={() => openModal(job)} onDelete={(e) => initiateDelete(e, job.id)} />)}
-            {groupedJobs.CANCELED.length === 0 && <p className="text-slate-400 italic">Nenhuma vaga cancelada encontrada.</p>}
-          </div>
-        </CollapsibleSection>
-      </div>
-
-      {/* --- MODAL DA LIXEIRA --- */}
-      {isTrashModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[80] p-4">
-           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-red-50 rounded-t-2xl">
-                 <div className="flex items-center gap-3">
-                    <div className="bg-red-100 p-2 rounded-lg text-red-600">
-                        <Trash2 size={24} />
-                    </div>
-                    <div>
-                        <h3 className="text-xl font-bold text-slate-800">Lixeira de Vagas</h3>
-                        <p className="text-sm text-slate-500">Recupere vagas excluídas ou apague definitivamente.</p>
-                    </div>
-                 </div>
-                 <button onClick={() => setIsTrashModalOpen(false)} className="text-slate-400 hover:text-slate-600 bg-white p-2 rounded-full shadow-sm">
-                   <X size={20} />
-                 </button>
-              </div>
-
-              <div className="p-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50">
-                 {deletedJobs.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                       <FileQuestion size={64} className="mb-4 opacity-20" />
-                       <p className="text-lg font-medium">A lixeira está vazia.</p>
-                    </div>
-                 ) : (
-                    <div className="space-y-3">
-                       {deletedJobs.map(job => (
-                          <div key={job.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
-                             <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-xs font-bold uppercase tracking-wide bg-slate-100 text-slate-500 px-2 py-0.5 rounded">
-                                        Excluída em: {job.deletedAt ? new Date(job.deletedAt).toLocaleDateString() : 'N/A'}
-                                    </span>
-                                    {user?.role === 'MASTER' && (
-                                        <span className="text-xs text-slate-400">
-                                            por: {users.find(u => u.id === job.deletedBy)?.name || 'Admin'}
-                                        </span>
-                                    )}
-                                </div>
-                                <h4 className="font-bold text-slate-800 text-lg">{job.title}</h4>
-                                <p className="text-sm text-slate-500">{job.sector} • {job.unit}</p>
-                             </div>
-
-                             <div className="flex items-center gap-3">
-                                <button 
-                                   onClick={() => handleRestoreFromTrash(job.id)}
-                                   className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 transition-colors"
-                                >
-                                   <RotateCcw size={18} /> Restaurar
-                                </button>
-                                
-                                {user?.role === 'MASTER' && (
-                                    <button 
-                                       onClick={() => handlePermanentDelete(job.id)}
-                                       className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-700 font-bold rounded-lg hover:bg-red-100 transition-colors"
-                                       title="Excluir Permanentemente"
-                                    >
-                                       <XCircle size={18} /> Excluir
-                                    </button>
-                                )}
-                             </div>
-                          </div>
-                       ))}
-                    </div>
-                 )}
+      {/* BANNER DE CONTRATAÇÃO */}
+      {job.status === 'Fechada' && hiredCandidate && (
+        <div className="mb-8 bg-gradient-to-r from-emerald-600 to-emerald-800 rounded-2xl shadow-xl text-white p-6 flex flex-col md:flex-row items-center gap-6">
+           <div className="bg-white/20 p-4 rounded-full"><CheckCircle size={40}/></div>
+           <div className="flex-1 text-center md:text-left">
+              <h2 className="text-2xl font-bold mb-1">Vaga Preenchida!</h2>
+              <p className="text-emerald-100 font-medium text-lg">{hiredCandidate.name}</p>
+              <div className="flex flex-wrap gap-4 mt-3 justify-center md:justify-start text-xs opacity-90">
+                 <span className="flex items-center gap-1"><DollarSign size={14}/> {hiredCandidate.finalSalary || 'N/I'}</span>
+                 <span className="flex items-center gap-1"><Calendar size={14}/> Início: {formatDate(hiredCandidate.timeline?.startDate)}</span>
+                 <span className="flex items-center gap-1"><Activity size={14}/> SLA Real: {metrics.daysNet} dias</span>
+                 <span className="flex items-center gap-1"><FileText size={14}/> {hiredCandidate.contractType || 'CLT'}</span>
               </div>
            </div>
         </div>
       )}
 
-      {/* --- SECURITY RE-AUTH MODAL --- */}
-      {isSecurityModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
-           <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm border-t-4 border-amber-500 animate-fadeIn">
-              <div className="flex justify-center mb-6">
-                 <div className="bg-amber-100 p-4 rounded-full text-amber-600 shadow-inner">
-                    <ShieldCheck size={40} />
-                 </div>
-              </div>
-              <h3 className="text-xl font-bold text-slate-800 text-center mb-2">Modo Confidencial</h3>
-              <p className="text-sm text-slate-500 text-center mb-6">
-                  Para visualizar as vagas sigilosas, confirme sua senha de acesso.
-              </p>
+      {/* BUSCA E FILTROS */}
+      <div className="flex gap-4 mb-6">
+         <input className="flex-1 border p-3 rounded-xl shadow-sm" placeholder="Buscar candidato..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+         <select className="border p-3 rounded-xl shadow-sm bg-white font-medium" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="TODOS">Todos os Status</option>
+            <option value="Aguardando Triagem">Aguardando Triagem</option>
+            <option value="Em Análise">Em Análise</option>
+            <option value="Entrevista">Entrevista</option>
+            <option value="Aprovado">Aprovado</option>
+            <option value="Reprovado">Reprovado</option>
+            <option value="Desistência">Desistência</option>
+         </select>
+      </div>
+
+      {/* LISTA DE CANDIDATOS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredList.map(c => (
+          <div key={c.id} className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all group flex flex-col ${c.status === 'Reprovado' ? 'border-red-200 bg-red-50/10' : c.status === 'Desistência' ? 'border-amber-200 bg-amber-50/10' : 'border-slate-200'}`}>
+             <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-3">
+                   <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500">{c.name.charAt(0)}</div>
+                   <div>
+                      <h3 className="font-bold text-slate-800 cursor-pointer hover:text-blue-600" onClick={() => handleOpenModal(c)}>{c.name}</h3>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                        {getSourceIcon(c.origin || '')} <span>{c.origin}</span>
+                        {c.city && <span className="text-slate-300">• {c.city}</span>}
+                      </div>
+                   </div>
+                </div>
+                <div className="flex flex-col items-end gap-1">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${c.status === 'Reprovado' ? 'bg-red-100 text-red-700' : c.status === 'Desistência' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>{c.status}</span>
+                  {c.phone && <a href={`https://wa.me/55${c.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-[9px] font-bold text-green-600 bg-green-50 px-1.5 py-0.5 rounded hover:bg-green-100 transition-colors"><MessageCircle size={10}/> WhatsApp</a>}
+                </div>
+             </div>
+
+             <div className="flex justify-between items-center bg-slate-50/80 p-2 rounded mb-3 text-[11px] border border-slate-100">
+                <span className="flex items-center gap-1 text-slate-600"><User size={12}/> {c.age} anos</span>
+                <span className="flex items-center gap-1 text-emerald-700 font-bold"><DollarSign size={12}/> {c.salaryExpectation || 'N/I'}</span>
+             </div>
+
+             <div className="space-y-1 text-[10px] text-slate-500 border-t border-slate-50 pt-2 mb-3 flex-1">
+                <div className="flex justify-between"><span>1º Contato:</span><span className="font-bold text-slate-700">{formatDate(c.firstContactAt)}</span></div>
+                <div className="flex justify-between"><span>Entrevista:</span><span className={`font-bold ${c.interviewAt ? 'text-blue-600' : 'text-slate-300'}`}>{formatDate(c.interviewAt)}</span></div>
+                <div className="flex justify-between"><span>Último Contato:</span><span className="font-bold text-slate-700">{formatDate(c.lastInteractionAt)}</span></div>
+             </div>
+
+             <div className="flex gap-2 pt-2 mt-auto border-t border-slate-50">
+                <button onClick={() => handleOpenTechModal(c)} className={`flex-1 flex justify-center items-center gap-1 py-1.5 rounded text-[10px] font-bold border transition-colors ${c.techTest ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-white text-slate-500 border-slate-200'}`}><Beaker size={12}/> Teste</button>
+                
+                <button onClick={() => { 
+                    setTalentFormData({ name: c.name, city: c.city, targetRole: job.title }); 
+                    setTalentEmail(c.email || ''); 
+                    setTalentPhone(c.phone || ''); 
+                    setIsTalentModalOpen(true); 
+                }} className="flex-1 flex justify-center items-center gap-1 bg-white hover:bg-orange-50 text-slate-500 hover:text-orange-600 py-1.5 rounded text-[10px] font-bold border border-slate-200 transition-colors"><Database size={12}/> Banco</button>
+                
+                <button onClick={() => handleOpenModal(c)} className="flex-1 flex justify-center items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-600 py-1.5 rounded text-[10px] font-bold transition-colors"><User size={12}/> Editar</button>
+                <button onClick={() => handleOpenDeleteCandidate(c)} className="flex justify-center items-center px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-500 hover:text-red-700 rounded transition-colors" title="Excluir Candidato"><Trash2 size={12}/></button>
+             </div>
+          </div>
+        ))}
+      </div>
+
+      {/* --- MODAL DE DELETAR CANDIDATO COM SENHA --- */}
+      {isDeleteCandidateModalOpen && (
+        <div className="fixed inset-0 bg-red-900/40 backdrop-blur-sm flex items-center justify-center z-[250] p-4">
+           <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm border-t-4 border-red-500 animate-fadeIn">
+              <div className="flex justify-center mb-4"><div className="bg-red-100 p-3 rounded-full text-red-600"><ShieldAlert size={32}/></div></div>
+              <h3 className="text-lg font-bold text-slate-800 text-center mb-2">Excluir {candidateToDelete?.name}?</h3>
+              <p className="text-xs text-slate-500 text-center mb-6">Esta ação removerá o candidato desta vaga e apagará o histórico dele no Banco de Talentos. É irreversível.</p>
               
-              <form onSubmit={handleSecurityUnlock} className="space-y-4">
-                 <div>
-                    <input 
-                      autoFocus
-                      type="password" 
-                      placeholder="Sua senha de login"
-                      className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-amber-500 text-center tracking-widest"
-                      value={securityPassword}
-                      onChange={e => setSecurityPassword(e.target.value)}
-                    />
-                    {securityError && <p className="text-red-500 text-xs font-bold mt-2 text-center">{securityError}</p>}
+              <form onSubmit={handleConfirmCandidateDelete}>
+                 <div className="mb-4">
+                    <input autoFocus type="password" placeholder="Sua senha para confirmar" className="w-full border p-3 rounded-lg text-center tracking-widest outline-none focus:ring-2 focus:ring-red-500" value={deletePassword} onChange={e => setDeletePassword(e.target.value)} />
+                    {deleteError && <p className="text-red-600 text-xs font-bold mt-2 text-center">{deleteError}</p>}
                  </div>
-                 
-                 <div className="flex flex-col gap-2 pt-2">
-                    <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl shadow-lg transition-transform active:scale-95">
-                       Confirmar Acesso
-                    </button>
-                    <button type="button" onClick={() => { setIsSecurityModalOpen(false); setSecurityPassword(''); }} className="w-full py-3 text-slate-400 font-bold hover:text-slate-600 transition-colors">
-                       Cancelar
-                    </button>
+                 <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsDeleteCandidateModalOpen(false)} className="flex-1 py-2 text-slate-500 font-bold hover:bg-slate-50 rounded-lg">Cancelar</button>
+                    <button type="submit" className="flex-1 bg-red-600 text-white font-bold py-2 rounded-lg hover:bg-red-700 shadow-md">Confirmar Exclusão</button>
                  </div>
               </form>
            </div>
         </div>
       )}
 
-      {/* Delete Confirmation Modal with Safety Lock */}
-      {jobToDelete && (
-        <div className="fixed inset-0 bg-red-900/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border-t-4 border-red-500">
-             <div className="flex justify-center mb-4">
-               <div className="bg-red-100 p-3 rounded-full text-red-600">
-                 <AlertTriangle size={32} />
-               </div>
-             </div>
-             <h3 className="text-xl font-bold text-slate-800 text-center mb-2">Excluir Vaga?</h3>
-             <p className="text-sm text-slate-600 text-center mb-6">
-               Tem certeza que deseja remover esta vaga? Ela sairá da lista de disponíveis e irá para a Lixeira.
-             </p>
+      {/* --- MODAL DE EDIÇÃO DO CANDIDATO --- */}
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6 animate-fadeIn">
+             <div className="flex justify-between mb-6 border-b pb-4"><h3 className="font-bold text-xl text-slate-800">Gerenciar Candidato</h3><button onClick={() => setIsModalOpen(false)}><X size={24} className="text-slate-400"/></button></div>
              
-             <form onSubmit={confirmDelete} className="space-y-4">
-               <div>
-                 <label className="block text-xs font-bold text-slate-500 mb-2 uppercase tracking-wide">
-                   Digite <span className="text-red-600">DELETE</span> para confirmar:
-                 </label>
-                 <input 
-                   autoFocus
-                   type="text" 
-                   className="w-full border border-slate-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 text-center font-bold tracking-widest uppercase"
-                   value={deleteConfirmation}
-                   onChange={e => setDeleteConfirmation(e.target.value)}
-                   placeholder="Confirmação"
-                 />
-               </div>
-               
-               <div className="flex gap-2 pt-2">
-                 <button 
-                   type="button" 
-                   onClick={() => { setJobToDelete(null); setDeleteConfirmation(''); }} 
-                   className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors"
-                 >
-                   Cancelar
-                 </button>
-                 <button 
-                   type="submit" 
-                   disabled={deleteConfirmation.toUpperCase() !== 'DELETE'}
-                   className="flex-1 bg-red-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-3 rounded-xl shadow-lg transition-all transform enabled:hover:bg-red-700 enabled:active:scale-95"
-                 >
-                   Confirmar Exclusão
-                 </button>
-               </div>
-             </form>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Nome</label><input className="w-full border p-2 rounded text-sm" value={formData.name || ''} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                
+                <div className="grid grid-cols-2 gap-2">
+                    <div><label className="block text-xs font-bold text-slate-600 mb-1">Telefone</label><input className="w-full border p-2 rounded text-sm" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
+                    <div><label className="block text-xs font-bold text-slate-600 mb-1">Idade</label><input type="number" className="w-full border p-2 rounded text-sm" value={formData.age || ''} onChange={e => setFormData({...formData, age: Number(e.target.value)})} /></div>
+                </div>
+
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Email</label><input className="w-full border p-2 rounded text-sm" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Cidade</label><input className="w-full border p-2 rounded text-sm" value={formData.city || ''} onChange={e => setFormData({...formData, city: e.target.value})} /></div>
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Pretensão Salarial</label><input className="w-full border p-2 rounded text-sm" value={formData.salaryExpectation || ''} onChange={e => setFormData({...formData, salaryExpectation: e.target.value})} /></div>
+                
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Status</label>
+                   <select className="w-full border p-2 rounded font-bold text-sm" value={formData.status || 'Aguardando Triagem'} onChange={e => {
+                       const newStatus = e.target.value;
+                       setFormData({...formData, status: newStatus});
+                       if (!['Reprovado', 'Desistência'].includes(newStatus)) { setLossReasonType(''); setFormData(p => ({...p, rejectionReason: undefined})); }
+                   }}>
+                      <option value="Aguardando Triagem">Aguardando Triagem</option>
+                      <option value="Em Análise">Em Análise</option>
+                      <option value="Em Teste">Em Teste</option>
+                      <option value="Entrevista">Entrevista</option>
+                      <option value="Aprovado">Aprovado</option>
+                      <option value="Reprovado">Reprovado</option>
+                      <option value="Desistência">Desistência</option>
+                   </select>
+                </div>
+
+                <div><label className="block text-xs font-bold text-slate-600 mb-1">Origem</label>
+                   <select className="w-full border p-2 rounded text-sm" value={formData.origin || 'LinkedIn'} onChange={e => setFormData({...formData, origin: e.target.value})}>
+                      <option value="LinkedIn">LinkedIn</option>
+                      <option value="Instagram">Instagram</option>
+                      <option value="Indicação">Indicação</option>
+                      <option value="Banco de Talentos">Banco de Talentos</option>
+                      <option value="Busca espontânea">Busca Espontânea</option>
+                      <option value="SINE">SINE</option>
+                      <option value="Recrutamento Interno">Recrutamento Interno</option>
+                      <option value="Outros">Outros</option>
+                   </select>
+                </div>
+
+                {formData.origin === 'Indicação' && (
+                    <div className="animate-fadeIn md:col-span-2 bg-indigo-50 p-3 rounded-lg border border-indigo-100">
+                        <label className="block text-xs font-bold text-indigo-700 mb-1">Quem Indicou? (Obrigatório)</label>
+                        <input className="w-full border border-indigo-200 bg-white p-2 rounded text-sm placeholder-indigo-300 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Nome do Padrinho/Madrinha" value={formData.referralName || ''} onChange={e => setFormData({...formData, referralName: e.target.value})} />
+                    </div>
+                )}
+
+                {(formData.status === 'Reprovado' || formData.status === 'Desistência') && (
+                    <div className="md:col-span-2 bg-red-50 p-4 rounded-lg border border-red-200 animate-fadeIn">
+                        <label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1"><AlertTriangle size={12}/> Motivo da Perda (Obrigatório)</label>
+                        <select className="w-full border border-red-300 p-2 rounded bg-white mb-3 text-sm" value={lossReasonType} 
+                            onChange={e => {
+                                const val = e.target.value;
+                                setLossReasonType(val);
+                                if (val !== 'Outros') setFormData({...formData, rejectionReason: val});
+                                else setFormData({...formData, rejectionReason: ''});
+                            }}>
+                            <option value="">-- Selecione o Motivo --</option>
+                            {formData.status === 'Desistência' ? (
+                                WITHDRAWAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)
+                            ) : (
+                                GENERAL_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)
+                            )}
+                            <option value="Outros">Outros (Escrever...)</option>
+                        </select>
+                        {lossReasonType === 'Outros' && (
+                            <textarea className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white min-h-[80px] text-sm shadow-inner" placeholder="Descreva o motivo detalhadamente..." value={formData.rejectionReason || ''} onChange={e => setFormData({...formData, rejectionReason: e.target.value})} />
+                        )}
+                    </div>
+                )}
+
+                <div className="md:col-span-2 grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 mt-4">
+                   <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">1º Contato</label><input type="date" className="w-full border p-2 rounded text-xs" value={toInputDate(formData.firstContactAt)} onChange={e => setFormData({...formData, firstContactAt: e.target.value})} /></div>
+                   <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Entrevista</label><input type="date" className="w-full border p-2 rounded text-xs" value={toInputDate(formData.interviewAt)} onChange={e => setFormData({...formData, interviewAt: e.target.value})} /></div>
+                   <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Último Contato</label><input type="date" className="w-full border p-2 rounded text-xs" value={toInputDate(formData.lastInteractionAt)} onChange={e => setFormData({...formData, lastInteractionAt: e.target.value})} /></div>
+                </div>
+             </div>
+             <div className="flex justify-end gap-3 pt-4 border-t"><button onClick={() => setIsModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold">Cancelar</button><button onClick={handleSaveChanges} className="px-6 py-2 bg-blue-600 text-white rounded font-bold shadow-lg hover:bg-blue-700 transition-all active:scale-95">Salvar Candidato</button></div>
           </div>
         </div>
       )}
 
-      {/* New/Edit Job Modal (MANTIDO IDÊNTICO) */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-blue-900/30 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="bg-white px-8 py-6 border-b border-slate-100 flex justify-between items-center sticky top-0 z-10">
-              <h3 className="text-xl font-bold text-slate-800">{editingId ? 'Editar Dados da Vaga' : 'Nova Vaga'}</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 bg-slate-50 p-1 rounded-full">
-                <X size={20} />
-              </button>
-            </div>
-            
-            <form onSubmit={handleSave} className="p-8 space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">Título da Vaga</label>
-                    <input type="text" required value={title} onChange={e => setTitle(e.target.value)} className="w-full border border-slate-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: Analista de Marketing" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">Solicitante (Nome)</label>
-                    <input required type="text" value={requesterName} onChange={e => setRequesterName(e.target.value)} className="w-full border border-slate-300 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Quem pediu a vaga?" />
-                  </div>
-              </div>
+      {/* --- MODAL DE STATUS (CONGELAMENTO/CANCELAMENTO) --- */}
+      {isStatusModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+          <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl animate-fadeIn">
+             <div className="flex items-center gap-2 mb-4 font-black text-slate-800 uppercase tracking-tighter">
+                {targetStatus === 'Congelada' ? <PauseCircle size={24} className="text-amber-500"/> : <AlertTriangle size={24} className="text-red-500"/>} 
+                Alterar Fluxo da Vaga
+             </div>
+             <div className="space-y-4">
+                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Data</label><input type="date" className="w-full border p-3 rounded-xl font-bold text-slate-700" value={statusFormData.date} onChange={e => setStatusFormData({...statusFormData, date: e.target.value})} /></div>
+                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Motivo</label><input className="w-full border p-3 rounded-xl" placeholder="Ex: Prioridade mudou..." value={statusFormData.reason} onChange={e => setStatusFormData({...statusFormData, reason: e.target.value})} /></div>
+                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Solicitante</label><input className="w-full border p-3 rounded-xl" placeholder="Nome do Gestor" value={statusFormData.requester} onChange={e => setStatusFormData({...statusFormData, requester: e.target.value})} /></div>
+                <div className="flex gap-2 pt-4"><button onClick={() => setIsStatusModalOpen(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">Voltar</button><button onClick={handleStatusSubmit} className="flex-1 bg-slate-800 text-white font-black py-3 rounded-xl hover:bg-slate-900 shadow-lg uppercase text-[10px] tracking-widest">Confirmar</button></div>
+             </div>
+          </div>
+        </div>
+      )}
 
-              {/* CONFIDENTIAL SECTION (ACL) */}
-              <div className={`p-4 rounded-lg border transition-colors ${isConfidential ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-                  <div className="flex items-center gap-3 mb-2">
-                      <div className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors ${isConfidential ? 'bg-amber-500' : 'bg-slate-300'}`} onClick={() => setIsConfidential(!isConfidential)}>
-                          <div className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${isConfidential ? 'translate-x-4' : ''}`}></div>
-                      </div>
-                      <span className={`font-bold text-sm flex items-center gap-2 ${isConfidential ? 'text-amber-800' : 'text-slate-500'}`}>
-                          <Lock size={16}/> Vaga Sigilosa
-                      </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mb-3 ml-1">Vagas sigilosas ficam ocultas por padrão. Selecione quem tem permissão para visualizar:</p>
-                  
-                  {isConfidential && (
-                      <div className="bg-white border border-amber-200 rounded-lg p-3 max-h-40 overflow-y-auto custom-scrollbar">
-                          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Acesso Garantido (Automático)</div>
-                          <div className="flex items-center gap-2 text-xs text-slate-600 mb-3">
-                             <span className="bg-slate-100 px-2 py-1 rounded flex items-center gap-1"><Shield size={10}/> Master Admin</span>
-                             <span className="bg-slate-100 px-2 py-1 rounded flex items-center gap-1"><Users size={10}/> Você (Criador)</span>
-                          </div>
-                          
-                          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Selecionar Recrutadores Adicionais</div>
-                          <div className="space-y-1">
-                              {users.filter(u => u.role !== 'MASTER' && u.id !== user?.id).map(u => (
-                                  <label key={u.id} className="flex items-center gap-2 hover:bg-slate-50 p-1.5 rounded cursor-pointer">
-                                      <input 
-                                        type="checkbox" 
-                                        checked={allowedUserIds.includes(u.id)}
-                                        onChange={() => toggleUserAccess(u.id)}
-                                        className="w-4 h-4 text-amber-600 rounded border-slate-300 focus:ring-amber-500"
-                                      />
-                                      <span className="text-sm text-slate-700">{u.name}</span>
-                                  </label>
-                              ))}
-                              {users.filter(u => u.role !== 'MASTER' && u.id !== user?.id).length === 0 && (
-                                  <p className="text-xs text-slate-400 italic">Nenhum outro recrutador disponível.</p>
+      {/* --- MODAL TESTE TÉCNICO --- */}
+      {isTechModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+           <div className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-2xl animate-fadeIn">
+             <h3 className="font-black text-indigo-900 mb-6 flex items-center gap-2 uppercase tracking-tighter text-lg"><Beaker size={24}/> Avaliação Técnica</h3>
+             <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer p-4 bg-indigo-50 rounded-2xl border border-indigo-100 transition-all hover:bg-indigo-100/50">
+                    <input type="checkbox" className="w-5 h-5 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500" checked={techForm.didTest} onChange={e => setTechForm({...techForm, didTest: e.target.checked})} /> 
+                    <span className="font-black text-indigo-900 text-sm uppercase tracking-widest">Registrar Teste Técnico</span>
+                </label>
+                
+                {techForm.didTest && ( 
+                    <div className="space-y-4 animate-fadeIn">
+                      <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Data Realização</label><input type="date" className="w-full border p-2 rounded-lg font-bold" value={techForm.date} onChange={e => setTechForm({...techForm, date: e.target.value})} /></div>
+                      <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Avaliador (Gestor)</label><input className="w-full border p-2 rounded-lg font-bold" value={techForm.evaluator} onChange={e => setTechForm({...techForm, evaluator: e.target.value})} /></div>
+                      <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Veredito</label><select className="w-full border p-2 rounded-lg font-bold" value={techForm.result} onChange={e => setTechForm({...techForm, result: e.target.value})}><option value="Aprovado">Aprovado</option><option value="Reprovado">Reprovado</option></select></div>
+                      
+                      {techForm.result === 'Reprovado' && (
+                          <div className="bg-red-50 p-3 rounded-lg border border-red-100 animate-fadeIn">
+                              <label className="block text-[10px] font-black text-red-500 uppercase mb-1">Motivo da Reprovação</label>
+                              <select className="w-full border border-red-200 p-2 rounded-lg bg-white mb-2 text-sm text-red-800 font-medium outline-none focus:ring-2 focus:ring-red-300" value={techReasonType} onChange={(e) => {
+                                      const val = e.target.value;
+                                      setTechReasonType(val);
+                                      if (val !== 'Outros') {
+                                          setTechForm({...techForm, rejectionDetail: val});
+                                      } else {
+                                          setTechForm({...techForm, rejectionDetail: ''});
+                                      }
+                                  }}>
+                                  <option value="">Selecione...</option>
+                                  {TECH_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                                  <option value="Outros">Outros (Escrever)</option>
+                              </select>
+                              {techReasonType === 'Outros' && (
+                                  <input className="w-full border border-red-200 p-2 rounded-lg bg-white text-red-700 font-bold placeholder-red-300" placeholder="Descreva o motivo..." value={techForm.rejectionDetail} onChange={e => setTechForm({...techForm, rejectionDetail: e.target.value})} />
                               )}
                           </div>
-                      </div>
-                  )}
-              </div>
+                      )}
+                    </div>
+                )}
+                <div className="flex justify-end gap-2 pt-4"><button onClick={() => setIsTechModalOpen(false)} className="px-5 py-2 text-slate-500 font-bold">Voltar</button><button onClick={saveTechTest} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-indigo-100">Salvar Avaliação</button></div>
+             </div>
+           </div>
+        </div>
+      )}
 
-              <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 space-y-4">
-                  <div>
-                      <label className="block text-sm font-bold text-slate-700 mb-2">Motivo da Abertura</label>
-                      <div className="flex gap-4">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="radio" name="openingReason" checked={openingDetails.reason === 'Aumento de Quadro'} onChange={() => setOpeningDetails({...openingDetails, reason: 'Aumento de Quadro'})} className="text-blue-600" />
-                              <span className="text-sm font-medium">Aumento de Quadro</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer">
-                              <input type="radio" name="openingReason" checked={openingDetails.reason === 'Substituição'} onChange={() => setOpeningDetails({...openingDetails, reason: 'Substituição'})} className="text-blue-600" />
-                              <span className="text-sm font-medium">Substituição</span>
-                          </label>
-                      </div>
-                  </div>
-
-                  {openingDetails.reason === 'Substituição' && (
-                      <div className="grid grid-cols-2 gap-4 animate-fadeIn">
-                          <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">Colaborador Substituído</label>
-                              <input required type="text" className="w-full border p-2 rounded text-sm" placeholder="Nome do ex-colaborador" value={openingDetails.replacedEmployee || ''} onChange={e => setOpeningDetails({...openingDetails, replacedEmployee: e.target.value})} />
-                          </div>
-                          <div>
-                              <label className="block text-xs font-bold text-slate-500 mb-1">Motivo da Saída</label>
-                              <select required className="w-full border p-2 rounded text-sm bg-white" value={openingDetails.replacementReason || ''} onChange={e => setOpeningDetails({...openingDetails, replacementReason: e.target.value as any})}>
-                                  <option value="">Selecione...</option>
-                                  <option value="Demissão sem justa causa">Demissão sem justa causa</option>
-                                  <option value="Pedido de Demissão">Pedido de Demissão</option>
-                                  <option value="Movimentação Interna">Movimentação Interna</option>
-                                  <option value="Término de Contrato">Término de Contrato</option>
-                                  <option value="Licença Maternidade">Licença Maternidade</option>
-                                  <option value="Abandono de Emprego">Abandono de Emprego</option>
-                              </select>
-                          </div>
-                      </div>
-                  )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Setor</label>
-                  <select required value={sector} onChange={e => setSector(e.target.value)} className="w-full border border-slate-300 p-3 rounded-lg bg-white">
-                    {sectors.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                  </select>
+      {/* --- MODAL FECHAR VAGA / CONTRATAÇÃO --- */}
+      {isHiringModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+           <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-8 border-t-8 border-emerald-500 text-center animate-fadeIn">
+              <div className="flex justify-center mb-4 text-emerald-600 bg-emerald-50 w-16 h-16 rounded-full items-center mx-auto shadow-inner"><CheckCircle size={36}/></div>
+              <h3 className="text-xl font-black text-emerald-800 mb-2 uppercase tracking-tighter">Concluir Contratação</h3>
+              <p className="text-slate-500 text-xs mb-6 font-bold uppercase tracking-widest">Confirme os dados finais para encerrar a vaga</p>
+              
+              <div className="text-left space-y-4">
+                <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Colaborador Escolhido</label>
+                    <select className="w-full border border-slate-200 p-3 rounded-xl font-black text-slate-700 bg-slate-50" value={candidateToHire?.id || ''} onChange={e => setCandidateToHire(jobCandidates.find(c => c.id === e.target.value) || null)}>
+                        <option value="">-- Selecione o Vencedor --</option>
+                        {jobCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Unidade</label>
-                  <select required value={unit} onChange={e => setUnit(e.target.value)} className="w-full border border-slate-300 p-3 rounded-lg bg-white">
-                    {units.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
-                  </select>
-                </div>
+                {candidateToHire && ( <div className="space-y-4 animate-fadeIn">
+                    <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Salário Combinado</label><input className="w-full border p-3 rounded-xl font-bold" value={hiringData.finalSalary} onChange={e => setHiringData({...hiringData, finalSalary: e.target.value})} placeholder="R$ 0.000,00" /></div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Contrato</label><select className="w-full border p-3 rounded-xl font-bold" value={hiringData.contractType} onChange={e => setHiringData({...hiringData, contractType: e.target.value as ContractType})}><option value="CLT">CLT</option><option value="PJ">PJ</option><option value="Estágio">Estágio</option></select></div>
+                        <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Data Início</label><input type="date" className="w-full border p-3 rounded-xl font-bold" value={hiringData.startDate} onChange={e => setHiringData({...hiringData, startDate: e.target.value})} /></div>
+                    </div>
+                    <button onClick={handleHiringSubmit} className="w-full bg-emerald-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-emerald-100 uppercase tracking-widest mt-4 hover:bg-emerald-700 transition-all active:scale-95">Confirmar e Finalizar Vaga</button>
+                </div>)}
               </div>
+              <button onClick={() => setIsHiringModalOpen(false)} className="w-full py-3 text-slate-400 mt-2 font-bold uppercase text-[10px] tracking-widest hover:text-slate-600">Voltar</button>
+           </div>
+        </div>
+      )}
 
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Data de Abertura</label>
-                <input type="date" required value={openedAt} onChange={e => setOpenedAt(e.target.value)} className="w-full border border-slate-300 p-3 rounded-lg outline-none" />
-              </div>
+      {/* --- MODAL EXPORTAR PARA BANCO DE TALENTOS --- */}
+      {isTalentModalOpen && (
+        <div className="fixed inset-0 bg-indigo-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+           <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg animate-fadeIn border-t-8 border-indigo-600">
+              <div className="flex items-center gap-3 mb-6"><Database size={28} className="text-indigo-600"/><h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Exportar para Banco</h3></div>
+              <div className="space-y-4">
+                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100"><label className="block text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Nome do Candidato</label><div className="font-bold text-slate-700">{talentFormData.name}</div></div>
+                 <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cidade</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Cidade de origem" value={talentFormData.city || ''} onChange={e => setTalentFormData({...talentFormData, city: e.target.value})} /></div>
+                 
+                 {/* CAMPOS SEPARADOS NO MODAL */}
+                 <div className="grid grid-cols-2 gap-4">
+                     <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Email</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="email@..." value={talentEmail} onChange={e => setTalentEmail(e.target.value)} /></div>
+                     <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Telefone</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="(XX)..." value={talentPhone} onChange={e => setTalentPhone(e.target.value)} /></div>
+                 </div>
 
-              <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-slate-600 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-lg font-medium transition-all">Cancelar</button>
-                <button type="submit" className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow-md transition-all">Salvar Vaga</button>
+                 <div><label className="block text-xs font-black text-slate-400 uppercase mb-1">Cargo para Busca Futura</label><input className="w-full border p-3 rounded-xl font-bold" placeholder="Ex: Desenvolvedor, Vendedor..." value={talentFormData.targetRole || ''} onChange={e => setTalentFormData({...talentFormData, targetRole: e.target.value})} /></div>
+                 <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                    <button onClick={() => setIsTalentModalOpen(false)} className="px-6 py-2 text-slate-500 font-bold uppercase text-[10px] tracking-widest">Voltar</button>
+                    <button onClick={() => { 
+                        // JUNTA EMAIL E TELEFONE
+                        const finalContact = [talentEmail, talentPhone].filter(Boolean).join(' | ');
+                        
+                        addTalent({ 
+                            ...talentFormData, 
+                            contact: finalContact, // SALVA UNIDO
+                            id: generateId(), 
+                            createdAt: new Date().toISOString(),
+                            tags: [],
+                            education: [],
+                            experience: [],
+                            observations: [`Importado da vaga: ${job.title}`]
+                        } as TalentProfile); 
+                        setIsTalentModalOpen(false); 
+                        alert('Talento salvo com sucesso no Banco!'); 
+                    }} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100 uppercase text-[10px] tracking-widest hover:bg-indigo-700 transition-all active:scale-95">Salvar Perfil</button>
+                 </div>
               </div>
-            </form>
-          </div>
+           </div>
         </div>
       )}
     </div>
