@@ -5,7 +5,7 @@ import {
   ArrowLeft, Download, Briefcase, CheckCircle, Users, 
   XCircle, TrendingUp, UserX, 
   Calendar, Building2, Lock, Unlock, X, 
-  ExternalLink, ClipboardCheck, Clock, Search, BarChart3, 
+  ExternalLink, ClipboardCheck, UserCheck, Clock, Search, BarChart3, 
   UserMinus, PauseCircle, Activity
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
@@ -366,7 +366,7 @@ export const StrategicReport: React.FC = () => {
                   <thead>
                       <tr className="bg-slate-50/80 text-slate-400 font-black uppercase tracking-widest border-b border-slate-100">
                           <th className="p-4 pl-6">Setor / Departamento</th>
-                          <th className="p-4 text-center">Abertas (Novas)</th>
+                          <th className="p-4 text-center">Abertas</th>
                           <th className="p-4 text-center">Fechadas</th>
                           <th className="p-4 text-center">Cong.</th>
                           <th className="p-4 text-center">Canc.</th>
@@ -389,7 +389,7 @@ export const StrategicReport: React.FC = () => {
           </div>
       </div>
 
-      {/* MODAL DE DRILL DOWN (AJUSTADO: Centralizado e mais estreito) */}
+      {/* MODAL DE DRILL DOWN */}
       {drillDownTarget && (
           <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fadeIn">
               <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col border border-white/20">
@@ -398,20 +398,19 @@ export const StrategicReport: React.FC = () => {
                           <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg"><Search size={22} /></div>
                           <div>
                             <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
+                                {drillDownTarget === 'EXPANSION' && "Vagas de Aumento de Quadro"}
+                                {drillDownTarget === 'REPLACEMENT' && "Vagas de Substituição"}
                                 {drillDownTarget === 'ALL_ACTIVE' && "Vagas Ativas (Total)"}
                                 {drillDownTarget === 'OPENED_NEW' && "Novas Vagas"}
                                 {drillDownTarget === 'CLOSED' && "Vagas Finalizadas"}
                                 {drillDownTarget === 'CANCELED' && "Vagas Canceladas"}
                                 {drillDownTarget === 'FROZEN' && "Vagas Congeladas"}
-                                {drillDownTarget === 'INTERVIEWS' && "Entrevistas"}
+                                {drillDownTarget === 'INTERVIEWS' && "Entrevistas Realizadas"}
                                 {drillDownTarget === 'TESTS' && "Testes Técnicos"}
                                 {drillDownTarget === 'REJECTED' && "Reprovações"}
                                 {drillDownTarget === 'WITHDRAWN' && "Desistências"}
-                                {drillDownTarget === 'EXPANSION' && "Expansão de Quadro"}
-                                {drillDownTarget === 'REPLACEMENT' && "Substituição"}
-                                {drillDownTarget === 'SLA' && "Tempo de Fechamento"}
                             </h2>
-                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Detalhes dos registros</p>
+                            <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Registros encontrados no período</p>
                           </div>
                       </div>
                       <button onClick={() => setDrillDownTarget(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-red-500 transition-all"><X size={26} /></button>
