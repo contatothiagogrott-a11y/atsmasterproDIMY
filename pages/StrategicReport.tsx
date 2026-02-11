@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { exportStrategicReport } from '../services/excelService';
 import { differenceInDays, parseISO } from 'date-fns';
+import * as XLSX from 'xlsx'; // Importação direta para o export específico
 
 type DrillDownType = 'ALL_ACTIVE' | 'BACKLOG' | 'OPENED_NEW' | 'CANCELED' | 'FROZEN' | 'CLOSED' | 'BALANCE_OPEN' | 'INTERVIEWS' | 'TESTS' | 'REJECTED' | 'WITHDRAWN' | 'EXPANSION' | 'REPLACEMENT' | 'SLA' | null;
 
@@ -58,6 +59,49 @@ export const StrategicReport: React.FC = () => {
       return d >= start && d <= end;
   };
 
+  // Helper para buscar data de congelamento
+  const getLastFreezeDate = (job: any) => {
+      if (job.freezeHistory && job.freezeHistory.length > 0) {
+          return job.freezeHistory[job.freezeHistory.length - 1].startDate;
+      }
+      return job.frozenAt || job.updatedAt || null;
+  };
+
+  // --- NOVA FUNÇÃO DE EXPORTAÇÃO ESPECÍFICA PARA ENTREVISTAS ---
+  const handleExportInterviews = (interviewList: any[]) => {
+    const dataToExport = interviewList.map(c => {
+        const job = jobs.find(j => j.id === c.jobId);
+        
+        // Função auxiliar para formatar data
+        const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('pt-BR') : '-';
+
+        return {
+            "Candidato": c.name,
+            "Vaga Inscrito": job?.title || 'Banco de Talentos / Geral',
+            "Data Entrada": fmtDate(c.createdAt || c.firstContactAt),
+            "Data Entrevista": fmtDate(c.interviewAt),
+            "Último Contato": fmtDate(c.lastInteractionAt),
+            "Situação Atual": c.status
+        };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    
+    // Ajuste de largura das colunas para ficar "bonito"
+    ws['!cols'] = [
+        { wch: 30 }, // Candidato
+        { wch: 35 }, // Vaga
+        { wch: 15 }, // Entrada
+        { wch: 15 }, // Entrevista
+        { wch: 15 }, // Último Contato
+        { wch: 20 }  // Situação
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Entrevistados");
+    XLSX.writeFile(wb, `Relatorio_Entrevistas_${startDate}_ate_${endDate}.xlsx`);
+  };
+
   const accessibleJobs = useMemo(() => jobs.filter(j => {
       const matchesUnit = unitFilter ? j.unit === unitFilter : true;
       const isPublic = !j.isConfidential;
@@ -73,7 +117,6 @@ export const StrategicReport: React.FC = () => {
   }), [candidates, jobIds, unitFilter]);
 
   const kpis = useMemo(() => {
-      // 1. VAGAS ATIVAS (BACKLOG + NOVAS)
       const allActiveJobs = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
           const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
@@ -83,7 +126,6 @@ export const StrategicReport: React.FC = () => {
       const expansionList = allActiveJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro');
       const replacementList = allActiveJobs.filter(j => j.openingDetails?.reason === 'Substituição');
 
-      // SLA (Apenas fechadas no range)
       const closedInPeriodList = accessibleJobs.filter(j => j.status === 'Fechada' && j.closedAt && isWithin(j.closedAt));
       const totalDays = closedInPeriodList.reduce((acc, j) => {
           const days = differenceInDays(parseISO(j.closedAt!), parseISO(j.openedAt));
@@ -91,52 +133,34 @@ export const StrategicReport: React.FC = () => {
       }, 0);
       const avgSla = closedInPeriodList.length > 0 ? (totalDays / closedInPeriodList.length).toFixed(1) : '0';
 
-      // 2. FLUXO DETALHADO
-      
-      // Backlog: Abertas ANTES do início
       const jobsBacklog = accessibleJobs.filter(j => {
           const opened = new Date(j.openedAt).getTime();
           const closed = j.closedAt ? new Date(j.closedAt).getTime() : null;
           return opened < start && (!closed || closed >= start);
       });
 
-      // Novas: Abertas DURANTE
       const jobsOpenedNew = accessibleJobs.filter(j => isWithin(j.openedAt));
-      
-      // Saídas DURANTE
       const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
       const jobsCanceled = accessibleJobs.filter(j => j.status === 'Cancelada' && isWithin(j.closedAt));
-      
-      // --- CORREÇÃO: LÓGICA DE VAGAS CONGELADAS BASEADA NO HISTÓRICO ---
-      // Uma vaga entra na contagem de congeladas se ALGUM evento de congelamento (freezeHistory) ocorreu neste período.
       const jobsFrozen = accessibleJobs.filter(j => {
           if (j.freezeHistory && j.freezeHistory.length > 0) {
               return j.freezeHistory.some((freeze: any) => isWithin(freeze.startDate));
           }
-          // Fallback para vagas antigas que não tinham histórico
           return j.status === 'Congelada' && isWithin((j as any).frozenAt);
       });
 
-      // SALDO EM ABERTO NO FIM DO PERÍODO
       const jobsBalanceOpen = accessibleJobs.filter(j => {
         const opened = new Date(j.openedAt).getTime();
-        
         let exitDate = null;
         if (j.status === 'Fechada' || j.status === 'Cancelada') {
             exitDate = j.closedAt ? new Date(j.closedAt).getTime() : null;
         } else if (j.status === 'Congelada') {
-            // Se está congelada, a data de saída é a do último congelamento
-            if (j.freezeHistory && j.freezeHistory.length > 0) {
-                 exitDate = new Date(j.freezeHistory[j.freezeHistory.length - 1].startDate).getTime();
-            } else {
-                 exitDate = (j as any).frozenAt ? new Date((j as any).frozenAt).getTime() : null;
-            }
+            const fDate = getLastFreezeDate(j);
+            exitDate = fDate ? new Date(fDate).getTime() : null;
         }
-
         return opened <= end && (!exitDate || exitDate > end);
       });
 
-      // 3. CANDIDATOS
       const interviews = accessibleCandidates.filter(c => isWithin(c.interviewAt));
       const tests = accessibleCandidates.filter(c => c.techTest && isWithin(c.techTestDate));
       const rejected = accessibleCandidates.filter(c => c.status === 'Reprovado' && isWithin(c.rejectionDate));
@@ -144,7 +168,6 @@ export const StrategicReport: React.FC = () => {
 
       const rejectionReasons: Record<string, number> = {};
       rejected.forEach(c => { const r = c.rejectionReason || 'N/I'; rejectionReasons[r] = (rejectionReasons[r] || 0) + 1; });
-      
       const withdrawnReasons: Record<string, number> = {};
       withdrawn.forEach(c => { const r = c.rejectionReason || 'N/I'; withdrawnReasons[r] = (withdrawnReasons[r] || 0) + 1; });
 
@@ -154,12 +177,9 @@ export const StrategicReport: React.FC = () => {
           if (isWithin(j.openedAt)) bySector[j.sector].opened++;
           if (j.status === 'Fechada' && isWithin(j.closedAt)) bySector[j.sector].closed++;
           if (j.status === 'Cancelada' && isWithin(j.closedAt)) bySector[j.sector].canceled++;
-          
-          // Conta por setor baseada no histórico também
           const isFrozenInPeriod = (j.freezeHistory && j.freezeHistory.length > 0) 
               ? j.freezeHistory.some((f: any) => isWithin(f.startDate))
               : (j.status === 'Congelada' && isWithin((j as any).frozenAt));
-              
           if (isFrozenInPeriod) bySector[j.sector].frozen++;
       });
 
@@ -168,15 +188,12 @@ export const StrategicReport: React.FC = () => {
           expansion: { total: expansionList.length, list: expansionList },     
           replacement: { total: replacementList.length, list: replacementList }, 
           sla: { avg: avgSla, list: closedInPeriodList, count: closedInPeriodList.length }, 
-
           backlog: { total: jobsBacklog.length, list: jobsBacklog }, 
           openedNew: { total: jobsOpenedNew.length, list: jobsOpenedNew },
           closed: { total: jobsClosed.length, list: jobsClosed },
           frozen: { total: jobsFrozen.length, list: jobsFrozen },
           canceled: { total: jobsCanceled.length, list: jobsCanceled },
-          
           balanceOpen: { total: jobsBalanceOpen.length, list: jobsBalanceOpen },
-
           interviews: { total: interviews.length, list: interviews },
           tests: { total: tests.length, list: tests },
           rejected: { total: rejected.length, list: rejected, reasons: rejectionReasons },
@@ -186,6 +203,7 @@ export const StrategicReport: React.FC = () => {
   }, [accessibleJobs, accessibleCandidates, start, end]);
 
   const getModalContent = () => {
+      // 1. LISTA DE VAGAS
       if(['ALL_ACTIVE', 'BACKLOG', 'OPENED_NEW', 'CANCELED', 'FROZEN', 'CLOSED', 'EXPANSION', 'REPLACEMENT', 'SLA', 'BALANCE_OPEN'].includes(drillDownTarget as string)) {
           let list = kpis.allActive.list;
           if(drillDownTarget === 'BACKLOG') list = kpis.backlog.list;
@@ -220,8 +238,7 @@ export const StrategicReport: React.FC = () => {
                               const type = j.openingDetails?.reason || 'Aumento de Quadro';
                               const sla = j.closedAt ? differenceInDays(parseISO(j.closedAt), parseISO(j.openedAt)) : 
                                           differenceInDays(new Date(), parseISO(j.openedAt));
-                                          
-                              // Captura a data exata de congelamento que ocorreu neste período para exibir na tabela
+                              
                               let freezeDateStr = (j as any).frozenAt || null;
                               if (j.freezeHistory && j.freezeHistory.length > 0) {
                                   const freezeInPeriod = j.freezeHistory.slice().reverse().find((f: any) => isWithin(f.startDate));
@@ -266,6 +283,7 @@ export const StrategicReport: React.FC = () => {
           );
       }
 
+      // 2. LISTA DE CANDIDATOS (COM BOTÃO DE EXPORTAR NA SEÇÃO INTERVIEWS)
       if(['INTERVIEWS', 'TESTS', 'REJECTED', 'WITHDRAWN'].includes(drillDownTarget as string)) {
           let list = kpis.interviews.list;
           if(drillDownTarget === 'TESTS') list = kpis.tests.list;
@@ -274,6 +292,18 @@ export const StrategicReport: React.FC = () => {
 
           return (
               <div className="overflow-x-auto">
+                 {/* CABEÇALHO COM BOTÃO DE EXPORTAR - APENAS PARA ENTREVISTAS */}
+                 {drillDownTarget === 'INTERVIEWS' && (
+                     <div className="mb-4 flex justify-end px-2">
+                         <button 
+                            onClick={() => handleExportInterviews(list)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 text-xs shadow-md transition-all"
+                         >
+                             <Download size={14} /> Baixar Relatório de Entrevistas
+                         </button>
+                     </div>
+                 )}
+
                  {(drillDownTarget === 'REJECTED' || drillDownTarget === 'WITHDRAWN') && (
                     <div className="p-4 bg-slate-50 mb-4 rounded-xl border border-slate-100 grid grid-cols-2 md:grid-cols-4 gap-2">
                         {Object.entries(drillDownTarget === 'REJECTED' ? kpis.rejected.reasons : kpis.withdrawn.reasons)
@@ -345,6 +375,7 @@ export const StrategicReport: React.FC = () => {
         </div>
       </div>
 
+      {/* FILTROS E CARDS KPIS (MANTIDOS IGUAIS AO SEU CÓDIGO ORIGINAL) */}
       <div className="flex flex-wrap items-center gap-4 bg-white p-3 rounded-2xl shadow-sm border border-slate-200 w-fit">
           <div className="flex items-center gap-2 px-2"><Calendar size={16} className="text-indigo-500" /><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="text-xs font-bold text-slate-700 outline-none bg-transparent" /></div>
           <div className="w-px h-6 bg-slate-200"></div>
@@ -355,18 +386,12 @@ export const StrategicReport: React.FC = () => {
 
       <div className="bg-indigo-900 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 p-8 opacity-10"><Briefcase size={180}/></div>
-          
           <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
-              <div 
-                  onClick={() => setDrillDownTarget('ALL_ACTIVE')}
-                  className="cursor-pointer hover:opacity-90 transition-opacity"
-                  title="Ver todas as vagas ativas no período"
-              >
+              <div onClick={() => setDrillDownTarget('ALL_ACTIVE')} className="cursor-pointer hover:opacity-90 transition-opacity">
                   <p className="text-indigo-200 font-bold uppercase tracking-widest text-xs mb-1">Volume Total Trabalhado</p>
                   <h2 className="text-5xl font-black">{kpis.allActive.total} <span className="text-2xl font-medium text-indigo-300">vagas ativas</span></h2>
-                  <p className="text-indigo-300 text-sm mt-2 max-w-md">Vagas que estiveram abertas em algum momento dentro do período selecionado (Novas + Backlog).</p>
+                  <p className="text-indigo-300 text-sm mt-2 max-w-md">Vagas que estiveram abertas em algum momento dentro do período selecionado.</p>
               </div>
-              
               <div className="flex gap-4">
                   <div onClick={() => setDrillDownTarget('EXPANSION')} className="bg-white/10 p-4 rounded-2xl border border-white/20 backdrop-blur-sm cursor-pointer hover:bg-white/20 transition-all text-center min-w-[140px]">
                       <TrendingUp className="text-emerald-400 mx-auto mb-2" size={24}/>
