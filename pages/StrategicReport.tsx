@@ -58,12 +58,12 @@ export const StrategicReport: React.FC = () => {
       return d >= start && d <= end;
   };
 
-  // Helper para achar a última data em que a vaga foi congelada (se existir)
-  const getLastFreezeDate = (job: any) => {
-      if (!job.freezeHistory || job.freezeHistory.length === 0) return null;
-      // Pega o último registro de congelamento do histórico
-      const lastFreeze = job.freezeHistory[job.freezeHistory.length - 1];
-      return lastFreeze.startDate;
+  // --- CORREÇÃO: FUNÇÃO PARA BUSCAR A DATA DE CONGELAMENTO CORRETA ---
+  const getFreezeDate = (job: any) => {
+      if (job.freezeHistory && job.freezeHistory.length > 0) {
+          return job.freezeHistory[job.freezeHistory.length - 1].startDate;
+      }
+      return job.frozenAt || job.updatedAt || null;
   };
 
   const accessibleJobs = useMemo(() => jobs.filter(j => {
@@ -115,11 +115,8 @@ export const StrategicReport: React.FC = () => {
       const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
       const jobsCanceled = accessibleJobs.filter(j => j.status === 'Cancelada' && isWithin(j.closedAt));
       
-      // CORREÇÃO AQUI: Busca no histórico de congelamentos (não existe j.frozenAt na raiz)
-      const jobsFrozen = accessibleJobs.filter(j => {
-          const lastFreezeDate = getLastFreezeDate(j);
-          return j.status === 'Congelada' && isWithin(lastFreezeDate);
-      });
+      // CORREÇÃO AQUI: Busca no histórico de congelamento
+      const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(getFreezeDate(j)));
 
       // SALDO EM ABERTO NO FIM DO PERÍODO
       const jobsBalanceOpen = accessibleJobs.filter(j => {
@@ -129,8 +126,8 @@ export const StrategicReport: React.FC = () => {
         if (j.status === 'Fechada' || j.status === 'Cancelada') {
             exitDate = j.closedAt ? new Date(j.closedAt).getTime() : null;
         } else if (j.status === 'Congelada') {
-            const lastFreeze = getLastFreezeDate(j);
-            exitDate = lastFreeze ? new Date(lastFreeze).getTime() : null;
+            const fDate = getFreezeDate(j);
+            exitDate = fDate ? new Date(fDate).getTime() : null;
         }
 
         return opened <= end && (!exitDate || exitDate > end);
@@ -153,10 +150,8 @@ export const StrategicReport: React.FC = () => {
           if (!bySector[j.sector]) bySector[j.sector] = { opened: 0, closed: 0, frozen: 0, canceled: 0 };
           if (isWithin(j.openedAt)) bySector[j.sector].opened++;
           if (j.status === 'Fechada' && isWithin(j.closedAt)) bySector[j.sector].closed++;
+          if (j.status === 'Congelada' && isWithin(getFreezeDate(j))) bySector[j.sector].frozen++;
           if (j.status === 'Cancelada' && isWithin(j.closedAt)) bySector[j.sector].canceled++;
-          
-          const lastFreezeDate = getLastFreezeDate(j);
-          if (j.status === 'Congelada' && isWithin(lastFreezeDate)) bySector[j.sector].frozen++;
       });
 
       return {
@@ -216,9 +211,8 @@ export const StrategicReport: React.FC = () => {
                               const type = j.openingDetails?.reason || 'Aumento de Quadro';
                               const sla = j.closedAt ? differenceInDays(parseISO(j.closedAt), parseISO(j.openedAt)) : 
                                           differenceInDays(new Date(), parseISO(j.openedAt));
-                                          
-                              // Pega a data de congelamento correta para exibir na tabela
-                              const freezeDateStr = getLastFreezeDate(j);
+                              
+                              const freezeDateStr = getFreezeDate(j);
 
                               return (
                                   <tr key={j.id} className="hover:bg-slate-50 transition-colors">
@@ -243,6 +237,8 @@ export const StrategicReport: React.FC = () => {
                                       )}
                                       
                                       {drillDownTarget === 'CANCELED' && <td className="p-4 text-center text-red-600 text-xs max-w-[150px] truncate" title={j.cancellationReason}>{j.cancellationReason || 'N/I'}</td>}
+                                      
+                                      {/* CORREÇÃO AQUI NO MODAL DE VAGAS CONGELADAS */}
                                       {drillDownTarget === 'FROZEN' && <td className="p-4 text-center text-amber-600 font-bold">{freezeDateStr ? new Date(freezeDateStr).toLocaleDateString() : '-'}</td>}
                                       
                                       <td className="p-4 pr-6 text-right">
