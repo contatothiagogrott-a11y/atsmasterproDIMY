@@ -58,14 +58,6 @@ export const StrategicReport: React.FC = () => {
       return d >= start && d <= end;
   };
 
-  // --- CORREÇÃO: FUNÇÃO PARA BUSCAR A DATA DE CONGELAMENTO CORRETA ---
-  const getFreezeDate = (job: any) => {
-      if (job.freezeHistory && job.freezeHistory.length > 0) {
-          return job.freezeHistory[job.freezeHistory.length - 1].startDate;
-      }
-      return job.frozenAt || job.updatedAt || null;
-  };
-
   const accessibleJobs = useMemo(() => jobs.filter(j => {
       const matchesUnit = unitFilter ? j.unit === unitFilter : true;
       const isPublic = !j.isConfidential;
@@ -115,8 +107,15 @@ export const StrategicReport: React.FC = () => {
       const jobsClosed = accessibleJobs.filter(j => j.status === 'Fechada' && isWithin(j.closedAt));
       const jobsCanceled = accessibleJobs.filter(j => j.status === 'Cancelada' && isWithin(j.closedAt));
       
-      // CORREÇÃO AQUI: Busca no histórico de congelamento
-      const jobsFrozen = accessibleJobs.filter(j => j.status === 'Congelada' && isWithin(getFreezeDate(j)));
+      // --- CORREÇÃO: LÓGICA DE VAGAS CONGELADAS BASEADA NO HISTÓRICO ---
+      // Uma vaga entra na contagem de congeladas se ALGUM evento de congelamento (freezeHistory) ocorreu neste período.
+      const jobsFrozen = accessibleJobs.filter(j => {
+          if (j.freezeHistory && j.freezeHistory.length > 0) {
+              return j.freezeHistory.some((freeze: any) => isWithin(freeze.startDate));
+          }
+          // Fallback para vagas antigas que não tinham histórico
+          return j.status === 'Congelada' && isWithin((j as any).frozenAt);
+      });
 
       // SALDO EM ABERTO NO FIM DO PERÍODO
       const jobsBalanceOpen = accessibleJobs.filter(j => {
@@ -126,8 +125,12 @@ export const StrategicReport: React.FC = () => {
         if (j.status === 'Fechada' || j.status === 'Cancelada') {
             exitDate = j.closedAt ? new Date(j.closedAt).getTime() : null;
         } else if (j.status === 'Congelada') {
-            const fDate = getFreezeDate(j);
-            exitDate = fDate ? new Date(fDate).getTime() : null;
+            // Se está congelada, a data de saída é a do último congelamento
+            if (j.freezeHistory && j.freezeHistory.length > 0) {
+                 exitDate = new Date(j.freezeHistory[j.freezeHistory.length - 1].startDate).getTime();
+            } else {
+                 exitDate = (j as any).frozenAt ? new Date((j as any).frozenAt).getTime() : null;
+            }
         }
 
         return opened <= end && (!exitDate || exitDate > end);
@@ -150,8 +153,14 @@ export const StrategicReport: React.FC = () => {
           if (!bySector[j.sector]) bySector[j.sector] = { opened: 0, closed: 0, frozen: 0, canceled: 0 };
           if (isWithin(j.openedAt)) bySector[j.sector].opened++;
           if (j.status === 'Fechada' && isWithin(j.closedAt)) bySector[j.sector].closed++;
-          if (j.status === 'Congelada' && isWithin(getFreezeDate(j))) bySector[j.sector].frozen++;
           if (j.status === 'Cancelada' && isWithin(j.closedAt)) bySector[j.sector].canceled++;
+          
+          // Conta por setor baseada no histórico também
+          const isFrozenInPeriod = (j.freezeHistory && j.freezeHistory.length > 0) 
+              ? j.freezeHistory.some((f: any) => isWithin(f.startDate))
+              : (j.status === 'Congelada' && isWithin((j as any).frozenAt));
+              
+          if (isFrozenInPeriod) bySector[j.sector].frozen++;
       });
 
       return {
@@ -211,8 +220,13 @@ export const StrategicReport: React.FC = () => {
                               const type = j.openingDetails?.reason || 'Aumento de Quadro';
                               const sla = j.closedAt ? differenceInDays(parseISO(j.closedAt), parseISO(j.openedAt)) : 
                                           differenceInDays(new Date(), parseISO(j.openedAt));
-                              
-                              const freezeDateStr = getFreezeDate(j);
+                                          
+                              // Captura a data exata de congelamento que ocorreu neste período para exibir na tabela
+                              let freezeDateStr = (j as any).frozenAt || null;
+                              if (j.freezeHistory && j.freezeHistory.length > 0) {
+                                  const freezeInPeriod = j.freezeHistory.slice().reverse().find((f: any) => isWithin(f.startDate));
+                                  freezeDateStr = freezeInPeriod ? freezeInPeriod.startDate : j.freezeHistory[j.freezeHistory.length - 1].startDate;
+                              }
 
                               return (
                                   <tr key={j.id} className="hover:bg-slate-50 transition-colors">
@@ -238,7 +252,6 @@ export const StrategicReport: React.FC = () => {
                                       
                                       {drillDownTarget === 'CANCELED' && <td className="p-4 text-center text-red-600 text-xs max-w-[150px] truncate" title={j.cancellationReason}>{j.cancellationReason || 'N/I'}</td>}
                                       
-                                      {/* CORREÇÃO AQUI NO MODAL DE VAGAS CONGELADAS */}
                                       {drillDownTarget === 'FROZEN' && <td className="p-4 text-center text-amber-600 font-bold">{freezeDateStr ? new Date(freezeDateStr).toLocaleDateString() : '-'}</td>}
                                       
                                       <td className="p-4 pr-6 text-right">
