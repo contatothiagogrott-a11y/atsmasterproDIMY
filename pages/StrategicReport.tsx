@@ -251,7 +251,6 @@ export const StrategicReport: React.FC = () => {
                                       )}
                                       
                                       {drillDownTarget === 'CANCELED' && <td className="p-4 text-center text-red-600 text-xs max-w-[150px] truncate" title={j.cancellationReason}>{j.cancellationReason || 'N/I'}</td>}
-                                      
                                       {drillDownTarget === 'FROZEN' && <td className="p-4 text-center text-amber-600 font-bold">{freezeDateStr ? new Date(freezeDateStr).toLocaleDateString() : '-'}</td>}
                                       
                                       <td className="p-4 pr-6 text-right">
@@ -342,7 +341,7 @@ export const StrategicReport: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-2">
-            <button onClick={() => exportStrategicReport(kpis, startDate, endDate)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg text-xs uppercase tracking-widest transition-all"><Download size={16} /> Exportar Excel</button>
+            <button onClick={() => exportStrategicReport(kpis, startDate, endDate, candidates)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg text-xs uppercase tracking-widest transition-all"><Download size={16} /> Exportar Excel</button>
         </div>
       </div>
 
