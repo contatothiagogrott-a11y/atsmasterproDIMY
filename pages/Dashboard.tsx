@@ -5,16 +5,17 @@ import {
   Briefcase, Users, CheckCircle, XCircle, Clock, AlertCircle, 
   Building2, TrendingUp, UserMinus, Lock, Unlock, X, 
   PieChart as PieChartIcon, ChevronRight, ExternalLink, Target,
-  Search, Beaker
+  Search, Beaker, AlertTriangle, CalendarDays, UserCheck
 } from 'lucide-react';
-import { isWithinInterval, parseISO } from 'date-fns';
+import { isWithinInterval, parseISO, differenceInDays, isToday, isFuture, addDays } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 
 // Tipos para o DrillDown (Detalhes ao clicar)
 type DrillDownType = 
   'Aumento de Quadro' | 'Substituição' | 
   'OPEN' | 'CLOSED' | 'FROZEN' | 'CANCELED' | 
-  'TOTAL_CANDIDATES' | 'IN_TEST' | 'APPROVED' | 'INTERNAL_REC' | null;
+  'TOTAL_CANDIDATES' | 'IN_TEST' | 'APPROVED' | 'INTERNAL_REC' | 
+  'PENDING_CANDIDATES' | 'OLD_JOBS' | 'UPCOMING_ONBOARDINGS' | null;
 
 export const Dashboard: React.FC = () => {
   const { jobs, candidates, settings, user } = useData();
@@ -26,7 +27,6 @@ export const Dashboard: React.FC = () => {
 
   const [sectorFilter, setSectorFilter] = useState('');
   const [unitFilter, setUnitFilter] = useState('');
-  // Inicia com dia 1 até hoje
   const [startDate, setStartDate] = useState(firstDay.toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(today.toISOString().split('T')[0]);
   
@@ -56,7 +56,6 @@ export const Dashboard: React.FC = () => {
 
     // Filtro de Data (Aplica nas vagas)
     if (startDate && endDate) {
-      // Ajusta o final do dia para incluir o dia inteiro selecionado
       const endDateTime = new Date(endDate);
       endDateTime.setHours(23, 59, 59, 999);
       
@@ -66,7 +65,6 @@ export const Dashboard: React.FC = () => {
       });
     }
 
-    // Filtra candidatos baseados nas vagas filtradas
     const jobIds = new Set(fJobs.map(j => j.id));
     const fCandidates = candidates.filter(c => jobIds.has(c.jobId));
     
@@ -75,7 +73,50 @@ export const Dashboard: React.FC = () => {
 
   const { fJobs, fCandidates } = filteredData;
 
-  // --- 2. CÁLCULO DOS KPIS ---
+  // --- 2. NOVAS LÓGICAS DE ALERTA ---
+
+  // 2.1. Candidatos Pendentes de Ação (Em andamento, mas faltando info)
+  const pendingCandidates = useMemo(() => {
+      return fCandidates.filter(c => {
+          // Não olha para reprovados, desistentes ou contratados
+          if (['Reprovado', 'Desistência', 'Contratado'].includes(c.status)) return false;
+          
+          // REGRA 1: Se está Aguardando Triagem, já é pendente de ação do recrutador automaticamente
+          if (c.status === 'Aguardando Triagem') return true;
+          
+          // REGRA 2: Está em Teste, mas não tem o resultado/teste marcado como realizado
+          const needsTestResult = c.status === 'Em Teste' && !c.techTest;
+          
+          // REGRA 3: Não teve nenhum registro de interação/contato
+          const noInteraction = !c.lastInteractionAt;
+          
+          // REGRA 4: Está em Análise, mas a entrevista não foi agendada
+          const noInterviewScheduled = c.status === 'Em Análise' && !c.interviewAt;
+
+          return needsTestResult || noInteraction || noInterviewScheduled;
+      });
+  }, [fCandidates]);
+
+  // 2.2. Vagas Antigas (Abertas há mais de 30 dias)
+  const oldOpenJobs = useMemo(() => {
+      const thirtyDaysAgo = addDays(today, -30);
+      return fJobs.filter(j => {
+          return j.status === 'Aberta' && new Date(j.openedAt) < thirtyDaysAgo;
+      });
+  }, [fJobs, today]);
+
+  // 2.3. Integrações Próximas (Start date nos próximos 7 dias)
+  const upcomingOnboardings = useMemo(() => {
+      const nextWeek = addDays(today, 7);
+      return candidates.filter(c => {
+          if (c.status !== 'Contratado' || !c.timeline?.startDate) return false;
+          const startDate = parseISO(c.timeline.startDate);
+          return (isToday(startDate) || isFuture(startDate)) && startDate <= nextWeek;
+      });
+  }, [candidates, today]);
+
+
+  // --- 3. CÁLCULO DOS KPIS ORIGINAIS ---
   const kpis = {
     open: fJobs.filter(j => j.status === 'Aberta').length,
     closed: fJobs.filter(j => j.status === 'Fechada').length,
@@ -84,11 +125,7 @@ export const Dashboard: React.FC = () => {
     totalCandidates: fCandidates.length,
     inTest: fCandidates.filter(c => c.status === 'Em Teste').length,
     approved: fCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).length,
-    // LÓGICA CORRIGIDA: Só conta se for Recrutamento Interno E aprovado/contratado
-    internalRecruitment: fCandidates.filter(c => 
-        c.origin === 'Recrutamento Interno' && 
-        ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)
-    ).length,
+    internalRecruitment: fCandidates.filter(c => c.origin === 'Recrutamento Interno' && ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status)).length,
     expansion: fJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro').length,
     replacement: fJobs.filter(j => j.openingDetails?.reason === 'Substituição').length
   };
@@ -103,7 +140,7 @@ export const Dashboard: React.FC = () => {
   // --- HELPER PARA O CONTEÚDO DO MODAL ---
   const getDrillDownContent = () => {
       // 1. LISTA DE VAGAS
-      if (['OPEN', 'CLOSED', 'FROZEN', 'CANCELED', 'Aumento de Quadro', 'Substituição'].includes(drillDownType as string)) {
+      if (['OPEN', 'CLOSED', 'FROZEN', 'CANCELED', 'Aumento de Quadro', 'Substituição', 'OLD_JOBS'].includes(drillDownType as string)) {
           let targetJobs = fJobs;
           if (drillDownType === 'OPEN') targetJobs = fJobs.filter(j => j.status === 'Aberta');
           if (drillDownType === 'CLOSED') targetJobs = fJobs.filter(j => j.status === 'Fechada');
@@ -111,37 +148,54 @@ export const Dashboard: React.FC = () => {
           if (drillDownType === 'CANCELED') targetJobs = fJobs.filter(j => j.status === 'Cancelada');
           if (drillDownType === 'Aumento de Quadro') targetJobs = fJobs.filter(j => (j.openingDetails?.reason || 'Aumento de Quadro') === 'Aumento de Quadro');
           if (drillDownType === 'Substituição') targetJobs = fJobs.filter(j => j.openingDetails?.reason === 'Substituição');
+          if (drillDownType === 'OLD_JOBS') targetJobs = oldOpenJobs;
 
           return (
             <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px]">
-                    <tr><th className="p-4 rounded-l-xl">Vaga</th><th className="p-4 text-center">Status</th><th className="p-4 text-center">Unidade</th><th className="p-4 text-right rounded-r-xl">Ação</th></tr>
+                    <tr>
+                        <th className="p-4 rounded-l-xl">Vaga</th>
+                        <th className="p-4 text-center">Status</th>
+                        <th className="p-4 text-center">Abertura</th>
+                        <th className="p-4 text-center">Unidade</th>
+                        <th className="p-4 text-right rounded-r-xl">Ação</th>
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                     {targetJobs.map(j => (
                         <tr key={j.id} className="hover:bg-slate-50 transition-colors">
                             <td className="p-4 font-black text-slate-700">{j.title}</td>
-                            <td className="p-4 text-center"><span className="px-2 py-1 rounded bg-slate-100 font-bold text-[10px] uppercase">{j.status}</span></td>
+                            <td className="p-4 text-center"><span className={`px-2 py-1 rounded font-bold text-[10px] uppercase ${j.status === 'Aberta' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{j.status}</span></td>
+                            <td className="p-4 text-center text-slate-500">{new Date(j.openedAt).toLocaleDateString()}</td>
                             <td className="p-4 text-center text-slate-500">{j.unit}</td>
                             <td className="p-4 text-right"><button onClick={() => navigate(`/jobs/${j.id}`)} className="text-indigo-600 font-bold hover:underline flex items-center justify-end gap-1"><ExternalLink size={14}/> Abrir</button></td>
                         </tr>
                     ))}
+                    {targetJobs.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">Nenhum registro.</td></tr>}
                 </tbody>
             </table>
           );
       }
 
       // 2. LISTA DE CANDIDATOS
-      if (['TOTAL_CANDIDATES', 'IN_TEST', 'APPROVED', 'INTERNAL_REC'].includes(drillDownType as string)) {
+      if (['TOTAL_CANDIDATES', 'IN_TEST', 'APPROVED', 'INTERNAL_REC', 'PENDING_CANDIDATES', 'UPCOMING_ONBOARDINGS'].includes(drillDownType as string)) {
           let targetCandidates = fCandidates;
           if (drillDownType === 'IN_TEST') targetCandidates = fCandidates.filter(c => c.status === 'Em Teste');
           if (drillDownType === 'APPROVED') targetCandidates = fCandidates.filter(c => ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status));
           if (drillDownType === 'INTERNAL_REC') targetCandidates = fCandidates.filter(c => c.origin === 'Recrutamento Interno' && ['Aprovado', 'Proposta Aceita', 'Contratado'].includes(c.status));
+          if (drillDownType === 'PENDING_CANDIDATES') targetCandidates = pendingCandidates;
+          if (drillDownType === 'UPCOMING_ONBOARDINGS') targetCandidates = upcomingOnboardings;
 
           return (
             <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[10px]">
-                    <tr><th className="p-4 rounded-l-xl">Candidato</th><th className="p-4">Vaga</th><th className="p-4 text-center">Status</th><th className="p-4 text-right rounded-r-xl">Ação</th></tr>
+                    <tr>
+                        <th className="p-4 rounded-l-xl">Candidato</th>
+                        <th className="p-4">Vaga</th>
+                        <th className="p-4 text-center">Status</th>
+                        {drillDownType === 'UPCOMING_ONBOARDINGS' && <th className="p-4 text-center text-emerald-600">Data Início</th>}
+                        <th className="p-4 text-right rounded-r-xl">Ação</th>
+                    </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                     {targetCandidates.map(c => {
@@ -151,10 +205,16 @@ export const Dashboard: React.FC = () => {
                                 <td className="p-4 font-black text-slate-700">{c.name}</td>
                                 <td className="p-4 text-slate-600">{job?.title || 'Vaga N/I'}</td>
                                 <td className="p-4 text-center"><span className="px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold text-[10px] uppercase">{c.status}</span></td>
+                                {drillDownType === 'UPCOMING_ONBOARDINGS' && (
+                                    <td className="p-4 text-center font-bold text-emerald-600">
+                                        {c.timeline?.startDate ? new Date(c.timeline.startDate).toLocaleDateString() : '-'}
+                                    </td>
+                                )}
                                 <td className="p-4 text-right"><button onClick={() => navigate(`/jobs/${c.jobId}`)} className="text-indigo-600 font-bold hover:underline flex items-center justify-end gap-1"><Target size={14}/> Ver Vaga</button></td>
                             </tr>
                         );
                     })}
+                    {targetCandidates.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">Nenhum registro.</td></tr>}
                 </tbody>
             </table>
           );
@@ -168,7 +228,7 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
             <h1 className="text-3xl font-black text-slate-800 tracking-tight">Dashboard</h1>
-            <p className="text-slate-500 font-medium italic">Monitoramento tático de R&S</p>
+            <p className="text-slate-500 font-medium italic">Visão Operacional Diária</p>
         </div>
         <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
             <button onClick={() => navigate('/strategic-report')} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold shadow-sm transition-all active:scale-95">
@@ -190,12 +250,52 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* --- 3. KPI Cards CLICÁVEIS --- */}
+      {/* --- SEÇÃO DE ALERTAS PRIORITÁRIOS --- */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div 
+             onClick={() => setDrillDownType('PENDING_CANDIDATES')} 
+             className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-start gap-4 cursor-pointer hover:shadow-md transition-all active:scale-95 group"
+          >
+              <div className="bg-amber-500 p-3 rounded-xl text-white shadow-sm group-hover:scale-110 transition-transform"><UserCheck size={24}/></div>
+              <div>
+                  <h4 className="font-black text-amber-900 uppercase tracking-tight text-sm">Candidatos Pendentes</h4>
+                  <div className="text-2xl font-black text-amber-700">{pendingCandidates.length}</div>
+                  <p className="text-[10px] text-amber-600/80 font-bold uppercase mt-1">Faltam feedbacks ou testes</p>
+              </div>
+          </div>
+
+          <div 
+             onClick={() => setDrillDownType('OLD_JOBS')} 
+             className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-start gap-4 cursor-pointer hover:shadow-md transition-all active:scale-95 group"
+          >
+              <div className="bg-red-500 p-3 rounded-xl text-white shadow-sm group-hover:scale-110 transition-transform"><AlertTriangle size={24}/></div>
+              <div>
+                  <h4 className="font-black text-red-900 uppercase tracking-tight text-sm">Vagas em Atraso</h4>
+                  <div className="text-2xl font-black text-red-700">{oldOpenJobs.length}</div>
+                  <p className="text-[10px] text-red-600/80 font-bold uppercase mt-1">Abertas há mais de 30 dias</p>
+              </div>
+          </div>
+
+          <div 
+             onClick={() => setDrillDownType('UPCOMING_ONBOARDINGS')} 
+             className="bg-emerald-50 border border-emerald-200 p-4 rounded-2xl flex items-start gap-4 cursor-pointer hover:shadow-md transition-all active:scale-95 group"
+          >
+              <div className="bg-emerald-500 p-3 rounded-xl text-white shadow-sm group-hover:scale-110 transition-transform"><CalendarDays size={24}/></div>
+              <div>
+                  <h4 className="font-black text-emerald-900 uppercase tracking-tight text-sm">Próximas Integrações</h4>
+                  <div className="text-2xl font-black text-emerald-700">{upcomingOnboardings.length}</div>
+                  <p className="text-[10px] text-emerald-600/80 font-bold uppercase mt-1">Contratações nos próx. 7 dias</p>
+              </div>
+          </div>
+      </div>
+
+      {/* --- KPI Cards CLICÁVEIS --- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
         <KPICard title="Abertas" value={kpis.open} color="text-blue-600" bgIcon={Briefcase} onClick={() => setDrillDownType('OPEN')} />
         <KPICard title="Fechadas" value={kpis.closed} color="text-emerald-600" bgIcon={CheckCircle} onClick={() => setDrillDownType('CLOSED')} />
         <KPICard title="Congeladas" value={kpis.frozen} color="text-amber-600" bgIcon={Clock} onClick={() => setDrillDownType('FROZEN')} />
         <KPICard title="Canceladas" value={kpis.canceled} color="text-red-600" bgIcon={XCircle} onClick={() => setDrillDownType('CANCELED')} />
+        
         <KPICard title="Candidatos" value={kpis.totalCandidates} color="text-slate-700" bgIcon={Users} onClick={() => setDrillDownType('TOTAL_CANDIDATES')} />
         <KPICard title="Em Teste" value={kpis.inTest} color="text-indigo-600" bgIcon={Beaker} onClick={() => setDrillDownType('IN_TEST')} />
         <KPICard title="Aprovados" value={kpis.approved} color="text-green-700" bgIcon={Target} onClick={() => setDrillDownType('APPROVED')} />
@@ -255,7 +355,12 @@ export const Dashboard: React.FC = () => {
                       <div className="flex items-center gap-3">
                           <div className="bg-indigo-600 p-2.5 rounded-xl text-white shadow-lg"><Search size={22} /></div>
                           <div>
-                            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Detalhes: {drillDownType}</h2>
+                            <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
+                                {drillDownType === 'PENDING_CANDIDATES' ? 'Candidatos Pendentes' :
+                                 drillDownType === 'OLD_JOBS' ? 'Vagas em Atraso (> 30 dias)' :
+                                 drillDownType === 'UPCOMING_ONBOARDINGS' ? 'Próximas Integrações' : 
+                                 `Detalhes: ${drillDownType}`}
+                            </h2>
                             <p className="text-xs text-slate-400 font-black uppercase tracking-widest">Registros encontrados</p>
                           </div>
                       </div>
