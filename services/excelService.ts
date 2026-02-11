@@ -86,7 +86,7 @@ export const exportToExcel = (jobs: Job[], candidates: Candidate[], users: User[
   XLSX.writeFile(workbook, `ATS_SLA_${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
-// --- EXPORT 2: DETALHES DA VAGA (CANDIDATOS) - ATUALIZADO COM MOTIVOS ---
+// --- EXPORT 2: DETALHES DA VAGA (CANDIDATOS) ---
 export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
   const rows = candidates.map(cand => {
     let processTimeText = '-';
@@ -108,11 +108,8 @@ export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
       formatDate(cand.firstContactAt),
       formatDate(cand.interviewAt),
       cand.techTest ? (cand.techTestResult || 'Realizado') : 'Não',
-      
-      // COLUNAS DE MOTIVOS (Respeitando a caixa de texto "Outros")
       cand.status === 'Reprovado' ? (cand.rejectionReason || 'Não informado') : '-',
       cand.status === 'Desistência' ? (cand.rejectionReason || 'Não informado') : '-',
-      
       processTimeText,
       cand.rejectedBy || '-',
       formatDate(cand.rejectionDate)
@@ -123,7 +120,7 @@ export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
   const tableHeaders = [
     "Nome do Candidato", "Cidade", "Telefone", "E-mail", "Origem", "Status Atual",
     "1º Contato", "Data Entrevista", "Teste Técnico", 
-    "MOTIVO REPROVAÇÃO", "MOTIVO DESISTÊNCIA", // Novas colunas solicitadas
+    "MOTIVO REPROVAÇÃO", "MOTIVO DESISTÊNCIA",
     "Tempo de Processo", "Responsável Perda", "Data da Perda"
   ];
 
@@ -134,56 +131,85 @@ export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
   XLSX.writeFile(workbook, `ATS_Candidatos_${job.title.replace(/\s+/g, '_')}.xlsx`);
 };
 
-// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - ATUALIZADO COM TESTES ---
+// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - CORRIGIDO ---
 export const exportStrategicReport = (metrics: any, startDate: string, endDate: string) => {
     const wb = XLSX.utils.book_new();
   
-    // ABA 1: RESUMO GERAL
+    // ABA 1: RESUMO EXECUTIVO (Métricas Principais formatadas como tabela)
     const summaryData = [
       ["RELATÓRIO ESTRATÉGICO DE PERFORMANCE"],
-      [`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`],
+      [`Período Analisado: ${formatDate(startDate)} a ${formatDate(endDate)}`],
       [""],
-      ["INDICADOR", "VALOR"],
-      ["Vagas Abertas (Total)", metrics.opened.total],
-      ["   - Aumento de Quadro", metrics.opened.expansion],
-      ["   - Substituição", metrics.opened.replacement],
-      ["Vagas Concluídas", metrics.closed.total],
-      ["Entrevistas Realizadas", metrics.interviews.total || metrics.interviews],
-      ["Testes Técnicos Realizados", metrics.tests.total || metrics.tests], // Adicionado conforme solicitado
+      ["", "FLUXO DE VAGAS", "VOLUME"],
+      ["", "Volume Total Trabalhado no Período", metrics.allActive?.total || 0],
+      ["", "  ↳ Vagas em Backlog (Vindas de meses anteriores)", metrics.backlog?.total || 0],
+      ["", "  ↳ Novas Vagas (Abertas neste período)", metrics.openedNew?.total || 0],
+      ["", "  ↳ Vagas por Aumento de Quadro", metrics.expansion?.total || 0],
+      ["", "  ↳ Vagas por Substituição", metrics.replacement?.total || 0],
+      ["", "Vagas Fechadas (Sucesso)", metrics.closed?.total || 0],
+      ["", "Vagas Congeladas", metrics.frozen?.total || 0],
+      ["", "Vagas Canceladas", metrics.canceled?.total || 0],
+      ["", "Saldo de Vagas em Aberto (Final do Período)", metrics.balanceOpen?.total || 0],
       [""],
-      ["INDICADOR DE PERDAS", "VALOR"],
-      ["Total de Reprovações (Empresa)", metrics.rejected.total],
-      ["Total de Desistências (Candidato)", metrics.withdrawn.total]
+      ["", "SLA DE FECHAMENTO", "DIAS"],
+      ["", "Tempo Médio Líquido de Fechamento (SLA)", `${metrics.sla?.avg || 0} dias`],
+      [""],
+      ["", "FUNIL DE CANDIDATOS", "VOLUME"],
+      ["", "Candidatos Entrevistados", metrics.interviews?.total || 0],
+      ["", "Testes Técnicos Realizados", metrics.tests?.total || 0],
+      ["", "Reprovações (Pela Empresa)", metrics.rejected?.total || 0],
+      ["", "Desistências (Pelo Candidato)", metrics.withdrawn?.total || 0]
     ];
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+
+    // Ajuste de largura das colunas (Resumo Executivo)
+    wsSummary['!cols'] = [{ wch: 2 }, { wch: 50 }, { wch: 15 }];
     XLSX.utils.book_append_sheet(wb, wsSummary, "Resumo Executivo");
   
-    // ABA 2: POR SETOR
-    const sectorRows = Object.entries(metrics.bySector).map(([sector, data]: any) => [
-        sector, data.opened, data.closed, data.frozen, data.canceled
+    // ABA 2: POR SETOR (Métricas por área)
+    const sectorHeaders = ["Setor / Departamento", "Abertas no Período", "Fechadas no Período", "Congeladas", "Canceladas"];
+    const sectorRows = Object.entries(metrics.bySector || {}).map(([sector, data]: any) => [
+        sector, 
+        data.opened || 0, 
+        data.closed || 0, 
+        data.frozen || 0, 
+        data.canceled || 0
     ]);
+    
     const wsDataSector = [
-        ["MOVIMENTAÇÃO POR SETOR"],
-        ["Setor", "Abertas", "Fechadas", "Congeladas", "Canceladas"],
+        ["ANÁLISE DE MOVIMENTAÇÃO POR SETOR"],
+        [`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`],
+        [""],
+        sectorHeaders,
         ...sectorRows
     ];
     const wsSector = XLSX.utils.aoa_to_sheet(wsDataSector);
-    XLSX.utils.book_append_sheet(wb, wsSector, "Por Setor");
+    wsSector['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, wsSector, "Análise por Setor");
   
-    // ABA 3: MOTIVOS DETALHADOS
-    const rejectionRows = Object.entries(metrics.rejected.reasons || {}).map(([r, c]: any) => ["Reprovação", r, c]);
-    const withdrawalRows = Object.entries(metrics.withdrawn.reasons || {}).map(([r, c]: any) => ["Desistência", r, c]);
+    // ABA 3: MOTIVOS DE PERDA (Detalhado)
+    const rejectionRows = Object.entries(metrics.rejected?.reasons || {}).map(([reason, count]: any) => [
+        "Reprovação (Empresa)", reason, count
+    ]);
+    const withdrawalRows = Object.entries(metrics.withdrawn?.reasons || {}).map(([reason, count]: any) => [
+        "Desistência (Candidato)", reason, count
+    ]);
 
+    const reasonsHeaders = ["Classificação", "Motivo Registrado", "Quantidade de Ocorrências"];
     const wsDataReasons = [
-        ["MOTIVOS DE PERDA DETALHADOS"],
-        ["Tipo", "Justificativa / Motivo", "Quantidade"],
+        ["DIAGNÓSTICO DE PERDAS DE CANDIDATOS"],
+        [`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`],
+        [""],
+        reasonsHeaders,
         ...rejectionRows,
         ...withdrawalRows
     ];
     const wsReasons = XLSX.utils.aoa_to_sheet(wsDataReasons);
-    XLSX.utils.book_append_sheet(wb, wsReasons, "Motivos");
+    wsReasons['!cols'] = [{ wch: 25 }, { wch: 45 }, { wch: 25 }];
+    XLSX.utils.book_append_sheet(wb, wsReasons, "Diagnóstico de Perdas");
   
-    XLSX.writeFile(wb, `ATS_BI_Estrategico_${startDate}_${endDate}.xlsx`);
+    // Gera o arquivo
+    XLSX.writeFile(wb, `ATS_Relatorio_Estrategico_${startDate}_ate_${endDate}.xlsx`);
 };
 
 // Mantenha o exportJobsList se ainda for necessário
