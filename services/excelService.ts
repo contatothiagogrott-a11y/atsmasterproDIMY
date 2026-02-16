@@ -131,11 +131,13 @@ export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
   XLSX.writeFile(workbook, `ATS_Candidatos_${job.title.replace(/\s+/g, '_')}.xlsx`);
 };
 
-// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - CORRIGIDO ---
-export const exportStrategicReport = (metrics: any, startDate: string, endDate: string) => {
+// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - ATUALIZADO COM ABA DE VAGAS ABERTAS ---
+export const exportStrategicReport = (metrics: any, startDate: string, endDate: string, candidates?: Candidate[]) => {
     const wb = XLSX.utils.book_new();
   
-    // ABA 1: RESUMO EXECUTIVO (Métricas Principais formatadas como tabela)
+    // ==========================================
+    // ABA 1: RESUMO EXECUTIVO
+    // ==========================================
     const summaryData = [
       ["RELATÓRIO ESTRATÉGICO DE PERFORMANCE"],
       [`Período Analisado: ${formatDate(startDate)} a ${formatDate(endDate)}`],
@@ -161,12 +163,12 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
       ["", "Desistências (Pelo Candidato)", metrics.withdrawn?.total || 0]
     ];
     const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-
-    // Ajuste de largura das colunas (Resumo Executivo)
     wsSummary['!cols'] = [{ wch: 2 }, { wch: 50 }, { wch: 15 }];
     XLSX.utils.book_append_sheet(wb, wsSummary, "Resumo Executivo");
   
-    // ABA 2: POR SETOR (Métricas por área)
+    // ==========================================
+    // ABA 2: POR SETOR
+    // ==========================================
     const sectorHeaders = ["Setor / Departamento", "Abertas no Período", "Fechadas no Período", "Congeladas", "Canceladas"];
     const sectorRows = Object.entries(metrics.bySector || {}).map(([sector, data]: any) => [
         sector, 
@@ -187,7 +189,9 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
     wsSector['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }];
     XLSX.utils.book_append_sheet(wb, wsSector, "Análise por Setor");
   
-    // ABA 3: MOTIVOS DE PERDA (Detalhado)
+    // ==========================================
+    // ABA 3: MOTIVOS DE PERDA
+    // ==========================================
     const rejectionRows = Object.entries(metrics.rejected?.reasons || {}).map(([reason, count]: any) => [
         "Reprovação (Empresa)", reason, count
     ]);
@@ -207,6 +211,68 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
     const wsReasons = XLSX.utils.aoa_to_sheet(wsDataReasons);
     wsReasons['!cols'] = [{ wch: 25 }, { wch: 45 }, { wch: 25 }];
     XLSX.utils.book_append_sheet(wb, wsReasons, "Diagnóstico de Perdas");
+
+    // ==========================================
+    // ABA 4: DETALHAMENTO VAGAS ABERTAS (NOVA)
+    // ==========================================
+    if (metrics.balanceOpen && metrics.balanceOpen.list) {
+        const openJobsHeaders = [
+            "Título da Vaga", 
+            "Setor", 
+            "Unidade", 
+            "Data Abertura", 
+            "Dias em Aberto",
+            "Tipo", 
+            "Solicitante (Quem pediu)", 
+            "Substituído (Quem saiu)"
+        ];
+
+        const openJobsRows = metrics.balanceOpen.list.map((job: any) => {
+            // Tenta acessar os detalhes. Se o nome no banco for diferente, ajuste aqui.
+            // Ex: job.openingDetails?.solicitante ou job.openingDetails?.requester
+            const details = job.openingDetails || {}; 
+            
+            const tipo = details.reason || 'Aumento de Quadro';
+            
+            // Tenta pegar o solicitante de várias formas possíveis para evitar campo vazio
+            const solicitante = details.requester || details.manager || details.hiringManager || job.hiringManager || '-'; 
+            
+            // Só mostra quem saiu se for substituição
+            const substituido = (tipo === 'Substituição') ? (details.replacedEmployee || details.replacementTarget || details.substituido || '-') : 'N/A';
+
+            return [
+                job.title,
+                job.sector,
+                job.unit,
+                formatDate(job.openedAt),
+                getDaysDiff(job.openedAt, endDate), // Dias em aberto até hoje/fim do filtro
+                tipo,
+                solicitante,
+                substituido
+            ];
+        });
+
+        const wsDataOpen = [
+            ["DETALHAMENTO DE VAGAS EM ABERTO (SALDO FINAL)"],
+            [`Posição referente a: ${formatDate(endDate)}`],
+            [""],
+            openJobsHeaders,
+            ...openJobsRows
+        ];
+
+        const wsOpen = XLSX.utils.aoa_to_sheet(wsDataOpen);
+        wsOpen['!cols'] = [
+            { wch: 30 }, // Título
+            { wch: 20 }, // Setor
+            { wch: 15 }, // Unidade
+            { wch: 15 }, // Abertura
+            { wch: 12 }, // Dias
+            { wch: 20 }, // Tipo
+            { wch: 25 }, // Solicitante
+            { wch: 25 }  // Substituído
+        ];
+        XLSX.utils.book_append_sheet(wb, wsOpen, "Vagas em Aberto (Detalhe)");
+    }
   
     // Gera o arquivo
     XLSX.writeFile(wb, `ATS_Relatorio_Estrategico_${startDate}_ate_${endDate}.xlsx`);
