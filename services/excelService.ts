@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Job, Candidate, User } from '../types';
+import { Job, Candidate, User, OpeningDetails } from '../types';
 
 // Helper: Formata data ISO para PT-BR
 const formatDate = (dateStr?: string | null): string => {
@@ -131,7 +131,7 @@ export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
   XLSX.writeFile(workbook, `ATS_Candidatos_${job.title.replace(/\s+/g, '_')}.xlsx`);
 };
 
-// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - ATUALIZADO COM ABA DE VAGAS ABERTAS ---
+// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - ATUALIZADO COM VAGAS TRABALHADAS ---
 export const exportStrategicReport = (metrics: any, startDate: string, endDate: string, candidates?: Candidate[]) => {
     const wb = XLSX.utils.book_new();
   
@@ -213,65 +213,63 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
     XLSX.utils.book_append_sheet(wb, wsReasons, "Diagnóstico de Perdas");
 
     // ==========================================
-    // ABA 4: DETALHAMENTO VAGAS ABERTAS (NOVA)
+    // ABA 4: DETALHAMENTO VAGAS TRABALHADAS (VOLUME TOTAL)
     // ==========================================
-    if (metrics.balanceOpen && metrics.balanceOpen.list) {
-        const openJobsHeaders = [
+    if (metrics.allActive && metrics.allActive.list) {
+        const workedJobsHeaders = [
             "Título da Vaga", 
+            "Status Atual",
             "Setor", 
             "Unidade", 
             "Data Abertura", 
-            "Dias em Aberto",
-            "Tipo", 
-            "Solicitante (Quem pediu)", 
-            "Substituído (Quem saiu)"
+            "Data Fechamento",
+            "Tipo da Vaga", 
+            "Quem Pediu (Solicitante)", 
+            "Substituído (Se houver)"
         ];
 
-        const openJobsRows = metrics.balanceOpen.list.map((job: any) => {
-            // Tenta acessar os detalhes. Se o nome no banco for diferente, ajuste aqui.
-            // Ex: job.openingDetails?.solicitante ou job.openingDetails?.requester
-            const details = job.openingDetails || {}; 
+        const workedJobsRows = metrics.allActive.list.map((job: Job) => {
+            const details = job.openingDetails || {} as OpeningDetails;
             
             const tipo = details.reason || 'Aumento de Quadro';
-            
-            // Tenta pegar o solicitante de várias formas possíveis para evitar campo vazio
-            const solicitante = details.requester || details.manager || details.hiringManager || job.hiringManager || '-'; 
-            
-            // Só mostra quem saiu se for substituição
-            const substituido = (tipo === 'Substituição') ? (details.replacedEmployee || details.replacementTarget || details.substituido || '-') : 'N/A';
+            const solicitante = job.requesterName || 'N/I';
+            const substituido = (tipo === 'Substituição') ? (details.replacedEmployee || '-') : '-';
+            const fechamento = job.closedAt ? formatDate(job.closedAt) : 'Em aberto';
 
             return [
                 job.title,
+                job.status,
                 job.sector,
                 job.unit,
                 formatDate(job.openedAt),
-                getDaysDiff(job.openedAt, endDate), // Dias em aberto até hoje/fim do filtro
+                fechamento,
                 tipo,
                 solicitante,
                 substituido
             ];
         });
 
-        const wsDataOpen = [
-            ["DETALHAMENTO DE VAGAS EM ABERTO (SALDO FINAL)"],
-            [`Posição referente a: ${formatDate(endDate)}`],
+        const wsDataWorked = [
+            ["DETALHAMENTO DE TODAS AS VAGAS TRABALHADAS NO PERÍODO"],
+            [`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`],
             [""],
-            openJobsHeaders,
-            ...openJobsRows
+            workedJobsHeaders,
+            ...workedJobsRows
         ];
 
-        const wsOpen = XLSX.utils.aoa_to_sheet(wsDataOpen);
-        wsOpen['!cols'] = [
+        const wsWorked = XLSX.utils.aoa_to_sheet(wsDataWorked);
+        wsWorked['!cols'] = [
             { wch: 30 }, // Título
+            { wch: 15 }, // Status
             { wch: 20 }, // Setor
             { wch: 15 }, // Unidade
             { wch: 15 }, // Abertura
-            { wch: 12 }, // Dias
+            { wch: 15 }, // Fechamento
             { wch: 20 }, // Tipo
-            { wch: 25 }, // Solicitante
-            { wch: 25 }  // Substituído
+            { wch: 30 }, // Solicitante
+            { wch: 30 }  // Substituído
         ];
-        XLSX.utils.book_append_sheet(wb, wsOpen, "Vagas em Aberto (Detalhe)");
+        XLSX.utils.book_append_sheet(wb, wsWorked, "Vagas Trabalhadas (Detalhe)");
     }
   
     // Gera o arquivo
