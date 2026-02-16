@@ -131,7 +131,7 @@ export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
   XLSX.writeFile(workbook, `ATS_Candidatos_${job.title.replace(/\s+/g, '_')}.xlsx`);
 };
 
-// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - ATUALIZADO COM VAGAS TRABALHADAS ---
+// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - ATUALIZADO COM CORREÇÃO DE STATUS ---
 export const exportStrategicReport = (metrics: any, startDate: string, endDate: string, candidates?: Candidate[]) => {
     const wb = XLSX.utils.book_new();
   
@@ -213,12 +213,12 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
     XLSX.utils.book_append_sheet(wb, wsReasons, "Diagnóstico de Perdas");
 
     // ==========================================
-    // ABA 4: DETALHAMENTO VAGAS TRABALHADAS (VOLUME TOTAL)
+    // ABA 4: DETALHAMENTO VAGAS TRABALHADAS (VOLUME TOTAL) - COM LÓGICA DE STATUS NO PERÍODO
     // ==========================================
     if (metrics.allActive && metrics.allActive.list) {
         const workedJobsHeaders = [
             "Título da Vaga", 
-            "Status Atual",
+            "Status no Período", // Nome ajustado para refletir a lógica
             "Setor", 
             "Unidade", 
             "Data Abertura", 
@@ -228,21 +228,43 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
             "Substituído (Se houver)"
         ];
 
+        // Definindo a data limite do filtro para comparação
+        const filterEndDate = new Date(endDate);
+        filterEndDate.setHours(23, 59, 59, 999);
+
         const workedJobsRows = metrics.allActive.list.map((job: Job) => {
             const details = job.openingDetails || {} as OpeningDetails;
             
             const tipo = details.reason || 'Aumento de Quadro';
             const solicitante = job.requesterName || 'N/I';
             const substituido = (tipo === 'Substituição') ? (details.replacedEmployee || '-') : '-';
-            const fechamento = job.closedAt ? formatDate(job.closedAt) : 'Em aberto';
+            
+            // LÓGICA DE "STATUS NO PERÍODO":
+            // Se a vaga foi fechada DEPOIS do filtro, ela conta como "Aberta" neste relatório.
+            let statusNoPeriodo = job.status;
+            let dataFechamentoVisual = '-';
+
+            if (job.closedAt) {
+                const closedDate = new Date(job.closedAt);
+                // Se fechou DEPOIS do período analisado, para este relatório ela estava Aberta
+                if (closedDate > filterEndDate) {
+                    statusNoPeriodo = 'Aberta';
+                    dataFechamentoVisual = 'Em aberto (neste período)';
+                } else {
+                    // Se fechou DENTRO ou ANTES, mostra Fechada/Cancelada
+                    dataFechamentoVisual = formatDate(job.closedAt);
+                }
+            } else {
+                dataFechamentoVisual = 'Em aberto';
+            }
 
             return [
                 job.title,
-                job.status,
+                statusNoPeriodo, // Usa o status calculado, não o job.status bruto
                 job.sector,
                 job.unit,
                 formatDate(job.openedAt),
-                fechamento,
+                dataFechamentoVisual,
                 tipo,
                 solicitante,
                 substituido
@@ -264,7 +286,7 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
             { wch: 20 }, // Setor
             { wch: 15 }, // Unidade
             { wch: 15 }, // Abertura
-            { wch: 15 }, // Fechamento
+            { wch: 20 }, // Fechamento
             { wch: 20 }, // Tipo
             { wch: 30 }, // Solicitante
             { wch: 30 }  // Substituído
