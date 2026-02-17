@@ -13,31 +13,18 @@ const GENERAL_POOL_ID = 'general';
 
 // --- LISTAS DE DIAGNÓSTICO ROBUSTAS ---
 const WITHDRAWAL_REASONS = [
-  "Aceitou outra proposta (Concorrente)",
-  "Recebeu contraproposta da empresa atual",
-  "Salário oferecido abaixo da pretensão",
-  "Benefícios pouco atrativos",
-  "Distância / Modelo de Trabalho (Presencial/Híbrido)",
-  "Desinteresse no escopo do projeto/vaga",
-  "Processo seletivo muito longo",
-  "Problemas pessoais/familiares",
-  "Sem retorno do candidato (Ghosting)"
+  "Aceitou outra proposta", 
+  "Salário abaixo da pretensão", 
+  "Distância / Localização", 
+  "Desinteresse na vaga",
+  "Problemas pessoais"
 ];
 
 const GENERAL_REJECTION_REASONS = [
-  // Técnico / Exp
-  "Perfil Técnico Insuficiente (Hard Skills)",
-  "Experiência de Mercado Insuficiente",
-  "Senioridade abaixo do esperado",
-  // Comportamental / Cultura
-  "Fit Cultural Divergente (Valores)",
-  "Comunicação/Postura Inadequada",
-  "Perfil Comportamental (Soft Skills) Incompatível",
-  // Condições
-  "Pretensão Salarial acima do Budget",
-  "Disponibilidade/Horário Incompatível",
-  "Localização/Logística Inviável",
-  "Conflito de Interesses"
+  "Perfil Técnico Insuficiente",
+  "Sem Fit Cultural",
+  "Reprovado no Teste Técnico",
+  "Salário acima do budget"
 ];
 
 const toInputDate = (isoString?: string) => isoString ? isoString.split('T')[0] : '';
