@@ -195,6 +195,9 @@ export interface AbsenceRecord {
 // ==========================================
 export type EmployeeStatus = 'Ativo' | 'Inativo' | 'Afastado';
 
+// Novo tipo para o regime de contratação
+export type ContractType = 'CLT' | 'PJ'; 
+
 export type EmployeeHistoryType = 'Promoção' | 'Mudança de Setor' | 'Afastamento' | 'Desligamento' | 'Outros';
 
 export interface EmployeeHistoryRecord {
@@ -214,6 +217,7 @@ export interface Employee {
   birthDate: string; // ISO Date
   admissionDate: string; // ISO Date
   status: EmployeeStatus;
+  contractType: ContractType; // <--- ADICIONADO AQUI
   
   // Campos Condicionais
   terminationReason?: string; // Se Inativo
