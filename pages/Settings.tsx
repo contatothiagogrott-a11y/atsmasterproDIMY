@@ -39,6 +39,7 @@ export const SettingsPage: React.FC = () => {
       case 'talent': return 'Talento';
       case 'setting': return 'Configuração';
       case 'user': return 'Usuário';
+      case 'absence': return 'Absenteísmo'; // <--- Adicionado para suportar lixeira do novo módulo
       default: return type;
     }
   };
@@ -63,7 +64,14 @@ export const SettingsPage: React.FC = () => {
   const handlePasswordChange = async (e: React.FormEvent) => { e.preventDefault(); if (passwordData.new !== passwordData.confirm) { setPasswordMsg({ type: 'error', text: 'A confirmação de senha não coincide.' }); return; } const result = await changePassword(passwordData.current, passwordData.new); if (result.success) { setPasswordMsg({ type: 'success', text: result.message }); setPasswordData({ current: '', new: '', confirm: '' }); } else { setPasswordMsg({ type: 'error', text: result.message }); } };
   const handleAdminReset = async (e: React.FormEvent) => { e.preventDefault(); if (!userToReset) return; if (resetData.new !== resetData.confirm) { setResetMsg({ type: 'error', text: 'As senhas não coincidem.' }); return; } const result = await adminResetPassword(userToReset.id, resetData.new); if (result.success) { setResetMsg({ type: 'success', text: result.message }); setTimeout(() => { setIsResetModalOpen(false); setUserToReset(null); setResetData({ new: '', confirm: '' }); setResetMsg(null); }, 2000); } else { setResetMsg({ type: 'error', text: result.message }); } };
   const openResetModal = (u: User) => { setUserToReset(u); setResetData({ new: '', confirm: '' }); setResetMsg(null); setIsResetModalOpen(true); };
-  const handleCreateUser = async (e: React.FormEvent) => { e.preventDefault(); if(!isMaster) return; await addUser({ id: crypto.randomUUID(), name: newUser.name, username: newUser.username, password: newUser.password, role: newUser.role, createdBy: currentUser?.id }); setNewUser({ name: '', username: '', password: '', role: 'RECRUITER' }); alert('Usuário criado com sucesso!'); };
+  
+  const handleCreateUser = async (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    if(!isMaster) return; 
+    await addUser({ id: crypto.randomUUID(), name: newUser.name, username: newUser.username, password: newUser.password, role: newUser.role, createdBy: currentUser?.id }); 
+    setNewUser({ name: '', username: '', password: '', role: 'RECRUITER' }); 
+    alert('Usuário criado com sucesso!'); 
+  };
 
   // --- LÓGICA DE BACKUP & RESTORE ATUALIZADA ---
   const handleExportBackup = () => {
@@ -187,13 +195,33 @@ export const SettingsPage: React.FC = () => {
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><UserPlus size={18}/> Novo Usuário</h3>
               <form onSubmit={handleCreateUser} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4"><input required placeholder="Nome" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /><input required placeholder="Login" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} /></div>
-                <div className="grid grid-cols-2 gap-4"><input required type="password" placeholder="Senha" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} /><select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}><option value="RECRUITER">Recrutador</option><option value="MASTER">Master Admin</option></select></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <input required type="password" placeholder="Senha" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
+                  
+                  {/* --- ADICIONADO: Cargo Auxiliar de RH no select --- */}
+                  <select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}>
+                    <option value="RECRUITER">Recrutador</option>
+                    <option value="MASTER">Master Admin</option>
+                    <option value="AUXILIAR_RH">Auxiliar de RH</option>
+                  </select>
+
+                </div>
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-lg">Criar Usuário</button>
               </form>
             </div>
             <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Users size={18}/> Usuários</h3>
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">{users.map(u => (<div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600"><div><div className="font-bold text-slate-200">{u.name}</div><div className="text-xs text-slate-400">@{u.username} • {u.role}</div></div><button onClick={() => openResetModal(u)} className="text-xs bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-white">Resetar</button></div>))}</div>
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                {users.map(u => (
+                  <div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600">
+                    <div>
+                      <div className="font-bold text-slate-200">{u.name}</div>
+                      <div className="text-xs text-slate-400">@{u.username} • {u.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : u.role}</div>
+                    </div>
+                    <button onClick={() => openResetModal(u)} className="text-xs bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-white">Resetar</button>
+                  </div>
+                ))}
+              </div>
             </div>
             
             {/* BACKUP - AGORA SALVA TUDO */}
