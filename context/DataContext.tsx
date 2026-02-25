@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom'; 
-import { User, Job, Candidate, TalentProfile, SettingItem, AbsenceRecord } from '../types';
+import { User, Job, Candidate, TalentProfile, SettingItem, AbsenceRecord, Employee } from '../types'; // <--- Employee adicionado
 
 interface DataContextType {
   user: User | null;
@@ -36,11 +36,16 @@ interface DataContextType {
   removeTalent: (id: string) => Promise<void>;
   updateTalent: (t: TalentProfile) => Promise<void>;
 
-  // --- NOVA SESSÃO: ABSENTEÍSMO ---
   absences: AbsenceRecord[];
   addAbsence: (a: AbsenceRecord) => Promise<void>;
   updateAbsence: (a: AbsenceRecord) => Promise<void>;
   removeAbsence: (id: string) => Promise<void>;
+
+  // --- NOVA SESSÃO: COLABORADORES ---
+  employees: Employee[];
+  addEmployee: (e: Employee) => Promise<void>;
+  updateEmployee: (e: Employee) => Promise<void>;
+  removeEmployee: (id: string) => Promise<void>;
 
   trash: any[];
   restoreItem: (id: string) => Promise<void>;
@@ -59,7 +64,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [jobs, setJobs] = useState<Job[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [talents, setTalents] = useState<TalentProfile[]>([]);
-  const [absences, setAbsences] = useState<AbsenceRecord[]>([]); // Estado das faltas
+  const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]); // Estado dos colaboradores
   const [trash, setTrash] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
@@ -85,7 +91,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.jobs) setJobs(data.jobs);
       if (data.talents) setTalents(data.talents);
       if (data.candidates) setCandidates(data.candidates);
-      if (data.absences) setAbsences(data.absences); // Carrega faltas da API
+      if (data.absences) setAbsences(data.absences);
+      if (data.employees) setEmployees(data.employees); // Carrega colaboradores da API
       if (data.trash) setTrash(data.trash);
       
     } catch (error) {
@@ -184,7 +191,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await fetch('/api/main?action=delete-entity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Envia quem está deletando (user.id)
         body: JSON.stringify({ id, userId: user?.id }),
       });
       await refreshData();
@@ -257,11 +263,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
-  // --- CRUD CANDIDATOS CORRIGIDO ---
   const addCandidate = async (c: Candidate) => {
     const newCandidate = { ...c };
     if (!newCandidate.createdAt) newCandidate.createdAt = new Date().toISOString();
-
     setCandidates(prev => [...prev, newCandidate]);
     await saveEntity('candidate', newCandidate);
   };
@@ -289,7 +293,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
-  // --- CRUD ABSENTEÍSMO ---
   const addAbsence = async (a: AbsenceRecord) => {
     setAbsences(prev => [...prev, a]);
     await saveEntity('absence', a);
@@ -303,6 +306,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
+  // --- CRUD COLABORADORES ---
+  const addEmployee = async (e: Employee) => {
+    setEmployees(prev => [...prev, e]);
+    await saveEntity('employee', e);
+  };
+  const updateEmployee = async (e: Employee) => {
+    setEmployees(prev => prev.map(ex => ex.id === e.id ? e : ex));
+    await saveEntity('employee', e);
+  };
+  const removeEmployee = async (id: string) => {
+    setEmployees(prev => prev.filter(e => e.id !== id));
+    await deleteEntity(id);
+  };
+
   return (
     <DataContext.Provider value={{
       user, login, logout, 
@@ -312,7 +329,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       jobs, addJob, updateJob, removeJob,
       candidates, addCandidate, updateCandidate, removeCandidate,
       talents, addTalent, removeTalent, updateTalent,
-      absences, addAbsence, updateAbsence, removeAbsence, // <--- EXPOSTO AQUI
+      absences, addAbsence, updateAbsence, removeAbsence,
+      employees, addEmployee, updateEmployee, removeEmployee, // <--- EXPOSTO AQUI
       trash, restoreItem, permanentlyDeleteItem,
       refreshData, loading
     }}>

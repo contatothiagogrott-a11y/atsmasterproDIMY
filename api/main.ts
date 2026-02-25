@@ -56,7 +56,7 @@ export default async function handler(request: any, response: any) {
   const sql = neon(process.env.DATABASE_URL);
 
   try {
-    // --- 1. RESTAURAR BACKUP (CORRIGIDO) ---
+    // --- 1. RESTAURAR BACKUP ---
     if (action === 'restore-backup') {
       const { data } = request.body;
       if (!data) return response.status(400).json({ error: 'Dados inválidos' });
@@ -64,28 +64,18 @@ export default async function handler(request: any, response: any) {
       // Restaurar Usuários
       if (data.users && Array.isArray(data.users)) {
         for (const user of data.users) {
-          // CORREÇÃO: Verifica se a senha existe. 
-          // Se não existir (backup sem senha), define 'mudar.123'
-          let passwordToSave = user.password;
-          if (!passwordToSave) {
-             passwordToSave = 'mudar.123';
-          }
-
+          let passwordToSave = user.password || 'mudar.123';
           let finalPassword = passwordToSave;
-          // Se não for hash (começar com $2a$), criptografa
           if (!passwordToSave.startsWith('$2a$')) {
              finalPassword = await bcrypt.hash(passwordToSave, 10);
           }
-
           const finalRole = user.role ? user.role.toUpperCase() : 'USER';
 
           await sql`
             INSERT INTO users (id, username, password, name, role, created_by)
             VALUES (${user.id}, ${user.username}, ${finalPassword}, ${user.name}, ${finalRole}, ${user.createdBy || null})
             ON CONFLICT (username) DO UPDATE SET
-            password = EXCLUDED.password, 
-            role = EXCLUDED.role,
-            name = EXCLUDED.name
+            password = EXCLUDED.password, role = EXCLUDED.role, name = EXCLUDED.name
           `;
         }
       }
@@ -105,11 +95,11 @@ export default async function handler(request: any, response: any) {
       if (data.talents) for (const item of data.talents) await insertEntity('talent', item);
       if (data.candidates) for (const item of data.candidates) await insertEntity('candidate', item);
       if (data.absences) for (const item of data.absences) await insertEntity('absence', item);
+      if (data.employees) for (const item of data.employees) await insertEntity('employee', item); // <--- ADICIONADO
       
-      // Restaurar Lixeira (Novo)
+      // Restaurar Lixeira
       if (data.trash) {
          for (const item of data.trash) {
-            // Insere como deletado (deleted_at = NOW())
             await sql`
               INSERT INTO entities (id, type, data, deleted_at)
               VALUES (${item.id}, ${item.originalType}, ${item}, NOW())
@@ -122,11 +112,10 @@ export default async function handler(request: any, response: any) {
       return response.status(200).json({ success: true });
     }
 
-    // --- 2. GET DATA (COM LIXEIRA) ---
+    // --- 2. GET DATA ---
     if (action === 'get-data') {
       try {
         const rawEntities = await sql`SELECT * FROM entities`;
-        // Nota: Não retornamos password no SELECT por segurança
         const users = await sql`SELECT id, username, name, role, created_by FROM users WHERE deleted_at IS NULL`;
 
         const active = (type: string) => rawEntities
@@ -138,6 +127,7 @@ export default async function handler(request: any, response: any) {
         const talents = active('talent');
         const candidates = active('candidate');
         const absences = active('absence');
+        const employees = active('employee'); // <--- ADICIONADO
 
         const trash = rawEntities
           .filter((e: any) => e.deleted_at !== null)
@@ -149,13 +139,13 @@ export default async function handler(request: any, response: any) {
           }));
 
         return response.status(200).json({ 
-          users, settings, jobs, talents, candidates, absences, trash 
+          users, settings, jobs, talents, candidates, absences, employees, trash // <--- ADICIONADO employees
         });
 
       } catch (err: any) {
         if (err.code === '42P01' || err.message?.includes('does not exist')) {
            await initTables(sql);
-           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], absences: [], trash: [] });
+           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], absences: [], employees: [], trash: [] });
         }
         throw err;
       }

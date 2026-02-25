@@ -189,3 +189,39 @@ export interface AbsenceRecord {
   createdAt?: string; 
   deletedAt?: string; 
 }
+
+// ==========================================
+// NOVAS INTERFACES: COLABORADORES
+// ==========================================
+export type EmployeeStatus = 'Ativo' | 'Inativo' | 'Afastado';
+
+export type EmployeeHistoryType = 'Promoção' | 'Mudança de Setor' | 'Afastamento' | 'Desligamento' | 'Outros';
+
+export interface EmployeeHistoryRecord {
+  id: string;
+  date: string; // ISO Date
+  type: EmployeeHistoryType;
+  description: string;
+  createdBy?: string; // Quem registrou o histórico
+}
+
+export interface Employee {
+  id: string;
+  name: string;
+  sector: string;
+  role: string;
+  phone: string;
+  birthDate: string; // ISO Date
+  admissionDate: string; // ISO Date
+  status: EmployeeStatus;
+  
+  // Campos Condicionais
+  terminationReason?: string; // Se Inativo
+  leaveReason?: string; // Se Afastado
+  leaveExpectedReturn?: string; // ISO Date - Se Afastado
+  
+  history: EmployeeHistoryRecord[]; // Histórico interno
+  
+  createdAt?: string;
+  deletedAt?: string;
+}
