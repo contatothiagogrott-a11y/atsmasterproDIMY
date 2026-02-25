@@ -2,10 +2,11 @@ import React, { useState, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users } from 'lucide-react'; // <--- Users importado para o novo card
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users } from 'lucide-react';
 
 export const Absenteismo: React.FC = () => {
-  const { user, absences, addAbsence, updateAbsence, removeAbsence } = useData();
+  // 1. Puxamos 'employees' do useData para cruzar as informações
+  const { user, absences = [], addAbsence, updateAbsence, removeAbsence, employees = [] } = useData();
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
@@ -14,9 +15,6 @@ export const Absenteismo: React.FC = () => {
     reason: ''
   });
 
-  // ==========================================
-  // ESTADO DOS FILTROS DE DATA (Padrão: Mês Atual)
-  // ==========================================
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
@@ -27,7 +25,6 @@ export const Absenteismo: React.FC = () => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
   });
 
-  // Bloqueio de Segurança
   if (user?.role !== 'MASTER' && user?.role !== 'AUXILIAR_RH') {
     return <Navigate to="/" replace />;
   }
@@ -36,20 +33,23 @@ export const Absenteismo: React.FC = () => {
   // MEMÓRIA PARA O AUTOCOMPLETE (DATALIST)
   // ==========================================
   const uniqueNames = useMemo(() => {
-    return Array.from(new Set(absences.map(a => a.employeeName))).filter(Boolean);
-  }, [absences]);
+    // 2. Criamos um set unindo os nomes dos colaboradores registrados + nomes já usados em faltas
+    const namesFromEmployees = employees.map(emp => emp.name);
+    const namesFromAbsences = absences.map(a => a.employeeName);
+    
+    // Remove duplicatas e valores nulos/vazios
+    return Array.from(new Set([...namesFromEmployees, ...namesFromAbsences]))
+      .filter(Boolean)
+      .sort();
+  }, [employees, absences]);
 
   const uniqueReasons = useMemo(() => {
-    return Array.from(new Set(absences.map(a => a.reason))).filter(Boolean);
+    return Array.from(new Set(absences.map(a => a.reason))).filter(Boolean).sort();
   }, [absences]);
 
-  // ==========================================
-  // LÓGICA DO DASHBOARD (Com Filtro de Data)
-  // ==========================================
   const filteredAbsences = useMemo(() => {
     return absences.filter(record => {
       if (!record.absenceDate) return false;
-      // Comparação direta de strings no formato YYYY-MM-DD
       return record.absenceDate >= startDate && record.absenceDate <= endDate;
     });
   }, [absences, startDate, endDate]);
@@ -58,7 +58,7 @@ export const Absenteismo: React.FC = () => {
     let atestados = 0;
     let declaracoes = 0;
     let injustificadas = 0;
-    let acompanhamentos = 0; // <--- Novo contador
+    let acompanhamentos = 0;
     const reasonCounts: Record<string, number> = {};
     const nameCounts: Record<string, number> = {};
 
@@ -66,13 +66,11 @@ export const Absenteismo: React.FC = () => {
       if (record.documentType === 'Atestado') atestados++;
       if (record.documentType === 'Declaração') declaracoes++;
       if (record.documentType === 'Falta Injustificada') injustificadas++;
-      if (record.documentType === 'Acompanhante de Dependente') acompanhamentos++; // <--- Incrementa
+      if (record.documentType === 'Acompanhante de Dependente') acompanhamentos++;
 
-      // Contagem de Motivos
       if (record.reason) {
         reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + 1;
       }
-      // Contagem de Nomes
       if (record.employeeName) {
         nameCounts[record.employeeName] = (nameCounts[record.employeeName] || 0) + 1;
       }
@@ -88,9 +86,6 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences]);
 
-  // ==========================================
-  // HANDLERS DO FORMULÁRIO
-  // ==========================================
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -108,7 +103,6 @@ export const Absenteismo: React.FC = () => {
       };
       await addAbsence(newAbsence);
     }
-    
     setFormData({ documentType: 'Atestado', reason: '' });
     setIsEditing(false);
   };
@@ -116,7 +110,7 @@ export const Absenteismo: React.FC = () => {
   const handleEdit = (record: AbsenceRecord) => {
     setFormData(record);
     setIsEditing(true);
-    setActiveTab('cadastro'); // Muda pra aba de edição
+    setActiveTab('cadastro');
   };
 
   const handleDelete = async (id: string) => {
@@ -143,7 +137,6 @@ export const Absenteismo: React.FC = () => {
         </div>
       </div>
 
-      {/* TABS DE NAVEGAÇÃO */}
       <div className="flex space-x-2 border-b border-slate-200">
         <button 
           onClick={() => setActiveTab('dashboard')}
@@ -165,11 +158,8 @@ export const Absenteismo: React.FC = () => {
         </button>
       </div>
 
-      {/* CONTEÚDO DA ABA: DASHBOARD */}
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          
-          {/* FILTRO DE DATAS */}
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
             <span className="font-semibold text-slate-700 text-sm">Período de Análise:</span>
             <div className="flex items-center gap-2">
@@ -192,7 +182,6 @@ export const Absenteismo: React.FC = () => {
             </div>
           </div>
 
-          {/* Cards de Resumo (Agora com 4 colunas) */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex items-center justify-between">
               <div>
@@ -218,7 +207,6 @@ export const Absenteismo: React.FC = () => {
               <div className="p-3 bg-amber-50 text-amber-600 rounded-full"><FileText size={24} /></div>
             </div>
 
-            {/* Novo Card: Acompanhamentos */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-100 flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-indigo-600">Acompanhamentos</p>
@@ -228,9 +216,7 @@ export const Absenteismo: React.FC = () => {
             </div>
           </div>
 
-          {/* Tabelas de Rank */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Top Motivos */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Principais Motivos de Afastamento</h3>
               {stats.topReasons.length === 0 ? (
@@ -247,7 +233,6 @@ export const Absenteismo: React.FC = () => {
               )}
             </div>
 
-            {/* Top Colaboradores */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Colaboradores com mais Ausências</h3>
               {stats.topNames.length === 0 ? (
@@ -267,11 +252,9 @@ export const Absenteismo: React.FC = () => {
         </div>
       )}
 
-      {/* CONTEÚDO DA ABA: CADASTRO */}
       {activeTab === 'cadastro' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-2">
           
-          {/* DATALISTS OCULTOS (Memória do navegador para autocomplete) */}
           <datalist id="employee-names">
             {uniqueNames.map((name, i) => <option key={i} value={name} />)}
           </datalist>
@@ -279,7 +262,6 @@ export const Absenteismo: React.FC = () => {
             {uniqueReasons.map((reason, i) => <option key={i} value={reason} />)}
           </datalist>
 
-          {/* Formulário */}
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 lg:col-span-1 h-fit">
             <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
               <Plus size={20} className="text-blue-600" />
@@ -292,12 +274,12 @@ export const Absenteismo: React.FC = () => {
                 <input 
                   type="text" 
                   name="employeeName" 
-                  list="employee-names" // Conecta com o Datalist
+                  list="employee-names"
                   value={formData.employeeName || ''}
                   onChange={handleInputChange} 
                   required 
                   className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="Comece a digitar..."
+                  placeholder="Selecione ou digite o nome..."
                 />
               </label>
 
@@ -306,7 +288,7 @@ export const Absenteismo: React.FC = () => {
                 <input 
                   type="text" 
                   name="reason" 
-                  list="absence-reasons" // Conecta com o Datalist
+                  list="absence-reasons"
                   value={formData.reason || ''}
                   onChange={handleInputChange} 
                   required 
@@ -357,7 +339,6 @@ export const Absenteismo: React.FC = () => {
                 </select>
               </label>
 
-              {/* Lógica Condicional do Acompanhante */}
               {formData.documentType === 'Acompanhante de Dependente' && (
                 <div className="flex flex-col gap-3 bg-blue-50/50 p-4 border border-blue-100 rounded-lg mt-2">
                   <label className="flex flex-col text-sm font-medium text-slate-700">
@@ -384,7 +365,6 @@ export const Absenteismo: React.FC = () => {
             </form>
           </div>
 
-          {/* Tabela de Registros */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 overflow-hidden flex flex-col h-full">
             <div className="p-4 border-b border-slate-200 bg-slate-50/50">
               <h2 className="text-lg font-bold text-slate-800">Histórico Completo</h2>
@@ -421,7 +401,7 @@ export const Absenteismo: React.FC = () => {
                             record.documentType === 'Atestado' ? 'bg-blue-100 text-blue-700' : 
                             record.documentType === 'Declaração' ? 'bg-amber-100 text-amber-700' : 
                             record.documentType === 'Falta Injustificada' ? 'bg-red-100 text-red-700' :
-                            'bg-indigo-100 text-indigo-700' // <--- Nova cor para acompanhante
+                            'bg-indigo-100 text-indigo-700'
                           }`}>
                             {record.documentType}
                           </span>
