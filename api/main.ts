@@ -104,6 +104,7 @@ export default async function handler(request: any, response: any) {
       if (data.jobs) for (const item of data.jobs) await insertEntity('job', item);
       if (data.talents) for (const item of data.talents) await insertEntity('talent', item);
       if (data.candidates) for (const item of data.candidates) await insertEntity('candidate', item);
+      if (data.absences) for (const item of data.absences) await insertEntity('absence', item);
       
       // Restaurar Lixeira (Novo)
       if (data.trash) {
@@ -136,6 +137,7 @@ export default async function handler(request: any, response: any) {
         const jobs = active('job');
         const talents = active('talent');
         const candidates = active('candidate');
+        const absences = active('absence');
 
         const trash = rawEntities
           .filter((e: any) => e.deleted_at !== null)
@@ -147,13 +149,13 @@ export default async function handler(request: any, response: any) {
           }));
 
         return response.status(200).json({ 
-          users, settings, jobs, talents, candidates, trash 
+          users, settings, jobs, talents, candidates, absences, trash 
         });
 
       } catch (err: any) {
         if (err.code === '42P01' || err.message?.includes('does not exist')) {
            await initTables(sql);
-           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], trash: [] });
+           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], absences: [], trash: [] });
         }
         throw err;
       }
