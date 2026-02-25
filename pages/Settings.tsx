@@ -53,10 +53,39 @@ export const SettingsPage: React.FC = () => {
     XLSX.writeFile(workbook, `MODELO_IMPORT_COLABORADORES.xlsx`);
   };
 
-  // --- LÓGICA DE EXCEL: IMPORTAR COM VALIDAÇÃO DE PENDÊNCIA ---
+  // --- LÓGICA DE EXCEL: IMPORTAR COM TRADUTOR DE DATAS ---
   const handleImportEmployeesExcel = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Função interna para converter datas do Excel para YYYY-MM-DD
+    const parseExcelDate = (dateVal: any) => {
+      if (!dateVal) return '';
+      const str = String(dateVal).trim();
+      
+      // Converte traços em barras e separa [DD, MM, YYYY] ou [YYYY, MM, DD]
+      const parts = str.replace(/-/g, '/').split('/');
+      
+      if (parts.length === 3) {
+        let [p1, p2, p3] = parts;
+        
+        // Se a última parte for o ano (Ex: 25/02/2024)
+        if (p3.length === 4 || p3.length === 2) {
+          let year = p3.length === 2 ? `20${p3}` : p3;
+          let month = p2.padStart(2, '0');
+          let day = p1.padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
+        
+        // Se a primeira parte for o ano (Ex: 2024/02/25)
+        if (p1.length === 4) {
+          let month = p2.padStart(2, '0');
+          let day = p3.padStart(2, '0');
+          return `${p1}-${month}-${day}`;
+        }
+      }
+      return str; // Se falhar na quebra, devolve como veio
+    };
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -65,9 +94,10 @@ export const SettingsPage: React.FC = () => {
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+        
+        // raw: false força a leitura do Excel como texto visual, evitando números seriais de data
+        const json: any[] = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' });
 
-        // Extrai a lista de setores ativos no sistema (em minúsculas para comparação exata)
         const activeSectors = settings
           .filter(s => s.type === 'SECTOR')
           .map(s => s.name.trim().toLowerCase());
@@ -79,7 +109,6 @@ export const SettingsPage: React.FC = () => {
             if (!row.Nome) continue;
 
             const sectorFromExcel = (row.Setor || 'Geral').trim();
-            // Verifica se o setor da planilha existe no sistema
             const isPending = !activeSectors.includes(sectorFromExcel.toLowerCase());
             
             if (isPending) pendingCount++;
@@ -92,9 +121,12 @@ export const SettingsPage: React.FC = () => {
               phone: String(row.Telefone || ''),
               contractType: (row.Contrato as ContractType) || 'CLT',
               status: (row.Status as EmployeeStatus) || 'Ativo',
-              birthDate: row.Nascimento || '',
-              admissionDate: row.Admissao || new Date().toISOString().split('T')[0],
-              hasPendingInfo: isPending, // FLAG ATIVADA
+              
+              // Uso do tradutor de datas
+              birthDate: parseExcelDate(row.Nascimento),
+              admissionDate: parseExcelDate(row.Admissao) || new Date().toISOString().split('T')[0],
+              
+              hasPendingInfo: isPending, 
               history: isPending ? [{
                 id: crypto.randomUUID(),
                 date: new Date().toISOString().split('T')[0],

@@ -117,10 +117,24 @@ export const Colaboradores: React.FC = () => {
     setNewEvent({ date: new Date().toISOString().split('T')[0], type: 'Outros', description: '' }); // Limpa o state
   };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return '-';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
+  // --- TRADUTOR DE DATAS À PROVA DE FALHAS (CORREÇÃO DA TELA BRANCA) ---
+  const formatDate = (dateVal: any) => {
+    if (!dateVal) return '-';
+    
+    // Converte qualquer entrada em string para evitar erro `.split is not a function`
+    const dateStr = String(dateVal);
+    
+    // Se for uma data normal (YYYY-MM-DD), tenta quebrar e formatar
+    if (dateStr.includes('-')) {
+      const parts = dateStr.split('T')[0].split('-');
+      if (parts.length === 3) {
+        const [year, month, day] = parts;
+        return `${day}/${month}/${year}`;
+      }
+    }
+    
+    // Se for um número estranho do Excel ou outro formato, apenas mostra sem quebrar
+    return dateStr;
   };
 
   const getContractBadgeColor = (type: string) => {
