@@ -18,7 +18,7 @@ export const Dashboard: React.FC = () => {
   const [showConfidential, setShowConfidential] = useState(false);
   const [drillDownType, setDrillDownType] = useState<DrillDownType>(null);
 
-  // --- 1. LÓGICA DE GESTÃO DE PESSOAS (NOVO) ---
+  // --- 1. LÓGICA DE GESTÃO DE PESSOAS (ATUALIZADA: CLT, PJ, Estagiário, JA) ---
   const peopleStats = useMemo(() => {
     const today = new Date();
     
@@ -28,15 +28,22 @@ export const Dashboard: React.FC = () => {
       return isSameMonth(parseISO(a.absenceDate), today);
     }).length;
 
-    // Colaboradores Ativos (Separados por CLT/PJ)
+    // Colaboradores Ativos (Segmentados)
     const activeList = (employees || []).filter(e => e.status === 'Ativo');
     const ativosCLT = activeList.filter(e => e.contractType === 'CLT').length;
     const ativosPJ = activeList.filter(e => e.contractType === 'PJ').length;
+    const ativosEstagio = activeList.filter(e => e.contractType === 'Estagiário').length;
+    const ativosJA = activeList.filter(e => e.contractType === 'JA').length;
 
     // Colaboradores Afastados
     const afastados = (employees || []).filter(e => e.status === 'Afastado').length;
 
-    return { monthlyAbsences, totalAtivos: activeList.length, ativosCLT, ativosPJ, afastados };
+    return { 
+      monthlyAbsences, 
+      totalAtivos: activeList.length, 
+      ativosCLT, ativosPJ, ativosEstagio, ativosJA, 
+      afastados 
+    };
   }, [absences, employees]);
 
   // --- 2. FILTRAGEM BASE DE ACESSO ---
@@ -49,7 +56,6 @@ export const Dashboard: React.FC = () => {
   const { fJobs, fCandidates } = useMemo(() => {
     let filteredJobs = jobs.filter(j => !j.isHidden);
     
-    // Confidencialidade
     filteredJobs = filteredJobs.filter(j => {
         if (!j.isConfidential) return true;
         if (!user) return false;
@@ -57,11 +63,9 @@ export const Dashboard: React.FC = () => {
     });
     if (!showConfidential) filteredJobs = filteredJobs.filter(j => !j.isConfidential);
 
-    // Setor e Unidade
     if (sectorFilter) filteredJobs = filteredJobs.filter(j => j.sector === sectorFilter);
     if (unitFilter) filteredJobs = filteredJobs.filter(j => j.unit === unitFilter);
 
-    // Candidatos das vagas filtradas + Pool Geral
     const jobIds = new Set(filteredJobs.map(j => j.id));
     const filteredCandidates = candidates.filter(c => {
         const isGeneral = c.jobId === 'general' && !sectorFilter && !unitFilter;
@@ -93,7 +97,6 @@ export const Dashboard: React.FC = () => {
           return startDate >= todayStart; 
       }).sort((a, b) => new Date(a.timeline!.startDate!).getTime() - new Date(b.timeline!.startDate!).getTime());
   }, [candidates]);
-
 
   // --- 4. RENDERIZAÇÃO DA TABELA INLINE ---
   const getDrillDownContent = () => {
@@ -132,7 +135,6 @@ export const Dashboard: React.FC = () => {
             </div>
           );
       }
-
       if (drillDownType === 'OLD_JOBS') {
           return (
             <div className="overflow-x-auto custom-scrollbar">
@@ -166,7 +168,6 @@ export const Dashboard: React.FC = () => {
             </div>
           );
       }
-
       if (drillDownType === 'UPCOMING_ONBOARDINGS') {
           return (
             <div className="overflow-x-auto custom-scrollbar">
@@ -231,7 +232,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* --- NOVO BLOCO: GESTÃO DE PESSOAS (RESUMO) --- */}
+      {/* --- BLOCO DE GESTÃO DE PESSOAS (ATUALIZADO) --- */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6">
               <div className="p-4 bg-red-50 text-red-600 rounded-2xl"><CalendarX size={32} /></div>
@@ -244,9 +245,11 @@ export const Dashboard: React.FC = () => {
               <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl"><Users size={32} /></div>
               <div>
                   <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Colaboradores Ativos</p>
-                  <div className="flex items-baseline gap-2">
+                  <div className="flex flex-col">
                     <p className="text-3xl font-black text-slate-800">{peopleStats.totalAtivos}</p>
-                    <p className="text-xs font-bold text-slate-500">({peopleStats.ativosCLT} CLT / {peopleStats.ativosPJ} PJ)</p>
+                    <p className="text-[10px] font-bold text-slate-500 leading-tight">
+                        {peopleStats.ativosCLT} CLT | {peopleStats.ativosPJ} PJ | {peopleStats.ativosEstagio} Est. | {peopleStats.ativosJA} JA
+                    </p>
                   </div>
               </div>
           </div>

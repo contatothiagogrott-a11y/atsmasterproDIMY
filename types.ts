@@ -196,7 +196,7 @@ export interface AbsenceRecord {
 export type EmployeeStatus = 'Ativo' | 'Inativo' | 'Afastado';
 
 // Novo tipo para o regime de contratação
-export type ContractType = 'CLT' | 'PJ'; 
+export type ContractType = 'CLT' | 'PJ' | 'Estagiário' | 'JA';
 
 export type EmployeeHistoryType = 'Promoção' | 'Mudança de Setor' | 'Afastamento' | 'Desligamento' | 'Outros';
 
