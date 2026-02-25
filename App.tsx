@@ -14,6 +14,7 @@ import { TalentDetails } from './pages/TalentDetails';
 import { Reports } from './pages/Reports';
 import { SettingsPage } from './pages/Settings';
 import { StrategicReport } from './pages/StrategicReport';
+import { Absenteismo } from './pages/Absenteismo'; // <--- IMPORT DA NOVA PÁGINA
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
@@ -54,6 +55,9 @@ const App: React.FC = () => {
             <Route path="/strategic-report" element={<StrategicReport />} />
             
             <Route path="/settings" element={<SettingsPage />} />
+
+            {/* --- NOVA ROTA: ABSENTEÍSMO --- */}
+            <Route path="/absenteismo" element={<Absenteismo />} />
 
           </Route>
 
