@@ -1,5 +1,5 @@
 import React from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'; // <--- useLocation importado
 import { DataProvider, useData } from './context/DataContext';
 import { Layout } from './components/Layout';
 
@@ -14,14 +14,26 @@ import { TalentDetails } from './pages/TalentDetails';
 import { Reports } from './pages/Reports';
 import { SettingsPage } from './pages/Settings';
 import { StrategicReport } from './pages/StrategicReport';
-import { Absenteismo } from './pages/Absenteismo'; // <--- IMPORT DA NOVA PÁGINA
+import { Absenteismo } from './pages/Absenteismo'; 
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
   const { user } = useData();
+  const location = useLocation();
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+
+  // --- BLOQUEIO DE URL PARA AUXILIAR DE RH ---
+  const isAuxiliar = user.role === 'AUXILIAR_RH';
+  const allowedAuxiliarRoutes = ['/absenteismo', '/settings'];
+  
+  if (isAuxiliar && !allowedAuxiliarRoutes.includes(location.pathname)) {
+    // Se o Auxiliar tentar acessar "/", "/jobs", etc., joga ele para o Absenteísmo
+    return <Navigate to="/absenteismo" replace />;
+  }
+
   return (
     <Layout>
       <Outlet />

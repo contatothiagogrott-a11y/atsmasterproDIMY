@@ -11,7 +11,7 @@ import {
   UserCircle,
   Database,
   ClipboardList,
-  CalendarX // <--- Ícone adicionado para Absenteísmo
+  CalendarX
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -26,8 +26,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  // Lógica de permissão para ver o menu de Absenteísmo
-  const canViewAbsenteismo = user?.role === 'MASTER' || user?.role === 'AUXILIAR_RH';
+  // Lógica de permissões
+  const isAuxiliar = user?.role === 'AUXILIAR_RH';
+  const canViewAbsenteismo = user?.role === 'MASTER' || isAuxiliar;
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -44,22 +45,28 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </div>
 
         <nav className="flex-1 p-4 space-y-3 overflow-y-auto">
-          <Link to="/" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/') && location.pathname === '/' ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
-            <LayoutDashboard size={20} />
-            <span className="font-semibold">Dashboard</span>
-          </Link>
           
-          <Link to="/jobs" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/jobs') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
-            <Briefcase size={20} />
-            <span className="font-semibold">Vagas</span>
-          </Link>
+          {/* Esconde os menus padrão se for Auxiliar de RH */}
+          {!isAuxiliar && (
+            <>
+              <Link to="/" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/') && location.pathname === '/' ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
+                <LayoutDashboard size={20} />
+                <span className="font-semibold">Dashboard</span>
+              </Link>
+              
+              <Link to="/jobs" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/jobs') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
+                <Briefcase size={20} />
+                <span className="font-semibold">Vagas</span>
+              </Link>
 
-          <Link to="/general-interviews" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/general-interviews') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
-            <ClipboardList size={20} />
-            <span className="font-semibold">Entrevistas Gerais</span>
-          </Link>
+              <Link to="/general-interviews" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/general-interviews') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
+                <ClipboardList size={20} />
+                <span className="font-semibold">Entrevistas Gerais</span>
+              </Link>
+            </>
+          )}
 
-          {/* --- NOVO MENU: ABSENTEÍSMO (Com bloqueio de Role) --- */}
+          {/* Absenteísmo (Visível para Master e Auxiliar) */}
           {canViewAbsenteismo && (
             <Link to="/absenteismo" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
               <CalendarX size={20} />
@@ -67,21 +74,27 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </Link>
           )}
 
-          <Link to="/talent-pool" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/talent-pool') || isActive('/talents') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
-            <Users size={20} />
-            <span className="font-semibold">Banco de Talentos</span>
-          </Link>
+          {/* Continua escondendo os outros menus se for Auxiliar de RH */}
+          {!isAuxiliar && (
+            <>
+              <Link to="/talent-pool" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/talent-pool') || isActive('/talents') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
+                <Users size={20} />
+                <span className="font-semibold">Banco de Talentos</span>
+              </Link>
 
-          <Link to="/reports" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/reports') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
-            <BarChart size={20} />
-            <span className="font-semibold">Relatórios & SLA</span>
-          </Link>
+              <Link to="/reports" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/reports') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
+                <BarChart size={20} />
+                <span className="font-semibold">Relatórios & SLA</span>
+              </Link>
 
-          <Link to="/strategic-report" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/strategic-report') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
-            <BarChart size={20} />
-            <span className="font-semibold">Relatório Estratégico</span>
-          </Link>
+              <Link to="/strategic-report" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/strategic-report') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
+                <BarChart size={20} />
+                <span className="font-semibold">Relatório Estratégico</span>
+              </Link>
+            </>
+          )}
 
+          {/* Configurações (Visível para todos) */}
           <Link to="/settings" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/settings') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
             <Settings size={20} />
             <span className="font-semibold">Configurações</span>
@@ -93,7 +106,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <UserCircle className="text-slate-400" size={36} />
             <div>
               <p className="text-sm font-bold text-slate-800">{user?.name}</p>
-              {/* Lógica atualizada para refletir corretamente o novo cargo */}
               <p className="text-xs text-slate-500 capitalize font-medium">
                 {user?.role === 'MASTER' ? 'Administrador' : user?.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : 'Recrutador'}
               </p>

@@ -24,6 +24,7 @@ export const SettingsPage: React.FC = () => {
   const [editingName, setEditingName] = useState('');
 
   const isMaster = currentUser?.role?.toUpperCase() === 'MASTER';
+  const isAuxiliar = currentUser?.role === 'AUXILIAR_RH'; // <--- Identificando o Auxiliar
 
   // --- HELPERS DA LIXEIRA ---
   const getTrashLabel = (item: any) => {
@@ -142,8 +143,8 @@ export const SettingsPage: React.FC = () => {
          <p className="text-slate-500 mt-1">Gestão do sistema, acessos e segurança</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Senha */}
+      <div className={`grid grid-cols-1 ${!isAuxiliar ? 'lg:grid-cols-2' : ''} gap-8`}>
+        {/* Senha - Visto por Todos */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Key size={20} className="text-blue-600" /> Minha Senha</h3>
            <form onSubmit={handlePasswordChange} className="space-y-4">
@@ -156,31 +157,34 @@ export const SettingsPage: React.FC = () => {
               <button type="submit" className="bg-slate-800 text-white font-bold py-2.5 px-6 rounded-lg w-full md:w-auto">Atualizar Senha</button>
            </form>
         </div>
-        {/* Setores */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-           <div className="flex gap-6 mb-6 border-b border-slate-100 pb-2">
-             <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'SECTOR' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('SECTOR')}>Setores</button>
-             <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'UNIT' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('UNIT')}>Unidades</button>
-           </div>
-           <form onSubmit={handleAddSetting} className="flex gap-2 mb-4">
-             <input type="text" className="flex-1 border border-slate-300 p-3 rounded-lg" placeholder={`Novo ${activeTab === 'SECTOR' ? 'Setor' : 'Unidade'}`} value={newSettingName} onChange={e => setNewSettingName(e.target.value)} />
-             <button type="submit" className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700"><Plus size={20} /></button>
-           </form>
-           <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-             {settings.filter(s => s.type === activeTab).map(item => (
-               <div key={item.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                 {editingId === item.id ? (
-                   <div className="flex flex-1 items-center gap-2"><input className="flex-1 border border-blue-300 p-1.5 rounded text-sm" value={editingName} onChange={e => setEditingName(e.target.value)} autoFocus /><button onClick={() => saveEditing(item)} className="text-green-600"><Check size={18}/></button><button onClick={cancelEditing} className="text-red-500"><X size={18}/></button></div>
-                 ) : (
-                   <>
-                    <span className="text-slate-700 font-medium">{item.name}</span>
-                    <div className="flex gap-2"><button onClick={() => startEditing(item)} className="text-slate-400 hover:text-blue-600"><Edit2 size={18} /></button><button onClick={() => removeSetting(item.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={18} /></button></div>
-                   </>
-                 )}
-               </div>
-             ))}
-           </div>
-        </div>
+        
+        {/* Setores - ESCONDIDO PARA AUXILIAR */}
+        {!isAuxiliar && (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+             <div className="flex gap-6 mb-6 border-b border-slate-100 pb-2">
+               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'SECTOR' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('SECTOR')}>Setores</button>
+               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'UNIT' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('UNIT')}>Unidades</button>
+             </div>
+             <form onSubmit={handleAddSetting} className="flex gap-2 mb-4">
+               <input type="text" className="flex-1 border border-slate-300 p-3 rounded-lg" placeholder={`Novo ${activeTab === 'SECTOR' ? 'Setor' : 'Unidade'}`} value={newSettingName} onChange={e => setNewSettingName(e.target.value)} />
+               <button type="submit" className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700"><Plus size={20} /></button>
+             </form>
+             <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+               {settings.filter(s => s.type === activeTab).map(item => (
+                 <div key={item.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                   {editingId === item.id ? (
+                     <div className="flex flex-1 items-center gap-2"><input className="flex-1 border border-blue-300 p-1.5 rounded text-sm" value={editingName} onChange={e => setEditingName(e.target.value)} autoFocus /><button onClick={() => saveEditing(item)} className="text-green-600"><Check size={18}/></button><button onClick={cancelEditing} className="text-red-500"><X size={18}/></button></div>
+                   ) : (
+                     <>
+                      <span className="text-slate-700 font-medium">{item.name}</span>
+                      <div className="flex gap-2"><button onClick={() => startEditing(item)} className="text-slate-400 hover:text-blue-600"><Edit2 size={18} /></button><button onClick={() => removeSetting(item.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={18} /></button></div>
+                     </>
+                   )}
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
       </div>
 
       {isMaster && (

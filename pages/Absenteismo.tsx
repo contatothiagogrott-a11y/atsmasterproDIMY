@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity } from 'lucide-react';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users } from 'lucide-react'; // <--- Users importado para o novo card
 
 export const Absenteismo: React.FC = () => {
   const { user, absences, addAbsence, updateAbsence, removeAbsence } = useData();
@@ -12,6 +12,19 @@ export const Absenteismo: React.FC = () => {
   const [formData, setFormData] = useState<Partial<AbsenceRecord>>({
     documentType: 'Atestado',
     reason: ''
+  });
+
+  // ==========================================
+  // ESTADO DOS FILTROS DE DATA (Padrão: Mês Atual)
+  // ==========================================
+  const [startDate, setStartDate] = useState(() => {
+    const date = new Date();
+    return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
+  });
+  
+  const [endDate, setEndDate] = useState(() => {
+    const date = new Date();
+    return new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
   });
 
   // Bloqueio de Segurança
@@ -31,30 +44,29 @@ export const Absenteismo: React.FC = () => {
   }, [absences]);
 
   // ==========================================
-  // LÓGICA DO DASHBOARD (Mês Atual)
+  // LÓGICA DO DASHBOARD (Com Filtro de Data)
   // ==========================================
-  const currentMonthAbsences = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
+  const filteredAbsences = useMemo(() => {
     return absences.filter(record => {
-      const recordDate = new Date(record.absenceDate);
-      return recordDate.getMonth() === currentMonth && recordDate.getFullYear() === currentYear;
+      if (!record.absenceDate) return false;
+      // Comparação direta de strings no formato YYYY-MM-DD
+      return record.absenceDate >= startDate && record.absenceDate <= endDate;
     });
-  }, [absences]);
+  }, [absences, startDate, endDate]);
 
   const stats = useMemo(() => {
     let atestados = 0;
     let declaracoes = 0;
     let injustificadas = 0;
+    let acompanhamentos = 0; // <--- Novo contador
     const reasonCounts: Record<string, number> = {};
     const nameCounts: Record<string, number> = {};
 
-    currentMonthAbsences.forEach(record => {
+    filteredAbsences.forEach(record => {
       if (record.documentType === 'Atestado') atestados++;
       if (record.documentType === 'Declaração') declaracoes++;
       if (record.documentType === 'Falta Injustificada') injustificadas++;
+      if (record.documentType === 'Acompanhante de Dependente') acompanhamentos++; // <--- Incrementa
 
       // Contagem de Motivos
       if (record.reason) {
@@ -70,10 +82,11 @@ export const Absenteismo: React.FC = () => {
       atestados,
       declaracoes,
       injustificadas,
+      acompanhamentos,
       topReasons: Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]).slice(0, 5),
       topNames: Object.entries(nameCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
     };
-  }, [currentMonthAbsences]);
+  }, [filteredAbsences]);
 
   // ==========================================
   // HANDLERS DO FORMULÁRIO
@@ -139,7 +152,7 @@ export const Absenteismo: React.FC = () => {
           }`}
         >
           <LayoutDashboard size={18} />
-          <span>Dashboard do Mês</span>
+          <span>Dashboard Analítico</span>
         </button>
         <button 
           onClick={() => setActiveTab('cadastro')}
@@ -155,11 +168,35 @@ export const Absenteismo: React.FC = () => {
       {/* CONTEÚDO DA ABA: DASHBOARD */}
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
-          {/* Cards de Resumo */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          
+          {/* FILTRO DE DATAS */}
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
+            <span className="font-semibold text-slate-700 text-sm">Período de Análise:</span>
+            <div className="flex items-center gap-2">
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)}
+                className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+              <span className="text-slate-400">até</span>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)}
+                className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+            <div className="text-xs text-slate-500 ml-auto bg-slate-100 px-3 py-1.5 rounded-lg">
+              Mostrando <b>{filteredAbsences.length}</b> registros
+            </div>
+          </div>
+
+          {/* Cards de Resumo (Agora com 4 colunas) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-red-600">Faltas Injustificadas</p>
+                <p className="text-sm font-semibold text-red-600">Injustificadas</p>
                 <p className="text-3xl font-bold text-slate-800 mt-1">{stats.injustificadas}</p>
               </div>
               <div className="p-3 bg-red-50 text-red-600 rounded-full"><AlertTriangle size={24} /></div>
@@ -167,7 +204,7 @@ export const Absenteismo: React.FC = () => {
             
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-blue-100 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-blue-600">Atestados (Médicos)</p>
+                <p className="text-sm font-semibold text-blue-600">Atestados</p>
                 <p className="text-3xl font-bold text-slate-800 mt-1">{stats.atestados}</p>
               </div>
               <div className="p-3 bg-blue-50 text-blue-600 rounded-full"><Activity size={24} /></div>
@@ -175,10 +212,19 @@ export const Absenteismo: React.FC = () => {
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-amber-600">Declarações (Horas)</p>
+                <p className="text-sm font-semibold text-amber-600">Declarações</p>
                 <p className="text-3xl font-bold text-slate-800 mt-1">{stats.declaracoes}</p>
               </div>
               <div className="p-3 bg-amber-50 text-amber-600 rounded-full"><FileText size={24} /></div>
+            </div>
+
+            {/* Novo Card: Acompanhamentos */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-100 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-indigo-600">Acompanhamentos</p>
+                <p className="text-3xl font-bold text-slate-800 mt-1">{stats.acompanhamentos}</p>
+              </div>
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full"><Users size={24} /></div>
             </div>
           </div>
 
@@ -186,9 +232,9 @@ export const Absenteismo: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Top Motivos */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Top Motivos de Afastamento</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Principais Motivos de Afastamento</h3>
               {stats.topReasons.length === 0 ? (
-                <p className="text-sm text-slate-500 py-4 text-center">Nenhum dado registrado neste mês.</p>
+                <p className="text-sm text-slate-500 py-4 text-center">Nenhum dado registrado neste período.</p>
               ) : (
                 <ul className="space-y-3">
                   {stats.topReasons.map(([reason, count], index) => (
@@ -203,9 +249,9 @@ export const Absenteismo: React.FC = () => {
 
             {/* Top Colaboradores */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Colaboradores com mais Faltas/Saídas</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Colaboradores com mais Ausências</h3>
               {stats.topNames.length === 0 ? (
-                <p className="text-sm text-slate-500 py-4 text-center">Nenhum dado registrado neste mês.</p>
+                <p className="text-sm text-slate-500 py-4 text-center">Nenhum dado registrado neste período.</p>
               ) : (
                 <ul className="space-y-3">
                   {stats.topNames.map(([name, count], index) => (
@@ -375,7 +421,7 @@ export const Absenteismo: React.FC = () => {
                             record.documentType === 'Atestado' ? 'bg-blue-100 text-blue-700' : 
                             record.documentType === 'Declaração' ? 'bg-amber-100 text-amber-700' : 
                             record.documentType === 'Falta Injustificada' ? 'bg-red-100 text-red-700' :
-                            'bg-purple-100 text-purple-700'
+                            'bg-indigo-100 text-indigo-700' // <--- Nova cor para acompanhante
                           }`}>
                             {record.documentType}
                           </span>
