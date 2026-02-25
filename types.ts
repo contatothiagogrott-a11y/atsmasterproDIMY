@@ -175,16 +175,17 @@ export interface KPI {
 // ==========================================
 // NOVAS INTERFACES: ABSENTEÍSMO
 // ==========================================
-export type DocumentType = 'Atestado' | 'Declaração' | 'Acompanhante de Dependente';
+export type DocumentType = 'Atestado' | 'Declaração' | 'Acompanhante de Dependente' | 'Falta Injustificada'; // <--- Nova opção adicionada
 
 export interface AbsenceRecord {
   id: string;
   employeeName: string;
-  absenceDate: string; // ISO Date
+  absenceDate: string; 
   documentDuration: string;
   documentType: DocumentType;
+  reason: string; // <--- Novo campo obrigatório: Motivo
   companionName?: string;
   companionBond?: string;
-  createdAt?: string; // ISO Date
-  deletedAt?: string; // Soft delete (Lixeira)
+  createdAt?: string; 
+  deletedAt?: string; 
 }
