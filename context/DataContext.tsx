@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom'; 
-import { User, Job, Candidate, TalentProfile, SettingItem } from '../types';
+import { User, Job, Candidate, TalentProfile, SettingItem, AbsenceRecord } from '../types';
 
 interface DataContextType {
   user: User | null;
@@ -28,13 +28,19 @@ interface DataContextType {
 
   candidates: Candidate[];
   addCandidate: (c: Candidate) => Promise<void>;
-  updateCandidate: (c: Candidate) => Promise<void>; // <--- REMOVIDO O PARÂMETRO MANUALINTERACTION
+  updateCandidate: (c: Candidate) => Promise<void>;
   removeCandidate: (id: string) => Promise<void>;
 
   talents: TalentProfile[];
   addTalent: (t: TalentProfile) => Promise<void>;
   removeTalent: (id: string) => Promise<void>;
   updateTalent: (t: TalentProfile) => Promise<void>;
+
+  // --- NOVA SESSÃO: ABSENTEÍSMO ---
+  absences: AbsenceRecord[];
+  addAbsence: (a: AbsenceRecord) => Promise<void>;
+  updateAbsence: (a: AbsenceRecord) => Promise<void>;
+  removeAbsence: (id: string) => Promise<void>;
 
   trash: any[];
   restoreItem: (id: string) => Promise<void>;
@@ -53,6 +59,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [jobs, setJobs] = useState<Job[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [talents, setTalents] = useState<TalentProfile[]>([]);
+  const [absences, setAbsences] = useState<AbsenceRecord[]>([]); // Estado das faltas
   const [trash, setTrash] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
@@ -78,6 +85,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.jobs) setJobs(data.jobs);
       if (data.talents) setTalents(data.talents);
       if (data.candidates) setCandidates(data.candidates);
+      if (data.absences) setAbsences(data.absences); // Carrega faltas da API
       if (data.trash) setTrash(data.trash);
       
     } catch (error) {
@@ -251,10 +259,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // --- CRUD CANDIDATOS CORRIGIDO ---
   const addCandidate = async (c: Candidate) => {
-    // CORREÇÃO: Não forçamos mais lastInteractionAt aqui.
     const newCandidate = { ...c };
-    
-    // Opcional: Garante data de criação se não vier
     if (!newCandidate.createdAt) newCandidate.createdAt = new Date().toISOString();
 
     setCandidates(prev => [...prev, newCandidate]);
@@ -262,8 +267,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateCandidate = async (c: Candidate) => {
-    // CORREÇÃO: Removemos a lógica automática de data.
-    // O backend/frontend agora tem total controle sobre os campos.
     setCandidates(prev => prev.map(ex => ex.id === c.id ? c : ex));
     await saveEntity('candidate', c);
   };
@@ -286,6 +289,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
+  // --- CRUD ABSENTEÍSMO ---
+  const addAbsence = async (a: AbsenceRecord) => {
+    setAbsences(prev => [...prev, a]);
+    await saveEntity('absence', a);
+  };
+  const updateAbsence = async (a: AbsenceRecord) => {
+    setAbsences(prev => prev.map(ex => ex.id === a.id ? a : ex));
+    await saveEntity('absence', a);
+  };
+  const removeAbsence = async (id: string) => {
+    setAbsences(prev => prev.filter(a => a.id !== id));
+    await deleteEntity(id);
+  };
+
   return (
     <DataContext.Provider value={{
       user, login, logout, 
@@ -295,6 +312,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       jobs, addJob, updateJob, removeJob,
       candidates, addCandidate, updateCandidate, removeCandidate,
       talents, addTalent, removeTalent, updateTalent,
+      absences, addAbsence, updateAbsence, removeAbsence, // <--- EXPOSTO AQUI
       trash, restoreItem, permanentlyDeleteItem,
       refreshData, loading
     }}>
