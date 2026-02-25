@@ -14,7 +14,7 @@ import {
   CalendarX,
   ChevronDown,
   ChevronRight,
-  Contact // <--- Ícone para Colaboradores
+  Contact 
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -32,9 +32,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  // Lógica de permissões
+  // Lógica de permissões refinada
+  const isMaster = user?.role === 'MASTER';
   const isAuxiliar = user?.role === 'AUXILIAR_RH';
-  const canViewAbsenteismo = user?.role === 'MASTER' || isAuxiliar;
+  
+  // O Master vê tudo. O Auxiliar só vê Absenteísmo em "Gestão de Pessoas"
+  const canViewAbsenteismo = isMaster || isAuxiliar;
+  const canViewColaboradores = isMaster; // <--- Trava: Apenas Master vê a base de colaboradores
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -100,23 +104,24 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           )}
 
           {/* === GESTÃO DE PESSOAS === */}
-          <div className="pt-4 pb-1">
-            <span className="px-4 text-xs font-bold uppercase tracking-wider text-slate-400">Gestão de Pessoas</span>
-          </div>
+          {(canViewAbsenteismo || canViewColaboradores) && (
+            <div className="pt-4 pb-1">
+              <span className="px-4 text-xs font-bold uppercase tracking-wider text-slate-400">Gestão de Pessoas</span>
+            </div>
+          )}
+
+          {canViewColaboradores && (
+            <Link to="/colaboradores" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/colaboradores') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
+              <Contact size={20} />
+              <span className="font-semibold">Colaboradores</span>
+            </Link>
+          )}
 
           {canViewAbsenteismo && (
-            <>
-              {/* Novo Botão: Colaboradores */}
-              <Link to="/colaboradores" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/colaboradores') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
-                <Contact size={20} />
-                <span className="font-semibold">Colaboradores</span>
-              </Link>
-
-              <Link to="/absenteismo" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
-                <CalendarX size={20} />
-                <span className="font-semibold">Absenteísmo</span>
-              </Link>
-            </>
+            <Link to="/absenteismo" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
+              <CalendarX size={20} />
+              <span className="font-semibold">Absenteísmo</span>
+            </Link>
           )}
 
           <div className="pt-4 pb-1">
@@ -132,9 +137,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         <div className="p-6 border-t border-slate-200/50 bg-white/30 backdrop-blur-sm">
           <div className="flex items-center space-x-3 mb-4">
             <UserCircle className="text-slate-400" size={36} />
-            <div>
-              <p className="text-sm font-bold text-slate-800">{user?.name}</p>
-              <p className="text-xs text-slate-500 capitalize font-medium">
+            <div className="overflow-hidden">
+              <p className="text-sm font-bold text-slate-800 truncate">{user?.name}</p>
+              <p className="text-xs text-slate-500 capitalize font-medium truncate">
                 {user?.role === 'MASTER' ? 'Administrador' : user?.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : 'Recrutador'}
               </p>
             </div>
