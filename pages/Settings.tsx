@@ -12,7 +12,7 @@ export const SettingsPage: React.FC = () => {
   const { 
     settings, addSetting, removeSetting, updateSetting, 
     users, addUser, user: currentUser, changePassword, adminResetPassword,
-    jobs, talents, candidates, employees, addEmployee,
+    jobs, talents, candidates, employees, addEmployee, updateEmployee, // <--- updateEmployee adicionado aqui
     trash, restoreItem, permanentlyDeleteItem 
   } = useData();
   
@@ -53,38 +53,28 @@ export const SettingsPage: React.FC = () => {
     XLSX.writeFile(workbook, `MODELO_IMPORT_COLABORADORES.xlsx`);
   };
 
-  // --- LÓGICA DE EXCEL: IMPORTAR COM TRADUTOR DE DATAS ---
+  // --- LÓGICA DE EXCEL: IMPORTAR (COM ATUALIZAÇÃO AUTOMÁTICA) ---
   const handleImportEmployeesExcel = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Função interna para converter datas do Excel para YYYY-MM-DD
+    // Tradutor de Datas (DD/MM/YYYY para YYYY-MM-DD)
     const parseExcelDate = (dateVal: any) => {
       if (!dateVal) return '';
-      const str = String(dateVal).trim();
-      
-      // Converte traços em barras e separa [DD, MM, YYYY] ou [YYYY, MM, DD]
-      const parts = str.replace(/-/g, '/').split('/');
-      
+      if (typeof dateVal === 'number' || (!isNaN(Number(dateVal)) && String(dateVal).trim().length >= 4)) {
+        const excelEpoch = new Date(1899, 11, 30);
+        const jsDate = new Date(excelEpoch.getTime() + Number(dateVal) * 86400000);
+        return jsDate.toISOString().split('T')[0];
+      }
+      let str = String(dateVal).trim().replace(/-/g, '/');
+      const parts = str.split('/');
       if (parts.length === 3) {
         let [p1, p2, p3] = parts;
-        
-        // Se a última parte for o ano (Ex: 25/02/2024)
-        if (p3.length === 4 || p3.length === 2) {
-          let year = p3.length === 2 ? `20${p3}` : p3;
-          let month = p2.padStart(2, '0');
-          let day = p1.padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        }
-        
-        // Se a primeira parte for o ano (Ex: 2024/02/25)
-        if (p1.length === 4) {
-          let month = p2.padStart(2, '0');
-          let day = p3.padStart(2, '0');
-          return `${p1}-${month}-${day}`;
-        }
+        if (p3.length === 4) return `${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+        if (p3.length === 2) return `20${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+        if (p1.length === 4) return `${p1}-${p2.padStart(2, '0')}-${p3.padStart(2, '0')}`;
       }
-      return str; // Se falhar na quebra, devolve como veio
+      return str; 
     };
 
     const reader = new FileReader();
@@ -94,55 +84,94 @@ export const SettingsPage: React.FC = () => {
         const workbook = XLSX.read(data, { type: 'array' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        
-        // raw: false força a leitura do Excel como texto visual, evitando números seriais de data
-        const json: any[] = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' });
+        const json: any[] = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: '' });
 
         const activeSectors = settings
           .filter(s => s.type === 'SECTOR')
           .map(s => s.name.trim().toLowerCase());
 
-        if (confirm(`Deseja importar ${json.length} colaboradores?`)) {
+        if (confirm(`Deseja processar ${json.length} colaboradores? O sistema irá atualizar os nomes que já existem e criar os novos.`)) {
           let pendingCount = 0;
+          let updatedCount = 0;
+          let insertedCount = 0;
 
           for (const row of json) {
-            if (!row.Nome) continue;
+            const normalizedRow: any = {};
+            for (const key in row) {
+              const cleanKey = key.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+              normalizedRow[cleanKey] = row[key];
+            }
 
-            const sectorFromExcel = (row.Setor || 'Geral').trim();
+            const rawName = normalizedRow['nome'];
+            if (!rawName) continue;
+
+            const sectorFromExcel = (normalizedRow['setor'] || 'Geral').trim();
             const isPending = !activeSectors.includes(sectorFromExcel.toLowerCase());
-            
             if (isPending) pendingCount++;
 
-            const newEmp: Employee = {
-              id: crypto.randomUUID(),
-              name: row.Nome,
-              role: row.Cargo || 'Não Definido',
-              sector: sectorFromExcel,
-              phone: String(row.Telefone || ''),
-              contractType: (row.Contrato as ContractType) || 'CLT',
-              status: (row.Status as EmployeeStatus) || 'Ativo',
-              
-              // Uso do tradutor de datas
-              birthDate: parseExcelDate(row.Nascimento),
-              admissionDate: parseExcelDate(row.Admissao) || new Date().toISOString().split('T')[0],
-              
-              hasPendingInfo: isPending, 
-              history: isPending ? [{
+            const rawAdmission = normalizedRow['admissao'] || normalizedRow['data de admissao'];
+            const rawBirth = normalizedRow['nascimento'] || normalizedRow['data de nascimento'];
+
+            // VERIFICA SE O COLABORADOR JÁ EXISTE PELO NOME (Ignorando letras maiúsculas/minúsculas)
+            const existingEmp = employees.find(emp => emp.name.trim().toLowerCase() === String(rawName).trim().toLowerCase());
+
+            if (existingEmp) {
+              // ATUALIZA O EXISTENTE
+              const updatedEmp: Employee = {
+                ...existingEmp, // Mantém ID e histórico antigo
+                role: normalizedRow['cargo'] || existingEmp.role,
+                sector: sectorFromExcel,
+                phone: String(normalizedRow['telefone'] || existingEmp.phone),
+                contractType: (normalizedRow['contrato'] as ContractType) || existingEmp.contractType,
+                status: (normalizedRow['status'] as EmployeeStatus) || existingEmp.status,
+                birthDate: parseExcelDate(rawBirth) || existingEmp.birthDate,
+                admissionDate: parseExcelDate(rawAdmission) || existingEmp.admissionDate,
+                hasPendingInfo: isPending,
+              };
+
+              // Adiciona aviso no histórico apenas se ficou pendente agora
+              if (isPending && !existingEmp.hasPendingInfo) {
+                updatedEmp.history = [...(existingEmp.history || []), {
+                  id: crypto.randomUUID(),
+                  date: new Date().toISOString().split('T')[0],
+                  type: 'Outros',
+                  description: `⚠️ Atualização via Excel: O setor "${sectorFromExcel}" não estava cadastrado no sistema.`
+                }];
+              }
+
+              await updateEmployee(updatedEmp);
+              updatedCount++;
+            } else {
+              // CRIA UM NOVO
+              const newEmp: Employee = {
                 id: crypto.randomUUID(),
-                date: new Date().toISOString().split('T')[0],
-                type: 'Outros',
-                description: `⚠️ Pendência de Importação: O setor informado na planilha ("${sectorFromExcel}") não estava cadastrado no sistema.`
-              }] : [],
-              createdAt: new Date().toISOString()
-            };
-            await addEmployee(newEmp);
+                name: rawName,
+                role: normalizedRow['cargo'] || 'Não Definido',
+                sector: sectorFromExcel,
+                phone: String(normalizedRow['telefone'] || ''),
+                contractType: (normalizedRow['contrato'] as ContractType) || 'CLT',
+                status: (normalizedRow['status'] as EmployeeStatus) || 'Ativo',
+                birthDate: parseExcelDate(rawBirth),
+                admissionDate: parseExcelDate(rawAdmission) || new Date().toISOString().split('T')[0],
+                hasPendingInfo: isPending, 
+                history: isPending ? [{
+                  id: crypto.randomUUID(),
+                  date: new Date().toISOString().split('T')[0],
+                  type: 'Outros',
+                  description: `⚠️ Importação via Excel: O setor "${sectorFromExcel}" não estava cadastrado no sistema.`
+                }] : [],
+                createdAt: new Date().toISOString()
+              };
+              await addEmployee(newEmp);
+              insertedCount++;
+            }
           }
 
+          let msg = `Processamento concluído!\n\n🔹 Novos criados: ${insertedCount}\n🔸 Atualizados: ${updatedCount}`;
           if (pendingCount > 0) {
-            alert(`Importação concluída!\n\nAtenção: ${pendingCount} colaborador(es) foram marcados com pendência (card laranja) porque o setor informado na planilha não existe no sistema.`);
-          } else {
-            alert('Importação concluída com sucesso sem pendências!');
+            msg += `\n\n⚠️ Atenção: ${pendingCount} colaboradores estão com setor pendente (card laranja).`;
           }
+          alert(msg);
           window.location.reload();
         }
       } catch (err) {
@@ -306,7 +335,7 @@ export const SettingsPage: React.FC = () => {
               <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col justify-between">
                 <div>
                   <h3 className="text-white font-bold mb-2 flex items-center gap-2"><UploadCloud size={18}/> Importar Colaboradores</h3>
-                  <p className="text-xs text-slate-400">Selecione o arquivo Excel preenchido. O sistema alertará se o setor inserido não existir.</p>
+                  <p className="text-xs text-slate-400">Ao subir a planilha, o sistema atualiza automaticamente os nomes existentes e cria os novos.</p>
                 </div>
                 <label className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition-colors text-center cursor-pointer">
                   Selecionar Arquivo Excel
