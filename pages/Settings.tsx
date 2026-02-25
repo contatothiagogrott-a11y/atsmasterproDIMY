@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Trash2, Plus, Download, Upload, Edit2, Check, X, Key, ShieldCheck, UserPlus, Users, Save, RotateCcw, FileQuestion, XCircle } from 'lucide-react';
-import { SettingItem, User, UserRole } from '../types';
+import { 
+  Trash2, Plus, Download, Upload, Edit2, Check, X, Key, ShieldCheck, 
+  UserPlus, Users, Save, RotateCcw, FileQuestion, XCircle, 
+  FileSpreadsheet, DownloadCloud, UploadCloud 
+} from 'lucide-react';
+import { SettingItem, User, UserRole, Employee, ContractType, EmployeeStatus } from '../types';
+import * as XLSX from 'xlsx'; // <--- Importação da biblioteca Excel
 
 export const SettingsPage: React.FC = () => {
   const { 
     settings, addSetting, removeSetting, updateSetting, 
     users, addUser, user: currentUser, changePassword, adminResetPassword,
-    jobs, talents, candidates,
-    trash, restoreItem, permanentlyDeleteItem // <--- Trazendo a lixeira
+    jobs, talents, candidates, employees, addEmployee, // <--- Adicionado employees e addEmployee
+    trash, restoreItem, permanentlyDeleteItem 
   } = useData();
   
   const [newSettingName, setNewSettingName] = useState('');
@@ -24,7 +29,74 @@ export const SettingsPage: React.FC = () => {
   const [editingName, setEditingName] = useState('');
 
   const isMaster = currentUser?.role?.toUpperCase() === 'MASTER';
-  const isAuxiliar = currentUser?.role === 'AUXILIAR_RH'; // <--- Identificando o Auxiliar
+  const isAuxiliar = currentUser?.role === 'AUXILIAR_RH';
+
+  // --- LÓGICA DE EXCEL (NOVO) ---
+  const handleExportEmployeesExcel = () => {
+    // Se houver dados, exporta-os. Se não, exporta uma linha vazia como modelo.
+    const dataToExport = employees.length > 0 ? employees.map(emp => ({
+      Nome: emp.name,
+      Cargo: emp.role,
+      Setor: emp.sector,
+      Telefone: emp.phone,
+      Contrato: emp.contractType, // CLT, PJ, Estagiário, JA
+      Status: emp.status, // Ativo, Afastado, Inativo
+      Nascimento: emp.birthDate,
+      Admissao: emp.admissionDate
+    })) : [{
+      Nome: '', Cargo: '', Setor: '', Telefone: '', 
+      Contrato: 'CLT', Status: 'Ativo', Nascimento: 'YYYY-MM-DD', Admissao: 'YYYY-MM-DD'
+    }];
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Colaboradores");
+    XLSX.writeFile(workbook, `MODELO_IMPORT_COLABORADORES.xlsx`);
+  };
+
+  const handleImportEmployeesExcel = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+        if (confirm(`Deseja importar ${json.length} colaboradores?`)) {
+          for (const row of json) {
+            // Se o nome estiver em branco, ignoramos a linha
+            if (!row.Nome) continue;
+
+            const newEmp: Employee = {
+              id: crypto.randomUUID(),
+              name: row.Nome,
+              role: row.Cargo || 'Não Definido',
+              sector: row.Setor || 'Geral',
+              phone: String(row.Telefone || ''),
+              contractType: (row.Contrato as ContractType) || 'CLT',
+              status: (row.Status as EmployeeStatus) || 'Ativo',
+              birthDate: row.Nascimento || '',
+              admissionDate: row.Admissao || new Date().toISOString().split('T')[0],
+              history: [],
+              createdAt: new Date().toISOString()
+            };
+            await addEmployee(newEmp);
+          }
+          alert('Importação finalizada!');
+          window.location.reload();
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Erro ao processar o arquivo Excel. Verifique o formato.');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
 
   // --- HELPERS DA LIXEIRA ---
   const getTrashLabel = (item: any) => {
@@ -40,7 +112,8 @@ export const SettingsPage: React.FC = () => {
       case 'talent': return 'Talento';
       case 'setting': return 'Configuração';
       case 'user': return 'Usuário';
-      case 'absence': return 'Absenteísmo'; // <--- Adicionado para suportar lixeira do novo módulo
+      case 'absence': return 'Absenteísmo';
+      case 'employee': return 'Colaborador';
       default: return type;
     }
   };
@@ -74,25 +147,11 @@ export const SettingsPage: React.FC = () => {
     alert('Usuário criado com sucesso!'); 
   };
 
-  // --- LÓGICA DE BACKUP & RESTORE ATUALIZADA ---
   const handleExportBackup = () => {
-    // Agora incluímos TUDO: Ativos + Lixeira + Usuários
     const backupData = {
-      metadata: {
-        version: "1.1", // Versão atualizada
-        exportedAt: new Date().toISOString(),
-        exportedBy: currentUser?.name
-      },
-      data: {
-        settings,
-        jobs,
-        talents,
-        candidates,
-        users,
-        trash // <--- O PULO DO GATO: Agora o lixo é salvo também!
-      }
+      metadata: { version: "1.1", exportedAt: new Date().toISOString(), exportedBy: currentUser?.name },
+      data: { settings, jobs, talents, candidates, users, employees, trash }
     };
-
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -113,25 +172,10 @@ export const SettingsPage: React.FC = () => {
       try {
         const jsonContent = JSON.parse(e.target?.result as string);
         const payload = jsonContent.data ? jsonContent.data : jsonContent;
-
-        const response = await fetch('/api/main?action=restore-backup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: payload }),
-        });
-
+        const response = await fetch('/api/main?action=restore-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: payload }) });
         const result = await response.json();
-
-        if (response.ok) {
-          alert('✅ Backup importado com sucesso! A página será recarregada.');
-          window.location.reload();
-        } else {
-          alert('❌ Erro ao importar: ' + (result.error || 'Erro desconhecido'));
-        }
-      } catch (error) {
-        console.error(error);
-        alert('Erro ao processar arquivo. Verifique se é um JSON válido.');
-      }
+        if (response.ok) { alert('✅ Backup importado com sucesso! A página será recarregada.'); window.location.reload(); } else { alert('❌ Erro ao importar: ' + (result.error || 'Erro desconhecido')); }
+      } catch (error) { console.error(error); alert('Erro ao processar arquivo. Verifique se é um JSON válido.'); }
     };
     reader.readAsText(file);
   };
@@ -144,7 +188,7 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       <div className={`grid grid-cols-1 ${!isAuxiliar ? 'lg:grid-cols-2' : ''} gap-8`}>
-        {/* Senha - Visto por Todos */}
+        {/* Senha */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Key size={20} className="text-blue-600" /> Minha Senha</h3>
            <form onSubmit={handlePasswordChange} className="space-y-4">
@@ -157,8 +201,8 @@ export const SettingsPage: React.FC = () => {
               <button type="submit" className="bg-slate-800 text-white font-bold py-2.5 px-6 rounded-lg w-full md:w-auto">Atualizar Senha</button>
            </form>
         </div>
-        
-        {/* Setores - ESCONDIDO PARA AUXILIAR */}
+
+        {/* Setores */}
         {!isAuxiliar && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
              <div className="flex gap-6 mb-6 border-b border-slate-100 pb-2">
@@ -188,7 +232,35 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       {isMaster && (
-        <div className="bg-slate-900 text-slate-200 p-6 rounded-xl shadow-lg border border-slate-800">
+        <div className="bg-slate-900 text-slate-200 p-6 rounded-xl shadow-lg border border-slate-800 space-y-8">
+          
+          {/* --- NOVO BLOCO: GESTÃO DE COLABORADORES (EXCEL) --- */}
+          <div>
+            <div className="flex items-center gap-3 mb-6 border-b border-slate-700 pb-4">
+              <FileSpreadsheet className="text-emerald-400" size={24} />
+              <h2 className="text-xl font-bold text-white">Gestão de Colaboradores (Excel)</h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col justify-between">
+                <div>
+                  <h3 className="text-white font-bold mb-2 flex items-center gap-2"><DownloadCloud size={18}/> Exportar Dados / Modelo</h3>
+                  <p className="text-xs text-slate-400">Baixe a planilha com os dados atuais ou use como modelo para importação.</p>
+                </div>
+                <button onClick={handleExportEmployeesExcel} className="mt-4 w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-2.5 rounded-lg transition-colors">Gerar Planilha .XLSX</button>
+              </div>
+              <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col justify-between">
+                <div>
+                  <h3 className="text-white font-bold mb-2 flex items-center gap-2"><UploadCloud size={18}/> Importar Colaboradores</h3>
+                  <p className="text-xs text-slate-400">Selecione o arquivo Excel preenchido para cadastrar múltiplos colaboradores de uma vez.</p>
+                </div>
+                <label className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition-colors text-center cursor-pointer">
+                  Selecionar Arquivo Excel
+                  <input type="file" accept=".xlsx, .xls" className="hidden" onChange={handleImportEmployeesExcel} />
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center gap-3 mb-6 border-b border-slate-700 pb-4">
             <ShieldCheck className="text-emerald-400" size={24} />
             <h2 className="text-xl font-bold text-white">Área Administrativa</h2>
@@ -201,14 +273,11 @@ export const SettingsPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4"><input required placeholder="Nome" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /><input required placeholder="Login" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} /></div>
                 <div className="grid grid-cols-2 gap-4">
                   <input required type="password" placeholder="Senha" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-                  
-                  {/* --- ADICIONADO: Cargo Auxiliar de RH no select --- */}
                   <select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}>
                     <option value="RECRUITER">Recrutador</option>
                     <option value="MASTER">Master Admin</option>
                     <option value="AUXILIAR_RH">Auxiliar de RH</option>
                   </select>
-
                 </div>
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-lg">Criar Usuário</button>
               </form>
@@ -228,17 +297,12 @@ export const SettingsPage: React.FC = () => {
               </div>
             </div>
             
-            {/* BACKUP - AGORA SALVA TUDO */}
-            <div className="lg:col-span-2 bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4"><div><h3 className="text-lg font-bold text-white flex items-center gap-2"><Save size={18}/> Backup & Dados</h3><p className="text-sm text-slate-400">Exporte ou importe todos os dados (Vagas, Talentos, Candidatos, Lixeira e Usuários).</p></div><div className="flex gap-4"><button onClick={handleExportBackup} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-medium"><Download size={18} /> Exportar Completo</button><label className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium cursor-pointer"><Upload size={18} /> Restaurar<input type="file" accept=".json" className="hidden" onChange={handleImportBackup} /></label></div></div>
+            <div className="lg:col-span-2 bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4"><div><h3 className="text-lg font-bold text-white flex items-center gap-2"><Save size={18}/> Backup & Dados</h3><p className="text-sm text-slate-400">Exporte ou importe todos os dados.</p></div><div className="flex gap-4"><button onClick={handleExportBackup} className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-medium"><Download size={18} /> Exportar Completo</button><label className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium cursor-pointer"><Upload size={18} /> Restaurar<input type="file" accept=".json" className="hidden" onChange={handleImportBackup} /></label></div></div>
 
-            {/* SEÇÃO LIXEIRA */}
             <div className="lg:col-span-2 bg-red-900/20 p-6 rounded-lg border border-red-900/50">
               <div className="flex items-center gap-3 mb-6 border-b border-red-800/50 pb-4">
                 <Trash2 className="text-red-400" size={24} />
-                <div>
-                  <h2 className="text-xl font-bold text-red-50">Lixeira / Itens Excluídos</h2>
-                  <p className="text-sm text-red-200/70">Recupere itens apagados ou exclua permanentemente.</p>
-                </div>
+                <div><h2 className="text-xl font-bold text-red-50">Lixeira / Itens Excluídos</h2></div>
               </div>
 
               {trash && trash.length > 0 ? (
@@ -246,48 +310,17 @@ export const SettingsPage: React.FC = () => {
                   {trash.map((item) => (
                     <div key={item.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-sm flex flex-col justify-between">
                       <div>
-                        <div className="flex justify-between items-start mb-2">
-                          <span className="text-xs font-bold uppercase tracking-wider text-slate-300 bg-slate-700 px-2 py-1 rounded">
-                            {getTrashTypeLabel(item.originalType)}
-                          </span>
-                          <span className="text-xs text-slate-400">
-                            {item.deletedAt ? new Date(item.deletedAt).toLocaleDateString() : ''}
-                          </span>
-                        </div>
+                        <div className="flex justify-between items-start mb-2"><span className="text-xs font-bold uppercase tracking-wider text-slate-300 bg-slate-700 px-2 py-1 rounded">{getTrashTypeLabel(item.originalType)}</span><span className="text-xs text-slate-400">{item.deletedAt ? new Date(item.deletedAt).toLocaleDateString() : ''}</span></div>
                         <h4 className="font-bold text-white mb-1 truncate">{getTrashLabel(item)}</h4>
-                        <p className="text-xs text-slate-500 truncate" title={item.id}>{item.id}</p>
-                        {item.deletedBy && <p className="text-xs text-slate-500 mt-1">Por: {users.find(u => u.id === item.deletedBy)?.name || 'Admin'}</p>}
                       </div>
-                      
-                      <div className="flex gap-2 mt-4">
-                        <button 
-                          onClick={() => handleRestore(item.id)}
-                          className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-700 hover:bg-blue-600 text-blue-200 hover:text-white font-bold rounded-lg transition-colors text-sm border border-slate-600 hover:border-blue-500"
-                        >
-                          <RotateCcw size={16} /> Restaurar
-                        </button>
-                        
-                        {isMaster && (
-                          <button 
-                            onClick={() => handlePermanentDelete(item.id)}
-                            className="flex items-center justify-center px-3 py-2 bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white font-bold rounded-lg transition-colors border border-red-900/50 hover:border-red-500"
-                            title="Excluir para sempre"
-                          >
-                            <XCircle size={18} />
-                          </button>
-                        )}
-                      </div>
+                      <div className="flex gap-2 mt-4"><button onClick={() => handleRestore(item.id)} className="flex-1 flex items-center justify-center gap-2 py-2 bg-slate-700 hover:bg-blue-600 text-blue-200 hover:text-white font-bold rounded-lg transition-colors text-sm border border-slate-600 hover:border-blue-500"><RotateCcw size={16} /> Restaurar</button><button onClick={() => handlePermanentDelete(item.id)} className="flex items-center justify-center px-3 py-2 bg-red-900/30 hover:bg-red-600 text-red-400 hover:text-white font-bold rounded-lg transition-colors border border-red-900/50 hover:border-red-500"><XCircle size={18} /></button></div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="text-center py-8 text-slate-500">
-                  <FileQuestion size={48} className="mx-auto mb-3 opacity-20" />
-                  <p>A lixeira está vazia.</p>
-                </div>
+                <div className="text-center py-8 text-slate-500"><FileQuestion size={48} className="mx-auto mb-3 opacity-20" /><p>A lixeira está vazia.</p></div>
               )}
             </div>
-
           </div>
         </div>
       )}
