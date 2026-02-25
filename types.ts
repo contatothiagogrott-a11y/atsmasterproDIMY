@@ -1,4 +1,4 @@
-export type UserRole = 'MASTER' | 'RECRUITER' | 'AUXILIAR_RH'; // <-- ADICIONADO AUXILIAR_RH
+export type UserRole = 'MASTER' | 'RECRUITER' | 'AUXILIAR_RH';
 
 export interface User {
   id: string;
@@ -64,7 +64,8 @@ export type CandidateOrigin = 'LinkedIn' | 'Instagram' | 'SINE' | 'Busca espont�
 
 export type CandidateStatus = 'Aguardando Triagem' | 'Em Teste' | 'Entrevista' | 'Aprovado' | 'Reprovado' | 'Proposta Aceita' | 'Proposta Recusada' | 'Desistência' | 'Contratado'; 
 
-export type ContractType = 'CLT' | 'PJ' | 'Estágio' | 'Temporário' | 'Outros';
+// ContractType para Candidatos (Recrutamento)
+export type CandidateContractType = 'CLT' | 'PJ' | 'Estágio' | 'Temporário' | 'Outros';
 
 export interface CandidateTimeline {
   firstContact?: string;
@@ -90,7 +91,7 @@ export interface Candidate {
   rejectionReason?: string;
   timeline?: CandidateTimeline;
   notes?: string; 
-  contractType?: ContractType; 
+  contractType?: CandidateContractType; 
   salaryExpectation?: string; 
   finalSalary?: string; 
   techTest?: boolean; 
@@ -175,7 +176,7 @@ export interface KPI {
 // ==========================================
 // NOVAS INTERFACES: ABSENTEÍSMO
 // ==========================================
-export type DocumentType = 'Atestado' | 'Declaração' | 'Acompanhante de Dependente' | 'Falta Injustificada'; // <--- Nova opção adicionada
+export type DocumentType = 'Atestado' | 'Declaração' | 'Acompanhante de Dependente' | 'Falta Injustificada';
 
 export interface AbsenceRecord {
   id: string;
@@ -183,7 +184,7 @@ export interface AbsenceRecord {
   absenceDate: string; 
   documentDuration: string;
   documentType: DocumentType;
-  reason: string; // <--- Novo campo obrigatório: Motivo
+  reason: string; 
   companionName?: string;
   companionBond?: string;
   createdAt?: string; 
@@ -195,7 +196,7 @@ export interface AbsenceRecord {
 // ==========================================
 export type EmployeeStatus = 'Ativo' | 'Inativo' | 'Afastado';
 
-// Novo tipo para o regime de contratação
+// Regime de contratação para Colaboradores (Gestão)
 export type ContractType = 'CLT' | 'PJ' | 'Estagiário' | 'JA';
 
 export type EmployeeHistoryType = 'Promoção' | 'Mudança de Setor' | 'Afastamento' | 'Desligamento' | 'Outros';
@@ -217,7 +218,10 @@ export interface Employee {
   birthDate: string; // ISO Date
   admissionDate: string; // ISO Date
   status: EmployeeStatus;
-  contractType: ContractType; // <--- ADICIONADO AQUI
+  contractType: ContractType;
+  
+  // Campo de Pendência (Ajuste solicitado)
+  hasPendingInfo?: boolean; // <--- ADICIONADO AQUI
   
   // Campos Condicionais
   terminationReason?: string; // Se Inativo

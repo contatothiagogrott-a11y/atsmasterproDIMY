@@ -6,13 +6,13 @@ import {
   FileSpreadsheet, DownloadCloud, UploadCloud 
 } from 'lucide-react';
 import { SettingItem, User, UserRole, Employee, ContractType, EmployeeStatus } from '../types';
-import * as XLSX from 'xlsx'; // <--- Importação da biblioteca Excel
+import * as XLSX from 'xlsx';
 
 export const SettingsPage: React.FC = () => {
   const { 
     settings, addSetting, removeSetting, updateSetting, 
     users, addUser, user: currentUser, changePassword, adminResetPassword,
-    jobs, talents, candidates, employees, addEmployee, // <--- Adicionado employees e addEmployee
+    jobs, talents, candidates, employees, addEmployee,
     trash, restoreItem, permanentlyDeleteItem 
   } = useData();
   
@@ -31,21 +31,20 @@ export const SettingsPage: React.FC = () => {
   const isMaster = currentUser?.role?.toUpperCase() === 'MASTER';
   const isAuxiliar = currentUser?.role === 'AUXILIAR_RH';
 
-  // --- LÓGICA DE EXCEL (NOVO) ---
+  // --- LÓGICA DE EXCEL: EXPORTAR ---
   const handleExportEmployeesExcel = () => {
-    // Se houver dados, exporta-os. Se não, exporta uma linha vazia como modelo.
     const dataToExport = employees.length > 0 ? employees.map(emp => ({
       Nome: emp.name,
       Cargo: emp.role,
       Setor: emp.sector,
       Telefone: emp.phone,
-      Contrato: emp.contractType, // CLT, PJ, Estagiário, JA
-      Status: emp.status, // Ativo, Afastado, Inativo
+      Contrato: emp.contractType,
+      Status: emp.status,
       Nascimento: emp.birthDate,
       Admissao: emp.admissionDate
     })) : [{
       Nome: '', Cargo: '', Setor: '', Telefone: '', 
-      Contrato: 'CLT', Status: 'Ativo', Nascimento: 'YYYY-MM-DD', Admissao: 'YYYY-MM-DD'
+      Contrato: 'CLT', Status: 'Ativo', Nascimento: '1990-01-01', Admissao: '2024-01-01'
     }];
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -54,6 +53,7 @@ export const SettingsPage: React.FC = () => {
     XLSX.writeFile(workbook, `MODELO_IMPORT_COLABORADORES.xlsx`);
   };
 
+  // --- LÓGICA DE EXCEL: IMPORTAR COM VALIDAÇÃO DE PENDÊNCIA ---
   const handleImportEmployeesExcel = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -67,27 +67,50 @@ export const SettingsPage: React.FC = () => {
         const worksheet = workbook.Sheets[sheetName];
         const json: any[] = XLSX.utils.sheet_to_json(worksheet);
 
+        // Extrai a lista de setores ativos no sistema (em minúsculas para comparação exata)
+        const activeSectors = settings
+          .filter(s => s.type === 'SECTOR')
+          .map(s => s.name.trim().toLowerCase());
+
         if (confirm(`Deseja importar ${json.length} colaboradores?`)) {
+          let pendingCount = 0;
+
           for (const row of json) {
-            // Se o nome estiver em branco, ignoramos a linha
             if (!row.Nome) continue;
+
+            const sectorFromExcel = (row.Setor || 'Geral').trim();
+            // Verifica se o setor da planilha existe no sistema
+            const isPending = !activeSectors.includes(sectorFromExcel.toLowerCase());
+            
+            if (isPending) pendingCount++;
 
             const newEmp: Employee = {
               id: crypto.randomUUID(),
               name: row.Nome,
               role: row.Cargo || 'Não Definido',
-              sector: row.Setor || 'Geral',
+              sector: sectorFromExcel,
               phone: String(row.Telefone || ''),
               contractType: (row.Contrato as ContractType) || 'CLT',
               status: (row.Status as EmployeeStatus) || 'Ativo',
               birthDate: row.Nascimento || '',
               admissionDate: row.Admissao || new Date().toISOString().split('T')[0],
-              history: [],
+              hasPendingInfo: isPending, // FLAG ATIVADA
+              history: isPending ? [{
+                id: crypto.randomUUID(),
+                date: new Date().toISOString().split('T')[0],
+                type: 'Outros',
+                description: `⚠️ Pendência de Importação: O setor informado na planilha ("${sectorFromExcel}") não estava cadastrado no sistema.`
+              }] : [],
               createdAt: new Date().toISOString()
             };
             await addEmployee(newEmp);
           }
-          alert('Importação finalizada!');
+
+          if (pendingCount > 0) {
+            alert(`Importação concluída!\n\nAtenção: ${pendingCount} colaborador(es) foram marcados com pendência (card laranja) porque o setor informado na planilha não existe no sistema.`);
+          } else {
+            alert('Importação concluída com sucesso sem pendências!');
+          }
           window.location.reload();
         }
       } catch (err) {
@@ -234,7 +257,7 @@ export const SettingsPage: React.FC = () => {
       {isMaster && (
         <div className="bg-slate-900 text-slate-200 p-6 rounded-xl shadow-lg border border-slate-800 space-y-8">
           
-          {/* --- NOVO BLOCO: GESTÃO DE COLABORADORES (EXCEL) --- */}
+          {/* --- BLOCO: GESTÃO DE COLABORADORES (EXCEL) --- */}
           <div>
             <div className="flex items-center gap-3 mb-6 border-b border-slate-700 pb-4">
               <FileSpreadsheet className="text-emerald-400" size={24} />
@@ -251,7 +274,7 @@ export const SettingsPage: React.FC = () => {
               <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col justify-between">
                 <div>
                   <h3 className="text-white font-bold mb-2 flex items-center gap-2"><UploadCloud size={18}/> Importar Colaboradores</h3>
-                  <p className="text-xs text-slate-400">Selecione o arquivo Excel preenchido para cadastrar múltiplos colaboradores de uma vez.</p>
+                  <p className="text-xs text-slate-400">Selecione o arquivo Excel preenchido. O sistema alertará se o setor inserido não existir.</p>
                 </div>
                 <label className="mt-4 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 rounded-lg transition-colors text-center cursor-pointer">
                   Selecionar Arquivo Excel
