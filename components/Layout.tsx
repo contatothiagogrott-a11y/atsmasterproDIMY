@@ -10,7 +10,8 @@ import {
   LogOut, 
   UserCircle,
   Database,
-  ClipboardList // <--- 1. Ícone adicionado
+  ClipboardList,
+  CalendarX // <--- Ícone adicionado para Absenteísmo
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -24,6 +25,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   };
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
+
+  // Lógica de permissão para ver o menu de Absenteísmo
+  const canViewAbsenteismo = user?.role === 'MASTER' || user?.role === 'AUXILIAR_RH';
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -50,11 +54,18 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <span className="font-semibold">Vagas</span>
           </Link>
 
-          {/* --- 2. NOVO ITEM NO MENU: ENTREVISTAS GERAIS --- */}
           <Link to="/general-interviews" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/general-interviews') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
             <ClipboardList size={20} />
             <span className="font-semibold">Entrevistas Gerais</span>
           </Link>
+
+          {/* --- NOVO MENU: ABSENTEÍSMO (Com bloqueio de Role) --- */}
+          {canViewAbsenteismo && (
+            <Link to="/absenteismo" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
+              <CalendarX size={20} />
+              <span className="font-semibold">Absenteísmo</span>
+            </Link>
+          )}
 
           <Link to="/talent-pool" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/talent-pool') || isActive('/talents') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600 hover:shadow-sm'}`}>
             <Users size={20} />
@@ -82,7 +93,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <UserCircle className="text-slate-400" size={36} />
             <div>
               <p className="text-sm font-bold text-slate-800">{user?.name}</p>
-              <p className="text-xs text-slate-500 capitalize font-medium">{user?.role === 'MASTER' ? 'Administrador' : 'Recrutador'}</p>
+              {/* Lógica atualizada para refletir corretamente o novo cargo */}
+              <p className="text-xs text-slate-500 capitalize font-medium">
+                {user?.role === 'MASTER' ? 'Administrador' : user?.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : 'Recrutador'}
+              </p>
             </div>
           </div>
           <button 
