@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users } from 'lucide-react';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, DownloadCloud } from 'lucide-react';
+import * as XLSX from 'xlsx'; // <--- Importação necessária para o Excel
 
 export const Absenteismo: React.FC = () => {
   // 1. Puxamos 'employees' do useData para cruzar as informações
@@ -125,6 +126,67 @@ export const Absenteismo: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
+  // ==========================================
+  // NOVA FUNÇÃO: EXPORTAÇÃO PARA EXCEL
+  // ==========================================
+  const handleExportExcel = () => {
+    if (filteredAbsences.length === 0) {
+      alert("Não há registros no período selecionado para exportar.");
+      return;
+    }
+
+    // Preparando os dados cruzando com o perfil atual/histórico do colaborador
+    const dataToExport = filteredAbsences.map(record => {
+      const employee = employees.find(e => e.name.toLowerCase() === record.employeeName.toLowerCase());
+      
+      let pastRole = employee?.role || 'Desconhecido';
+      let pastSector = employee?.sector || 'Desconhecido';
+
+      // Tenta achar se o cargo era diferente na data da falta
+      if (employee && employee.history && employee.history.length > 0) {
+        const sortedHistory = [...employee.history].sort((a, b) => 
+          new Date(b.date).getTime() - new Date(a.date).getTime()
+        );
+
+        for (const historyEvent of sortedHistory) {
+          // Se houve uma promoção/mudança DEPOIS da falta, o cargo atual não era o daquela época
+          if (historyEvent.date > record.absenceDate && 
+             (historyEvent.type === 'Promoção' || historyEvent.type === 'Mudança de Setor')) {
+             pastRole = `${employee.role} (Alterado após a falta)`;
+             pastSector = `${employee.sector} (Alterado após a falta)`;
+             break;
+          }
+        }
+      }
+
+      return {
+        "Colaborador": record.employeeName,
+        "Data": formatDateToBR(record.absenceDate),
+        "Motivo": record.reason,
+        "Tipo": record.documentType,
+        "Setor na Época": pastSector,
+        "Cargo na Época": pastRole,
+        "Duração": record.documentDuration,
+        "Acompanhante": record.companionName || '-',
+        "Vínculo": record.companionBond || '-'
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    
+    // Auto-ajuste de colunas
+    const wscols = [
+      {wch: 30}, {wch: 12}, {wch: 35}, {wch: 25}, {wch: 25}, {wch: 25}, {wch: 15}, {wch: 20}, {wch: 15}
+    ];
+    worksheet['!cols'] = wscols;
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Absenteísmo");
+    
+    const fileName = `Absenteismo_${formatDateToBR(startDate).replace(/\//g, '-')}_a_${formatDateToBR(endDate).replace(/\//g, '-')}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-3 mb-2">
@@ -177,9 +239,17 @@ export const Absenteismo: React.FC = () => {
                 className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
-            <div className="text-xs text-slate-500 ml-auto bg-slate-100 px-3 py-1.5 rounded-lg">
+            <div className="text-xs text-slate-500 ml-auto bg-slate-100 px-3 py-1.5 rounded-lg flex-shrink-0">
               Mostrando <b>{filteredAbsences.length}</b> registros
             </div>
+            
+            {/* BOTÃO DE EXPORTAÇÃO AQUI */}
+            <button 
+              onClick={handleExportExcel}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition-colors text-sm shadow-sm flex-shrink-0"
+            >
+              <DownloadCloud size={16} /> Relatório (Excel)
+            </button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
