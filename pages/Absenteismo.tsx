@@ -3,10 +3,9 @@ import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord } from '../types';
 import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, DownloadCloud } from 'lucide-react';
-import * as XLSX from 'xlsx'; // <--- Importação necessária para o Excel
+import * as XLSX from 'xlsx';
 
 export const Absenteismo: React.FC = () => {
-  // 1. Puxamos 'employees' do useData para cruzar as informações
   const { user, absences = [], addAbsence, updateAbsence, removeAbsence, employees = [] } = useData();
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro'>('dashboard');
@@ -34,11 +33,8 @@ export const Absenteismo: React.FC = () => {
   // MEMÓRIA PARA O AUTOCOMPLETE (DATALIST)
   // ==========================================
   const uniqueNames = useMemo(() => {
-    // 2. Criamos um set unindo os nomes dos colaboradores registrados + nomes já usados em faltas
     const namesFromEmployees = employees.map(emp => emp.name);
     const namesFromAbsences = absences.map(a => a.employeeName);
-    
-    // Remove duplicatas e valores nulos/vazios
     return Array.from(new Set([...namesFromEmployees, ...namesFromAbsences]))
       .filter(Boolean)
       .sort();
@@ -92,14 +88,32 @@ export const Absenteismo: React.FC = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // ==========================================
+  // HANDLER: SALVAR (COM SNAPSHOT DE CARGO E SETOR)
+  // ==========================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Tira uma "fotografia" do cargo e setor do colaborador neste exato momento
+    const currentEmployee = employees.find(emp => 
+      emp.name.trim().toLowerCase() === formData.employeeName?.trim().toLowerCase()
+    );
+
     if (isEditing && formData.id) {
-      await updateAbsence(formData as AbsenceRecord);
+      const updatedAbsence: AbsenceRecord = {
+        ...(formData as AbsenceRecord),
+        // Mantém a foto do passado se já existir, senão grava a atual
+        sectorAtTime: formData.sectorAtTime || currentEmployee?.sector || 'Desconhecido',
+        roleAtTime: formData.roleAtTime || currentEmployee?.role || 'Desconhecido',
+      };
+      await updateAbsence(updatedAbsence);
     } else {
       const newAbsence: AbsenceRecord = {
         ...(formData as AbsenceRecord),
         id: crypto.randomUUID(),
+        // Grava permanentemente onde ele estava na hora de registrar a falta
+        sectorAtTime: currentEmployee?.sector || 'Desconhecido',
+        roleAtTime: currentEmployee?.role || 'Desconhecido',
         createdAt: new Date().toISOString()
       };
       await addAbsence(newAbsence);
@@ -127,7 +141,7 @@ export const Absenteismo: React.FC = () => {
   };
 
   // ==========================================
-  // NOVA FUNÇÃO: EXPORTAÇÃO PARA EXCEL
+  // EXPORTAÇÃO PARA EXCEL OTIMIZADA
   // ==========================================
   const handleExportExcel = () => {
     if (filteredAbsences.length === 0) {
@@ -135,39 +149,21 @@ export const Absenteismo: React.FC = () => {
       return;
     }
 
-    // Preparando os dados cruzando com o perfil atual/histórico do colaborador
     const dataToExport = filteredAbsences.map(record => {
-      const employee = employees.find(e => e.name.toLowerCase() === record.employeeName.toLowerCase());
-      
-      let pastRole = employee?.role || 'Desconhecido';
-      let pastSector = employee?.sector || 'Desconhecido';
-
-      // Tenta achar se o cargo era diferente na data da falta
-      if (employee && employee.history && employee.history.length > 0) {
-        const sortedHistory = [...employee.history].sort((a, b) => 
-          new Date(b.date).getTime() - new Date(a.date).getTime()
-        );
-
-        for (const historyEvent of sortedHistory) {
-          // Se houve uma promoção/mudança DEPOIS da falta, o cargo atual não era o daquela época
-          if (historyEvent.date > record.absenceDate && 
-             (historyEvent.type === 'Promoção' || historyEvent.type === 'Mudança de Setor')) {
-             pastRole = `${employee.role} (Alterado após a falta)`;
-             pastSector = `${employee.sector} (Alterado após a falta)`;
-             break;
-          }
-        }
-      }
+      // Se for um registro velho que não tinha a "fotografia", pega o atual como fallback
+      const fallbackEmployee = employees.find(e => e.name.toLowerCase() === record.employeeName.toLowerCase());
+      const finalSector = record.sectorAtTime || fallbackEmployee?.sector || 'Desconhecido';
+      const finalRole = record.roleAtTime || fallbackEmployee?.role || 'Desconhecido';
 
       return {
-        "Colaborador": record.employeeName,
-        "Data": formatDateToBR(record.absenceDate),
+        "Nome do Colaborador": record.employeeName,
+        "Data do Registro": formatDateToBR(record.absenceDate),
         "Motivo": record.reason,
-        "Tipo": record.documentType,
-        "Setor na Época": pastSector,
-        "Cargo na Época": pastRole,
+        "Tipo de Documento": record.documentType,
+        "Setor (Na Data)": finalSector,
+        "Cargo (Na Data)": finalRole,
         "Duração": record.documentDuration,
-        "Acompanhante": record.companionName || '-',
+        "Dependente": record.companionName || '-',
         "Vínculo": record.companionBond || '-'
       };
     });
@@ -175,9 +171,9 @@ export const Absenteismo: React.FC = () => {
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     
-    // Auto-ajuste de colunas
+    // Auto-ajuste de colunas para ficar bonito no Excel
     const wscols = [
-      {wch: 30}, {wch: 12}, {wch: 35}, {wch: 25}, {wch: 25}, {wch: 25}, {wch: 15}, {wch: 20}, {wch: 15}
+      {wch: 30}, {wch: 15}, {wch: 35}, {wch: 25}, {wch: 25}, {wch: 25}, {wch: 15}, {wch: 20}, {wch: 15}
     ];
     worksheet['!cols'] = wscols;
 
@@ -243,7 +239,7 @@ export const Absenteismo: React.FC = () => {
               Mostrando <b>{filteredAbsences.length}</b> registros
             </div>
             
-            {/* BOTÃO DE EXPORTAÇÃO AQUI */}
+            {/* BOTÃO DE EXPORTAÇÃO */}
             <button 
               onClick={handleExportExcel}
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition-colors text-sm shadow-sm flex-shrink-0"

@@ -187,6 +187,11 @@ export interface AbsenceRecord {
   reason: string; 
   companionName?: string;
   companionBond?: string;
+  
+  // --- NOVOS CAMPOS DE SNAPSHOT ---
+  sectorAtTime?: string; 
+  roleAtTime?: string;   
+  
   createdAt?: string; 
   deletedAt?: string; 
 }
