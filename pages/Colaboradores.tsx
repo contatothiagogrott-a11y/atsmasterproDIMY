@@ -1,11 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { Employee, EmployeeStatus, EmployeeHistoryRecord, AbsenceRecord, ContractType, EmployeeHistoryType } from '../types';
+import { Employee, EmployeeStatus, EmployeeHistoryRecord, ContractType, EmployeeHistoryType } from '../types';
 import { 
   Contact, Plus, Search, Filter, Edit2, Trash2, 
   History, Calendar, Phone, Briefcase, MapPin, 
-  ChevronRight, ArrowLeft, Save, AlertCircle, XCircle, CheckCircle,
-  FileText 
+  ChevronRight, ArrowLeft, Save, AlertCircle, XCircle
 } from 'lucide-react';
 
 export const Colaboradores: React.FC = () => {
@@ -13,8 +12,12 @@ export const Colaboradores: React.FC = () => {
   
   const [view, setView] = useState<'list' | 'form' | 'details'>('list');
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  
+  // --- ESTADOS DE FILTRO ---
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<EmployeeStatus | 'Todos' | 'Pendentes'>('Ativo');
+  const [sectorFilter, setSectorFilter] = useState('Todos');
+  const [unitFilter, setUnitFilter] = useState('Todas');
 
   const [formData, setFormData] = useState<Partial<Employee>>({
     status: 'Ativo',
@@ -22,7 +25,6 @@ export const Colaboradores: React.FC = () => {
     history: []
   });
 
-  // Estado para o formulário de NOVO EVENTO no histórico
   const [showEventForm, setShowEventForm] = useState(false);
   const [newEvent, setNewEvent] = useState<Partial<EmployeeHistoryRecord>>({
     date: new Date().toISOString().split('T')[0],
@@ -30,22 +32,29 @@ export const Colaboradores: React.FC = () => {
     description: ''
   });
 
-  // --- FILTROS ---
+  // --- LÓGICA DE FILTRAGEM (ATUALIZADA) ---
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
+      // 1. Busca por texto
       const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                            emp.role.toLowerCase().includes(searchTerm.toLowerCase());
                            
+      // 2. Filtro de Status / Pendência
       let matchesStatus = false;
       if (statusFilter === 'Todos') matchesStatus = true;
       else if (statusFilter === 'Pendentes') matchesStatus = !!emp.hasPendingInfo;
       else matchesStatus = emp.status === statusFilter;
 
-      return matchesSearch && matchesStatus;
-    });
-  }, [employees, searchTerm, statusFilter]);
+      // 3. Filtro de Setor
+      const matchesSector = sectorFilter === 'Todos' || emp.sector === sectorFilter;
 
-  // --- HISTÓRICO UNIFICADO ---
+      // 4. Filtro de Unidade
+      const matchesUnit = unitFilter === 'Todas' || emp.unit === unitFilter;
+
+      return matchesSearch && matchesStatus && matchesSector && matchesUnit;
+    });
+  }, [employees, searchTerm, statusFilter, sectorFilter, unitFilter]);
+
   const unifiedHistory = useMemo(() => {
     if (!selectedEmployee) return [];
     const employeeAbsences = absences
@@ -63,7 +72,6 @@ export const Colaboradores: React.FC = () => {
     );
   }, [selectedEmployee, absences]);
 
-  // --- HANDLERS ---
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const employeeData = {
@@ -90,11 +98,10 @@ export const Colaboradores: React.FC = () => {
 
   const openDetails = (emp: Employee) => {
     setSelectedEmployee(emp);
-    setShowEventForm(false); // Fecha o form de evento ao trocar de pessoa
+    setShowEventForm(false);
     setView('details');
   };
 
-  // --- HANDLER: ADICIONAR EVENTO AO HISTÓRICO ---
   const handleAddHistoryEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployee || !newEvent.description) return;
@@ -110,21 +117,16 @@ export const Colaboradores: React.FC = () => {
     const updatedHistory = [...(selectedEmployee.history || []), eventRecord];
     const updatedEmployee = { ...selectedEmployee, history: updatedHistory };
 
-    await updateEmployee(updatedEmployee); // Salva no banco
-    setSelectedEmployee(updatedEmployee);  // Atualiza a tela atual
+    await updateEmployee(updatedEmployee); 
+    setSelectedEmployee(updatedEmployee);  
     
-    setShowEventForm(false); // Esconde o formulário
-    setNewEvent({ date: new Date().toISOString().split('T')[0], type: 'Outros', description: '' }); // Limpa o state
+    setShowEventForm(false); 
+    setNewEvent({ date: new Date().toISOString().split('T')[0], type: 'Outros', description: '' }); 
   };
 
-  // --- TRADUTOR DE DATAS À PROVA DE FALHAS (CORREÇÃO DA TELA BRANCA) ---
   const formatDate = (dateVal: any) => {
     if (!dateVal) return '-';
-    
-    // Converte qualquer entrada em string para evitar erro `.split is not a function`
     const dateStr = String(dateVal);
-    
-    // Se for uma data normal (YYYY-MM-DD), tenta quebrar e formatar
     if (dateStr.includes('-')) {
       const parts = dateStr.split('T')[0].split('-');
       if (parts.length === 3) {
@@ -132,9 +134,7 @@ export const Colaboradores: React.FC = () => {
         return `${day}/${month}/${year}`;
       }
     }
-    
-    // Se for um número estranho do Excel ou outro formato, apenas mostra sem quebrar
-    return dateStr;
+    return dateStr; 
   };
 
   const getContractBadgeColor = (type: string) => {
@@ -149,7 +149,6 @@ export const Colaboradores: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-3">
           <div className="p-3 bg-blue-600 text-white rounded-xl shadow-lg">
@@ -172,26 +171,60 @@ export const Colaboradores: React.FC = () => {
         )}
       </div>
 
-      {/* VIEW: LISTAGEM */}
       {view === 'list' && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="relative md:col-span-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input type="text" placeholder="Buscar por nome ou cargo..." className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-            </div>
+          {/* BARRA DE FILTROS SUPERIOR */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
             
-            <select 
-              className={`border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 ${statusFilter === 'Pendentes' ? 'bg-orange-50 border-orange-300 text-orange-800 font-bold' : 'border-slate-200 bg-white'}`} 
-              value={statusFilter} 
-              onChange={e => setStatusFilter(e.target.value as any)}
-            >
-              <option value="Todos">Todos os Status</option>
-              <option value="Ativo">Ativos</option>
-              <option value="Afastado">Afastados</option>
-              <option value="Inativo">Inativos</option>
-              <option value="Pendentes" className="text-orange-600 font-bold">⚠️ Com Pendências</option>
-            </select>
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Buscar por nome ou cargo..." 
+                className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" 
+                value={searchTerm} 
+                onChange={e => setSearchTerm(e.target.value)} 
+              />
+            </div>
+
+            <div className="flex flex-wrap md:flex-nowrap gap-3">
+              <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
+                <Filter size={16} className="text-slate-400" />
+                <select 
+                  className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]"
+                  value={sectorFilter}
+                  onChange={e => setSectorFilter(e.target.value)}
+                >
+                  <option value="Todos">Todos os Setores</option>
+                  {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
+                <MapPin size={16} className="text-slate-400" />
+                <select 
+                  className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]"
+                  value={unitFilter}
+                  onChange={e => setUnitFilter(e.target.value)}
+                >
+                  <option value="Todas">Todas as Unidades</option>
+                  {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                </select>
+              </div>
+              
+              <select 
+                className={`border rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${statusFilter === 'Pendentes' ? 'bg-orange-50 border-orange-300 text-orange-800 font-bold' : 'border-slate-200 bg-white'}`} 
+                value={statusFilter} 
+                onChange={e => setStatusFilter(e.target.value as any)}
+              >
+                <option value="Todos">Todos os Status</option>
+                <option value="Ativo">Ativos</option>
+                <option value="Afastado">Afastados</option>
+                <option value="Inativo">Inativos</option>
+                <option value="Pendentes" className="text-orange-600 font-bold">⚠️ Com Pendências</option>
+              </select>
+            </div>
+
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -224,8 +257,17 @@ export const Colaboradores: React.FC = () => {
                   </div>
                   
                   <h3 className="font-bold text-slate-800 text-lg mb-1">{emp.name}</h3>
-                  <p className="text-slate-500 text-sm flex items-center gap-1.5 mb-4">
-                    <Briefcase size={14} /> {emp.role} • {emp.sector}
+                  <p className="text-slate-500 text-sm flex items-center flex-wrap gap-1.5 mb-4">
+                    <Briefcase size={14} className="text-slate-400" /> 
+                    <span>{emp.role}</span>
+                    <span className="text-slate-300">•</span>
+                    <span>{emp.sector}</span>
+                    {emp.unit && (
+                      <>
+                        <span className="text-slate-300">•</span>
+                        <span>{emp.unit}</span>
+                      </>
+                    )}
                   </p>
 
                   {emp.hasPendingInfo && (
@@ -260,7 +302,6 @@ export const Colaboradores: React.FC = () => {
         </>
       )}
 
-      {/* VIEW: FORMULÁRIO (Cadastro/Edição) */}
       {view === 'form' && (
         <div className="max-w-4xl mx-auto animate-in fade-in zoom-in-95">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
@@ -313,20 +354,39 @@ export const Colaboradores: React.FC = () => {
                   </select>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-700">Setor</label>
-                  <select 
-                    required 
-                    className={`w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white ${formData.hasPendingInfo ? 'border-orange-400 ring-2 ring-orange-100' : 'border-slate-200'}`} 
-                    value={formData.sector || ''} 
-                    onChange={e => setFormData({...formData, sector: e.target.value})}
-                  >
-                    <option value="">Selecione...</option>
-                    {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                    {formData.sector && !settings.some(s => s.type === 'SECTOR' && s.name === formData.sector) && (
-                      <option value={formData.sector} disabled>{formData.sector} (Inativo)</option>
-                    )}
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">Setor</label>
+                    <select 
+                      required 
+                      className={`w-full border p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white ${formData.hasPendingInfo ? 'border-orange-400 ring-2 ring-orange-100' : 'border-slate-200'}`} 
+                      value={formData.sector || ''} 
+                      onChange={e => setFormData({...formData, sector: e.target.value})}
+                    >
+                      <option value="">Selecione...</option>
+                      {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      {formData.sector && !settings.some(s => s.type === 'SECTOR' && s.name === formData.sector) && (
+                        <option value={formData.sector} disabled>{formData.sector} (Inativo)</option>
+                      )}
+                    </select>
+                  </div>
+                  
+                  {/* NOVO CAMPO: UNIDADE */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">Unidade</label>
+                    <select 
+                      required 
+                      className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
+                      value={formData.unit || ''} 
+                      onChange={e => setFormData({...formData, unit: e.target.value})}
+                    >
+                      <option value="">Selecione...</option>
+                      {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      {formData.unit && !settings.some(s => s.type === 'UNIT' && s.name === formData.unit) && (
+                        <option value={formData.unit} disabled>{formData.unit} (Inativo)</option>
+                      )}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -382,7 +442,6 @@ export const Colaboradores: React.FC = () => {
         </div>
       )}
 
-      {/* VIEW: DETALHES */}
       {view === 'details' && selectedEmployee && (
         <div className="animate-in slide-in-from-right-4 duration-300">
           <button onClick={() => setView('list')} className="flex items-center gap-2 text-slate-500 hover:text-blue-600 font-bold mb-6 transition-colors group">
@@ -415,6 +474,7 @@ export const Colaboradores: React.FC = () => {
               </div>
               <div className="mt-8 space-y-4 text-left border-t pt-6 text-sm">
                 <div className="flex justify-between"><span className="text-slate-400">Setor:</span> <span className="font-bold text-slate-700">{selectedEmployee.sector}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Unidade:</span> <span className="font-bold text-slate-700">{selectedEmployee.unit || 'Não informada'}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Cargo:</span> <span className="font-bold text-slate-700">{selectedEmployee.role}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Telefone:</span> <span className="font-bold text-slate-700">{selectedEmployee.phone}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Admissão:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.admissionDate)}</span></div>
@@ -423,7 +483,6 @@ export const Colaboradores: React.FC = () => {
             
             <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm min-h-[400px]">
               
-              {/* CABEÇALHO DO HISTÓRICO COM BOTÃO "NOVO EVENTO" */}
               <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-4">
                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
                   <History className="text-blue-600" /> Histórico Funcional
@@ -436,7 +495,6 @@ export const Colaboradores: React.FC = () => {
                 </button>
               </div>
 
-              {/* FORMULÁRIO DE NOVO EVENTO (INLINE) */}
               {showEventForm && (
                 <form onSubmit={handleAddHistoryEvent} className="bg-slate-50 p-5 rounded-xl border border-slate-200 mb-8 animate-in fade-in slide-in-from-top-2">
                   <h4 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wider">Registrar Acontecimento</h4>
@@ -449,7 +507,7 @@ export const Colaboradores: React.FC = () => {
                       <label className="text-xs font-bold text-slate-500">Tipo de Evento</label>
                       <select required className="w-full border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value as EmployeeHistoryType})}>
                         <option value="Promoção">Promoção / Mudança de Cargo</option>
-                        <option value="Mudança de Setor">Mudança de Setor</option>
+                        <option value="Mudança de Setor">Mudança de Setor / Unidade</option>
                         <option value="Outros">Outros (Conversão PJ, Feedback, etc)</option>
                       </select>
                     </div>
@@ -465,7 +523,6 @@ export const Colaboradores: React.FC = () => {
                 </form>
               )}
 
-              {/* LINHA DO TEMPO */}
               <div className="relative border-l-2 border-slate-100 ml-4 space-y-8">
                 {unifiedHistory.map((item: any, index) => (
                   <div key={index} className="relative pl-8">

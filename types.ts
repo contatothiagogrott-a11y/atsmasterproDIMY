@@ -218,6 +218,7 @@ export interface Employee {
   id: string;
   name: string;
   sector: string;
+  unit?: string; // <--- ADICIONE ESTA LINHA AQUI
   role: string;
   phone: string;
   birthDate: string; // ISO Date
