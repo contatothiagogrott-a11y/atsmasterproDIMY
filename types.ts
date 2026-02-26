@@ -182,16 +182,16 @@ export interface AbsenceRecord {
   id: string;
   employeeName: string;
   absenceDate: string; 
-  documentDuration: string;
+  documentDuration: string; // Mantido para não quebrar registros antigos
+  
+  // NOVOS CAMPOS:
+  durationUnit?: 'Dias' | 'Horas'; 
+  durationAmount?: number;
+  
   documentType: DocumentType;
   reason: string; 
   companionName?: string;
   companionBond?: string;
-  
-  // --- NOVOS CAMPOS DE SNAPSHOT ---
-  sectorAtTime?: string; 
-  roleAtTime?: string;   
-  
   createdAt?: string; 
   deletedAt?: string; 
 }
@@ -218,24 +218,22 @@ export interface Employee {
   id: string;
   name: string;
   sector: string;
-  unit?: string; // <--- ADICIONE ESTA LINHA AQUI
+  unit?: string;
   role: string;
   phone: string;
-  birthDate: string; // ISO Date
-  admissionDate: string; // ISO Date
+  birthDate: string;
+  admissionDate: string;
   status: EmployeeStatus;
   contractType: ContractType;
-  
-  // Campo de Pendência (Ajuste solicitado)
-  hasPendingInfo?: boolean; // <--- ADICIONADO AQUI
-  
-  // Campos Condicionais
-  terminationReason?: string; // Se Inativo
-  leaveReason?: string; // Se Afastado
-  leaveExpectedReturn?: string; // ISO Date - Se Afastado
-  
-  history: EmployeeHistoryRecord[]; // Histórico interno
-  
+  hasPendingInfo?: boolean;
+
+  // NOVO: Jornada do colaborador
+  dailyWorkload?: number; // Ex: 8.8 para CLT normal, 6.0 para Estagiário
+
+  terminationReason?: string;
+  leaveReason?: string;
+  leaveExpectedReturn?: string;
+  history: EmployeeHistoryRecord[];
   createdAt?: string;
   deletedAt?: string;
 }

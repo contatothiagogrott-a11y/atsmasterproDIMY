@@ -2,8 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, DownloadCloud } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock } from 'lucide-react';
 
 export const Absenteismo: React.FC = () => {
   const { user, absences = [], addAbsence, updateAbsence, removeAbsence, employees = [] } = useData();
@@ -12,7 +11,9 @@ export const Absenteismo: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Partial<AbsenceRecord>>({
     documentType: 'Atestado',
-    reason: ''
+    reason: '',
+    durationUnit: 'Dias',
+    durationAmount: 1
   });
 
   const [startDate, setStartDate] = useState(() => {
@@ -29,15 +30,11 @@ export const Absenteismo: React.FC = () => {
     return <Navigate to="/" replace />;
   }
 
-  // ==========================================
-  // MEMÓRIA PARA O AUTOCOMPLETE (DATALIST)
-  // ==========================================
+  // --- MEMÓRIA AUTOCOMPLETE ---
   const uniqueNames = useMemo(() => {
     const namesFromEmployees = employees.map(emp => emp.name);
     const namesFromAbsences = absences.map(a => a.employeeName);
-    return Array.from(new Set([...namesFromEmployees, ...namesFromAbsences]))
-      .filter(Boolean)
-      .sort();
+    return Array.from(new Set([...namesFromEmployees, ...namesFromAbsences])).filter(Boolean).sort();
   }, [employees, absences]);
 
   const uniqueReasons = useMemo(() => {
@@ -51,79 +48,130 @@ export const Absenteismo: React.FC = () => {
     });
   }, [absences, startDate, endDate]);
 
+  // --- HELPER: FORMATAÇÃO DE HORAS (Ex: 8.8 -> 8h 48m) ---
+  const formatHours = (decimalHours: number) => {
+    const h = Math.floor(decimalHours);
+    const m = Math.round((decimalHours - h) * 60);
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}h ${m}m`;
+  };
+
+  // --- LÓGICA DO DASHBOARD (CONVERSÃO PARA HORAS) ---
   const stats = useMemo(() => {
-    let atestados = 0;
-    let declaracoes = 0;
-    let injustificadas = 0;
-    let acompanhamentos = 0;
+    let atestados = 0; let atestadosHours = 0;
+    let declaracoes = 0; let declaracoesHours = 0;
+    let injustificadas = 0; let injustificadasHours = 0;
+    let acompanhamentos = 0; let acompanhamentosHours = 0;
+    let totalLostHours = 0;
+
     const reasonCounts: Record<string, number> = {};
     const nameCounts: Record<string, number> = {};
 
     filteredAbsences.forEach(record => {
-      if (record.documentType === 'Atestado') atestados++;
-      if (record.documentType === 'Declaração') declaracoes++;
-      if (record.documentType === 'Falta Injustificada') injustificadas++;
-      if (record.documentType === 'Acompanhante de Dependente') acompanhamentos++;
+      // 1. Acha o colaborador para pegar a carga horária dele (Padrão: 8.8 horas)
+      const emp = employees.find(e => e.name.toLowerCase() === record.employeeName?.toLowerCase());
+      const workload = emp?.dailyWorkload || 8.8;
 
-      if (record.reason) {
-        reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + 1;
+      // 2. Extrai ou converte a duração do registro
+      let amount = record.durationAmount || 0;
+      let unit = record.durationUnit;
+
+      // Suporte para registros antigos (Legacy) que só tinham o texto "2 dias"
+      if (!unit && record.documentDuration) {
+        const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
+        if (match) {
+          amount = parseFloat(match[1]);
+          unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
+        } else {
+          unit = 'Dias'; amount = 1;
+        }
       }
-      if (record.employeeName) {
-        nameCounts[record.employeeName] = (nameCounts[record.employeeName] || 0) + 1;
-      }
+
+      // 3. Calcula as horas reais daquela falta
+      let hours = 0;
+      if (unit === 'Dias') hours = amount * workload;
+      else if (unit === 'Horas') hours = amount;
+
+      totalLostHours += hours;
+
+      // 4. Acumula nos indicadores
+      if (record.documentType === 'Atestado') { atestados++; atestadosHours += hours; }
+      if (record.documentType === 'Declaração') { declaracoes++; declaracoesHours += hours; }
+      if (record.documentType === 'Falta Injustificada') { injustificadas++; injustificadasHours += hours; }
+      if (record.documentType === 'Acompanhante de Dependente') { acompanhamentos++; acompanhamentosHours += hours; }
+
+      // Rank de Motivos (Por Horas)
+      if (record.reason) reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + hours;
+      // Rank de Pessoas (Por Horas)
+      if (record.employeeName) nameCounts[record.employeeName] = (nameCounts[record.employeeName] || 0) + hours;
     });
 
     return {
-      atestados,
-      declaracoes,
-      injustificadas,
-      acompanhamentos,
+      atestados, atestadosHours,
+      declaracoes, declaracoesHours,
+      injustificadas, injustificadasHours,
+      acompanhamentos, acompanhamentosHours,
+      totalLostHours,
       topReasons: Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]).slice(0, 5),
       topNames: Object.entries(nameCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
     };
-  }, [filteredAbsences]);
+  }, [filteredAbsences, employees]);
 
+  // --- HANDLERS DO FORMULÁRIO ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ 
+      ...prev, 
+      [name]: name === 'durationAmount' ? Number(value) : value 
+    }));
   };
 
-  // ==========================================
-  // HANDLER: SALVAR (COM SNAPSHOT DE CARGO E SETOR)
-  // ==========================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // Tira uma "fotografia" do cargo e setor do colaborador neste exato momento
-    const currentEmployee = employees.find(emp => 
-      emp.name.trim().toLowerCase() === formData.employeeName?.trim().toLowerCase()
-    );
+    
+    const unit = formData.durationUnit || 'Dias';
+    const amount = formData.durationAmount || 1;
+    
+    const newAbsence: AbsenceRecord = {
+      ...(formData as AbsenceRecord),
+      durationUnit: unit,
+      durationAmount: amount,
+      documentDuration: `${amount} ${unit}`, // Salva no formato antigo também para compatibilidade
+      id: isEditing && formData.id ? formData.id : crypto.randomUUID(),
+      createdAt: isEditing && formData.createdAt ? formData.createdAt : new Date().toISOString()
+    };
 
     if (isEditing && formData.id) {
-      const updatedAbsence: AbsenceRecord = {
-        ...(formData as AbsenceRecord),
-        // Mantém a foto do passado se já existir, senão grava a atual
-        sectorAtTime: formData.sectorAtTime || currentEmployee?.sector || 'Desconhecido',
-        roleAtTime: formData.roleAtTime || currentEmployee?.role || 'Desconhecido',
-      };
-      await updateAbsence(updatedAbsence);
+      await updateAbsence(newAbsence);
     } else {
-      const newAbsence: AbsenceRecord = {
-        ...(formData as AbsenceRecord),
-        id: crypto.randomUUID(),
-        // Grava permanentemente onde ele estava na hora de registrar a falta
-        sectorAtTime: currentEmployee?.sector || 'Desconhecido',
-        roleAtTime: currentEmployee?.role || 'Desconhecido',
-        createdAt: new Date().toISOString()
-      };
       await addAbsence(newAbsence);
     }
-    setFormData({ documentType: 'Atestado', reason: '' });
+    
+    setFormData({ documentType: 'Atestado', reason: '', durationUnit: 'Dias', durationAmount: 1 });
     setIsEditing(false);
   };
 
   const handleEdit = (record: AbsenceRecord) => {
-    setFormData(record);
+    // Compatibilidade reversa ao editar registros antigos
+    let amount = record.durationAmount;
+    let unit = record.durationUnit;
+    
+    if (!unit && record.documentDuration) {
+        const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
+        if (match) {
+            amount = parseFloat(match[1]);
+            unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
+        } else {
+            unit = 'Dias'; amount = 1;
+        }
+    }
+
+    setFormData({
+      ...record,
+      durationAmount: amount,
+      durationUnit: unit || 'Dias'
+    });
     setIsEditing(true);
     setActiveTab('cadastro');
   };
@@ -140,49 +188,6 @@ export const Absenteismo: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
-  // ==========================================
-  // EXPORTAÇÃO PARA EXCEL OTIMIZADA
-  // ==========================================
-  const handleExportExcel = () => {
-    if (filteredAbsences.length === 0) {
-      alert("Não há registros no período selecionado para exportar.");
-      return;
-    }
-
-    const dataToExport = filteredAbsences.map(record => {
-      // Se for um registro velho que não tinha a "fotografia", pega o atual como fallback
-      const fallbackEmployee = employees.find(e => e.name.toLowerCase() === record.employeeName.toLowerCase());
-      const finalSector = record.sectorAtTime || fallbackEmployee?.sector || 'Desconhecido';
-      const finalRole = record.roleAtTime || fallbackEmployee?.role || 'Desconhecido';
-
-      return {
-        "Nome do Colaborador": record.employeeName,
-        "Data do Registro": formatDateToBR(record.absenceDate),
-        "Motivo": record.reason,
-        "Tipo de Documento": record.documentType,
-        "Setor (Na Data)": finalSector,
-        "Cargo (Na Data)": finalRole,
-        "Duração": record.documentDuration,
-        "Dependente": record.companionName || '-',
-        "Vínculo": record.companionBond || '-'
-      };
-    });
-
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    const workbook = XLSX.utils.book_new();
-    
-    // Auto-ajuste de colunas para ficar bonito no Excel
-    const wscols = [
-      {wch: 30}, {wch: 15}, {wch: 35}, {wch: 25}, {wch: 25}, {wch: 25}, {wch: 15}, {wch: 20}, {wch: 15}
-    ];
-    worksheet['!cols'] = wscols;
-
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Absenteísmo");
-    
-    const fileName = `Absenteismo_${formatDateToBR(startDate).replace(/\//g, '-')}_a_${formatDateToBR(endDate).replace(/\//g, '-')}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center space-x-3 mb-2">
@@ -191,84 +196,64 @@ export const Absenteismo: React.FC = () => {
         </div>
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Absenteísmo</h1>
-          <p className="text-slate-500 text-sm">Painel de acompanhamento e registros</p>
+          <p className="text-slate-500 text-sm">Monitoramento de Faltas e Horas Perdidas</p>
         </div>
       </div>
 
       <div className="flex space-x-2 border-b border-slate-200">
-        <button 
-          onClick={() => setActiveTab('dashboard')}
-          className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm transition-all border-b-2 ${
-            activeTab === 'dashboard' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <LayoutDashboard size={18} />
-          <span>Dashboard Analítico</span>
+        <button onClick={() => setActiveTab('dashboard')} className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm transition-all border-b-2 ${activeTab === 'dashboard' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+          <LayoutDashboard size={18} /><span>Dashboard Analítico</span>
         </button>
-        <button 
-          onClick={() => setActiveTab('cadastro')}
-          className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm transition-all border-b-2 ${
-            activeTab === 'cadastro' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <FileText size={18} />
-          <span>Cadastros & Registros</span>
+        <button onClick={() => setActiveTab('cadastro')} className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm transition-all border-b-2 ${activeTab === 'cadastro' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+          <FileText size={18} /><span>Cadastros & Registros</span>
         </button>
       </div>
 
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+          
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
             <span className="font-semibold text-slate-700 text-sm">Período de Análise:</span>
             <div className="flex items-center gap-2">
-              <input 
-                type="date" 
-                value={startDate} 
-                onChange={(e) => setStartDate(e.target.value)}
-                className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
               <span className="text-slate-400">até</span>
-              <input 
-                type="date" 
-                value={endDate} 
-                onChange={(e) => setEndDate(e.target.value)}
-                className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
-            <div className="text-xs text-slate-500 ml-auto bg-slate-100 px-3 py-1.5 rounded-lg flex-shrink-0">
-              Mostrando <b>{filteredAbsences.length}</b> registros
+            <div className="ml-auto flex items-center gap-4">
+              <div className="text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">
+                <b>{filteredAbsences.length}</b> Ocorrências
+              </div>
+              <div className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                <Clock size={14}/> Total: {formatHours(stats.totalLostHours)} Perdidas
+              </div>
             </div>
-            
-            {/* BOTÃO DE EXPORTAÇÃO */}
-            <button 
-              onClick={handleExportExcel}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg transition-colors text-sm shadow-sm flex-shrink-0"
-            >
-              <DownloadCloud size={16} /> Relatório (Excel)
-            </button>
           </div>
 
+          {/* Cards agora focados nas HORAS */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-red-600">Injustificadas</p>
-                <p className="text-3xl font-bold text-slate-800 mt-1">{stats.injustificadas}</p>
+                <p className="text-sm font-semibold text-red-600">Faltas Injustificadas</p>
+                <p className="text-2xl font-bold text-slate-800 mt-1">{formatHours(stats.injustificadasHours)}</p>
+                <p className="text-xs font-medium text-slate-400 mt-1">em {stats.injustificadas} registros</p>
               </div>
               <div className="p-3 bg-red-50 text-red-600 rounded-full"><AlertTriangle size={24} /></div>
             </div>
             
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-blue-100 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-blue-600">Atestados</p>
-                <p className="text-3xl font-bold text-slate-800 mt-1">{stats.atestados}</p>
+                <p className="text-sm font-semibold text-blue-600">Atestados (Médico)</p>
+                <p className="text-2xl font-bold text-slate-800 mt-1">{formatHours(stats.atestadosHours)}</p>
+                <p className="text-xs font-medium text-slate-400 mt-1">em {stats.atestados} registros</p>
               </div>
               <div className="p-3 bg-blue-50 text-blue-600 rounded-full"><Activity size={24} /></div>
             </div>
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-amber-600">Declarações</p>
-                <p className="text-3xl font-bold text-slate-800 mt-1">{stats.declaracoes}</p>
+                <p className="text-sm font-semibold text-amber-600">Declarações (Horas)</p>
+                <p className="text-2xl font-bold text-slate-800 mt-1">{formatHours(stats.declaracoesHours)}</p>
+                <p className="text-xs font-medium text-slate-400 mt-1">em {stats.declaracoes} registros</p>
               </div>
               <div className="p-3 bg-amber-50 text-amber-600 rounded-full"><FileText size={24} /></div>
             </div>
@@ -276,23 +261,25 @@ export const Absenteismo: React.FC = () => {
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-100 flex items-center justify-between">
               <div>
                 <p className="text-sm font-semibold text-indigo-600">Acompanhamentos</p>
-                <p className="text-3xl font-bold text-slate-800 mt-1">{stats.acompanhamentos}</p>
+                <p className="text-2xl font-bold text-slate-800 mt-1">{formatHours(stats.acompanhamentosHours)}</p>
+                <p className="text-xs font-medium text-slate-400 mt-1">em {stats.acompanhamentos} registros</p>
               </div>
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full"><Users size={24} /></div>
             </div>
           </div>
 
+          {/* Ranks agora mostram Horas */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Principais Motivos de Afastamento</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Principais Motivos (Por Horas)</h3>
               {stats.topReasons.length === 0 ? (
                 <p className="text-sm text-slate-500 py-4 text-center">Nenhum dado registrado neste período.</p>
               ) : (
                 <ul className="space-y-3">
-                  {stats.topReasons.map(([reason, count], index) => (
+                  {stats.topReasons.map(([reason, hours], index) => (
                     <li key={index} className="flex justify-between items-center text-sm">
                       <span className="font-medium text-slate-700">{reason}</span>
-                      <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-bold">{count}x</span>
+                      <span className="bg-slate-100 text-slate-700 px-3 py-1 rounded-full font-bold">{formatHours(hours)}</span>
                     </li>
                   ))}
                 </ul>
@@ -300,15 +287,15 @@ export const Absenteismo: React.FC = () => {
             </div>
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Colaboradores com mais Ausências</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Colaboradores com mais Ausências (Horas)</h3>
               {stats.topNames.length === 0 ? (
                 <p className="text-sm text-slate-500 py-4 text-center">Nenhum dado registrado neste período.</p>
               ) : (
                 <ul className="space-y-3">
-                  {stats.topNames.map(([name, count], index) => (
+                  {stats.topNames.map(([name, hours], index) => (
                     <li key={index} className="flex justify-between items-center text-sm">
                       <span className="font-medium text-slate-700">{name}</span>
-                      <span className="bg-red-50 text-red-600 px-3 py-1 rounded-full font-bold">{count} registros</span>
+                      <span className="bg-red-50 text-red-600 px-3 py-1 rounded-full font-bold">{formatHours(hours)}</span>
                     </li>
                   ))}
                 </ul>
@@ -337,72 +324,42 @@ export const Absenteismo: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-4 flex flex-col">
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Nome do Colaborador
-                <input 
-                  type="text" 
-                  name="employeeName" 
-                  list="employee-names"
-                  value={formData.employeeName || ''}
-                  onChange={handleInputChange} 
-                  required 
-                  className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="Selecione ou digite o nome..."
-                />
+                <input type="text" name="employeeName" list="employee-names" value={formData.employeeName || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Selecione ou digite o nome..." />
               </label>
 
               <label className="flex flex-col text-sm font-medium text-slate-700">
-                Motivo da Ausência
-                <input 
-                  type="text" 
-                  name="reason" 
-                  list="absence-reasons"
-                  value={formData.reason || ''}
-                  onChange={handleInputChange} 
-                  required 
-                  className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="Ex: Dor de cabeça, Conjuntivite..."
-                />
+                Data de Início
+                <input type="date" name="absenceDate" value={formData.absenceDate || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
               </label>
 
+              {/* NOVOS CAMPOS DE DURAÇÃO */}
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col text-sm font-medium text-slate-700">
-                  Data de Início
-                  <input 
-                    type="date" 
-                    name="absenceDate" 
-                    value={formData.absenceDate || ''}
-                    onChange={handleInputChange} 
-                    required 
-                    className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                  />
+                  Quantidade
+                  <input type="number" step="0.5" name="durationAmount" value={formData.durationAmount || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: 2" />
                 </label>
-
                 <label className="flex flex-col text-sm font-medium text-slate-700">
-                  Duração
-                  <input 
-                    type="text" 
-                    name="documentDuration" 
-                    value={formData.documentDuration || ''}
-                    onChange={handleInputChange} 
-                    required 
-                    className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="Ex: 2 dias, 4 horas"
-                  />
+                  Unidade
+                  <select name="durationUnit" value={formData.durationUnit || 'Dias'} onChange={handleInputChange} className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                    <option value="Dias">Dias (8.8 hrs)</option>
+                    <option value="Horas">Horas Fixas</option>
+                  </select>
                 </label>
               </div>
 
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Tipo de Registro
-                <select 
-                  name="documentType" 
-                  value={formData.documentType || 'Atestado'} 
-                  onChange={handleInputChange} 
-                  className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                >
+                <select name="documentType" value={formData.documentType || 'Atestado'} onChange={handleInputChange} className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
                   <option value="Atestado">Atestado Médico</option>
                   <option value="Declaração">Declaração de Horas</option>
                   <option value="Acompanhante de Dependente">Acompanhante de Dependente</option>
                   <option value="Falta Injustificada">Falta Injustificada</option>
                 </select>
+              </label>
+              
+              <label className="flex flex-col text-sm font-medium text-slate-700">
+                Motivo da Ausência / CID
+                <input type="text" name="reason" list="absence-reasons" value={formData.reason || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: Dor de cabeça, Conjuntivite..." />
               </label>
 
               {formData.documentType === 'Acompanhante de Dependente' && (
@@ -423,7 +380,7 @@ export const Absenteismo: React.FC = () => {
                   {isEditing ? 'Salvar Alterações' : 'Registrar Ausência'}
                 </button>
                 {isEditing && (
-                  <button type="button" onClick={() => { setIsEditing(false); setFormData({ documentType: 'Atestado', reason: '' }); }} className="bg-slate-200 text-slate-700 font-semibold p-2.5 rounded-lg hover:bg-slate-300 transition-colors">
+                  <button type="button" onClick={() => { setIsEditing(false); setFormData({ documentType: 'Atestado', reason: '', durationUnit: 'Dias', durationAmount: 1 }); }} className="bg-slate-200 text-slate-700 font-semibold p-2.5 rounded-lg hover:bg-slate-300 transition-colors">
                     Cancelar
                   </button>
                 )}
@@ -460,7 +417,10 @@ export const Absenteismo: React.FC = () => {
                         </td>
                         <td className="py-3">
                           <p className="font-medium">{formatDateToBR(record.absenceDate)}</p>
-                          <p className="text-xs text-slate-500">{record.documentDuration}</p>
+                          {/* Exibe o novo formato visual de quantidade + unidade */}
+                          <p className="text-xs font-bold text-slate-400">
+                            {record.durationAmount || ''} {record.durationUnit || record.documentDuration}
+                          </p>
                         </td>
                         <td className="py-3">
                           <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${

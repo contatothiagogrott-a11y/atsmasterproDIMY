@@ -12,7 +12,7 @@ export const SettingsPage: React.FC = () => {
   const { 
     settings, addSetting, removeSetting, updateSetting, 
     users, addUser, user: currentUser, changePassword, adminResetPassword,
-    jobs, talents, candidates, employees, addEmployee, updateEmployee, // <--- updateEmployee adicionado aqui
+    jobs, talents, candidates, employees, addEmployee, updateEmployee, 
     trash, restoreItem, permanentlyDeleteItem 
   } = useData();
   
@@ -37,13 +37,14 @@ export const SettingsPage: React.FC = () => {
       Nome: emp.name,
       Cargo: emp.role,
       Setor: emp.sector,
+      Unidade: emp.unit || '', // <--- UNIDADE ADICIONADA AQUI
       Telefone: emp.phone,
       Contrato: emp.contractType,
       Status: emp.status,
       Nascimento: emp.birthDate,
       Admissao: emp.admissionDate
     })) : [{
-      Nome: '', Cargo: '', Setor: '', Telefone: '', 
+      Nome: '', Cargo: '', Setor: '', Unidade: '', // <--- UNIDADE NO MODELO VAZIO
       Contrato: 'CLT', Status: 'Ativo', Nascimento: '1990-01-01', Admissao: '2024-01-01'
     }];
 
@@ -53,12 +54,11 @@ export const SettingsPage: React.FC = () => {
     XLSX.writeFile(workbook, `MODELO_IMPORT_COLABORADORES.xlsx`);
   };
 
-  // --- LÓGICA DE EXCEL: IMPORTAR (COM ATUALIZAÇÃO AUTOMÁTICA) ---
+  // --- LÓGICA DE EXCEL: IMPORTAR (COM UNIDADE E VALIDAÇÃO) ---
   const handleImportEmployeesExcel = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Tradutor de Datas (DD/MM/YYYY para YYYY-MM-DD)
     const parseExcelDate = (dateVal: any) => {
       if (!dateVal) return '';
       if (typeof dateVal === 'number' || (!isNaN(Number(dateVal)) && String(dateVal).trim().length >= 4)) {
@@ -86,9 +86,8 @@ export const SettingsPage: React.FC = () => {
         const worksheet = workbook.Sheets[sheetName];
         const json: any[] = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: '' });
 
-        const activeSectors = settings
-          .filter(s => s.type === 'SECTOR')
-          .map(s => s.name.trim().toLowerCase());
+        const activeSectors = settings.filter(s => s.type === 'SECTOR').map(s => s.name.trim().toLowerCase());
+        const activeUnits = settings.filter(s => s.type === 'UNIT').map(s => s.name.trim().toLowerCase());
 
         if (confirm(`Deseja processar ${json.length} colaboradores? O sistema irá atualizar os nomes que já existem e criar os novos.`)) {
           let pendingCount = 0;
@@ -106,21 +105,31 @@ export const SettingsPage: React.FC = () => {
             if (!rawName) continue;
 
             const sectorFromExcel = (normalizedRow['setor'] || 'Geral').trim();
-            const isPending = !activeSectors.includes(sectorFromExcel.toLowerCase());
+            const unitFromExcel = (normalizedRow['unidade'] || '').trim(); // <--- LÊ UNIDADE DO EXCEL
+
+            const isSectorPending = !activeSectors.includes(sectorFromExcel.toLowerCase());
+            const isUnitPending = unitFromExcel !== '' && !activeUnits.includes(unitFromExcel.toLowerCase());
+            const isPending = isSectorPending || isUnitPending;
+            
             if (isPending) pendingCount++;
+
+            let pendingMsg = '⚠️ Atualização via Excel: ';
+            if (isSectorPending && isUnitPending) pendingMsg += `O setor "${sectorFromExcel}" e a unidade "${unitFromExcel}" não existem no sistema.`;
+            else if (isSectorPending) pendingMsg += `O setor "${sectorFromExcel}" não existe no sistema.`;
+            else if (isUnitPending) pendingMsg += `A unidade "${unitFromExcel}" não existe no sistema.`;
 
             const rawAdmission = normalizedRow['admissao'] || normalizedRow['data de admissao'];
             const rawBirth = normalizedRow['nascimento'] || normalizedRow['data de nascimento'];
 
-            // VERIFICA SE O COLABORADOR JÁ EXISTE PELO NOME (Ignorando letras maiúsculas/minúsculas)
             const existingEmp = employees.find(emp => emp.name.trim().toLowerCase() === String(rawName).trim().toLowerCase());
 
             if (existingEmp) {
               // ATUALIZA O EXISTENTE
               const updatedEmp: Employee = {
-                ...existingEmp, // Mantém ID e histórico antigo
+                ...existingEmp,
                 role: normalizedRow['cargo'] || existingEmp.role,
                 sector: sectorFromExcel,
+                unit: unitFromExcel, // <--- ATUALIZA UNIDADE
                 phone: String(normalizedRow['telefone'] || existingEmp.phone),
                 contractType: (normalizedRow['contrato'] as ContractType) || existingEmp.contractType,
                 status: (normalizedRow['status'] as EmployeeStatus) || existingEmp.status,
@@ -129,13 +138,12 @@ export const SettingsPage: React.FC = () => {
                 hasPendingInfo: isPending,
               };
 
-              // Adiciona aviso no histórico apenas se ficou pendente agora
               if (isPending && !existingEmp.hasPendingInfo) {
                 updatedEmp.history = [...(existingEmp.history || []), {
                   id: crypto.randomUUID(),
                   date: new Date().toISOString().split('T')[0],
                   type: 'Outros',
-                  description: `⚠️ Atualização via Excel: O setor "${sectorFromExcel}" não estava cadastrado no sistema.`
+                  description: pendingMsg
                 }];
               }
 
@@ -148,6 +156,7 @@ export const SettingsPage: React.FC = () => {
                 name: rawName,
                 role: normalizedRow['cargo'] || 'Não Definido',
                 sector: sectorFromExcel,
+                unit: unitFromExcel, // <--- ADICIONA UNIDADE
                 phone: String(normalizedRow['telefone'] || ''),
                 contractType: (normalizedRow['contrato'] as ContractType) || 'CLT',
                 status: (normalizedRow['status'] as EmployeeStatus) || 'Ativo',
@@ -158,7 +167,7 @@ export const SettingsPage: React.FC = () => {
                   id: crypto.randomUUID(),
                   date: new Date().toISOString().split('T')[0],
                   type: 'Outros',
-                  description: `⚠️ Importação via Excel: O setor "${sectorFromExcel}" não estava cadastrado no sistema.`
+                  description: pendingMsg.replace('Atualização', 'Importação')
                 }] : [],
                 createdAt: new Date().toISOString()
               };
@@ -169,7 +178,7 @@ export const SettingsPage: React.FC = () => {
 
           let msg = `Processamento concluído!\n\n🔹 Novos criados: ${insertedCount}\n🔸 Atualizados: ${updatedCount}`;
           if (pendingCount > 0) {
-            msg += `\n\n⚠️ Atenção: ${pendingCount} colaboradores estão com setor pendente (card laranja).`;
+            msg += `\n\n⚠️ Atenção: ${pendingCount} colaboradores estão com setor ou unidade pendente (card laranja).`;
           }
           alert(msg);
           window.location.reload();
