@@ -13,7 +13,6 @@ export const Colaboradores: React.FC = () => {
   const [view, setView] = useState<'list' | 'form' | 'details'>('list');
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   
-  // --- ESTADOS DE FILTRO ---
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<EmployeeStatus | 'Todos' | 'Pendentes'>('Ativo');
   const [sectorFilter, setSectorFilter] = useState('Todos');
@@ -21,7 +20,8 @@ export const Colaboradores: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<Employee>>({
     status: 'Ativo',
-    contractType: 'CLT', 
+    contractType: 'CLT',
+    dailyWorkload: 8.8, // <--- Valor padrão sugerido 
     history: []
   });
 
@@ -32,23 +32,17 @@ export const Colaboradores: React.FC = () => {
     description: ''
   });
 
-  // --- LÓGICA DE FILTRAGEM (ATUALIZADA) ---
   const filteredEmployees = useMemo(() => {
     return employees.filter(emp => {
-      // 1. Busca por texto
       const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                            emp.role.toLowerCase().includes(searchTerm.toLowerCase());
                            
-      // 2. Filtro de Status / Pendência
       let matchesStatus = false;
       if (statusFilter === 'Todos') matchesStatus = true;
       else if (statusFilter === 'Pendentes') matchesStatus = !!emp.hasPendingInfo;
       else matchesStatus = emp.status === statusFilter;
 
-      // 3. Filtro de Setor
       const matchesSector = sectorFilter === 'Todos' || emp.sector === sectorFilter;
-
-      // 4. Filtro de Unidade
       const matchesUnit = unitFilter === 'Todas' || emp.unit === unitFilter;
 
       return matchesSearch && matchesStatus && matchesSector && matchesUnit;
@@ -57,16 +51,19 @@ export const Colaboradores: React.FC = () => {
 
   const unifiedHistory = useMemo(() => {
     if (!selectedEmployee) return [];
+    
     const employeeAbsences = absences
       .filter(a => a.employeeName.toLowerCase() === selectedEmployee.name.toLowerCase())
       .map(a => ({
         id: a.id,
         date: a.absenceDate,
-        type: 'Falta/Afastamento' as any,
-        description: `Registro de ${a.documentType}: ${a.reason} (${a.documentDuration})`,
+        type: 'Falta/Afastamento',
+        description: `Registro de ${a.documentType}: ${a.reason} (${a.durationAmount || 1} ${a.durationUnit || 'Dias'})`,
         isAbsence: true
       }));
+
     const manualHistory = (selectedEmployee.history || []).map(h => ({ ...h, isAbsence: false }));
+    
     return [...employeeAbsences, ...manualHistory].sort((a, b) => 
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
@@ -88,11 +85,11 @@ export const Colaboradores: React.FC = () => {
       await addEmployee(employeeData);
     }
     setView('list');
-    setFormData({ status: 'Ativo', contractType: 'CLT', history: [] });
+    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, history: [] });
   };
 
   const handleEdit = (emp: Employee) => {
-    setFormData(emp);
+    setFormData({ ...emp, dailyWorkload: emp.dailyWorkload || 8.8 });
     setView('form');
   };
 
@@ -124,7 +121,7 @@ export const Colaboradores: React.FC = () => {
     setNewEvent({ date: new Date().toISOString().split('T')[0], type: 'Outros', description: '' }); 
   };
 
-  const formatDate = (dateVal: any) => {
+  const formatDate = (dateVal: string | undefined | null) => {
     if (!dateVal) return '-';
     const dateStr = String(dateVal);
     if (dateStr.includes('-')) {
@@ -137,7 +134,7 @@ export const Colaboradores: React.FC = () => {
     return dateStr; 
   };
 
-  const getContractBadgeColor = (type: string) => {
+  const getContractBadgeColor = (type: string | undefined) => {
     switch (type) {
       case 'CLT': return 'bg-blue-50 text-blue-700 border-blue-100';
       case 'PJ': return 'bg-purple-50 text-purple-700 border-purple-100';
@@ -162,7 +159,7 @@ export const Colaboradores: React.FC = () => {
         
         {view === 'list' && (
           <button 
-            onClick={() => { setFormData({ status: 'Ativo', contractType: 'CLT', history: [] }); setView('form'); }}
+            onClick={() => { setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, history: [] }); setView('form'); }}
             className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg"
           >
             <Plus size={20} />
@@ -173,9 +170,7 @@ export const Colaboradores: React.FC = () => {
 
       {view === 'list' && (
         <>
-          {/* BARRA DE FILTROS SUPERIOR */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
-            
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input 
@@ -224,7 +219,6 @@ export const Colaboradores: React.FC = () => {
                 <option value="Pendentes" className="text-orange-600 font-bold">⚠️ Com Pendências</option>
               </select>
             </div>
-
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -347,7 +341,7 @@ export const Colaboradores: React.FC = () => {
 
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-slate-700">Status Atual</label>
-                  <select className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.status} onChange={e => setFormData({...formData, status: e.target.value as any})}>
+                  <select className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={formData.status || 'Ativo'} onChange={e => setFormData({...formData, status: e.target.value as any})}>
                     <option value="Ativo">Ativo</option>
                     <option value="Afastado">Afastado</option>
                     <option value="Inativo">Inativo (Desligado)</option>
@@ -371,7 +365,6 @@ export const Colaboradores: React.FC = () => {
                     </select>
                   </div>
                   
-                  {/* NOVO CAMPO: UNIDADE */}
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">Unidade</label>
                     <select 
@@ -399,7 +392,7 @@ export const Colaboradores: React.FC = () => {
                   <input required className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:col-span-2">
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">Data Nascimento</label>
                     <input type="date" required className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={formData.birthDate || ''} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
@@ -407,6 +400,22 @@ export const Colaboradores: React.FC = () => {
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">Admissão</label>
                     <input type="date" required className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={formData.admissionDate || ''} onChange={e => setFormData({...formData, admissionDate: e.target.value})} />
+                  </div>
+                  
+                  {/* NOVO CAMPO: JORNADA DIÁRIA */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700 flex justify-between">
+                      <span>Jornada Diária</span>
+                      <span className="text-[10px] text-slate-400 font-normal">Ex: 8.8 para 8h48m</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      required 
+                      className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" 
+                      value={formData.dailyWorkload || 8.8} 
+                      onChange={e => setFormData({...formData, dailyWorkload: Number(e.target.value)})} 
+                    />
                   </div>
                 </div>
               </div>
@@ -478,6 +487,7 @@ export const Colaboradores: React.FC = () => {
                 <div className="flex justify-between"><span className="text-slate-400">Cargo:</span> <span className="font-bold text-slate-700">{selectedEmployee.role}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Telefone:</span> <span className="font-bold text-slate-700">{selectedEmployee.phone}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Admissão:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.admissionDate)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Jornada (h/dia):</span> <span className="font-bold text-slate-700">{selectedEmployee.dailyWorkload || 8.8}</span></div>
               </div>
             </div>
             
