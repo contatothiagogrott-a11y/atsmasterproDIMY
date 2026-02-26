@@ -69,15 +69,12 @@ export const Absenteismo: React.FC = () => {
     const nameCounts: Record<string, number> = {};
 
     filteredAbsences.forEach(record => {
-      // 1. Acha o colaborador para pegar a carga horária dele (Padrão: 8.8 horas)
       const emp = employees.find(e => e.name.toLowerCase() === record.employeeName?.toLowerCase());
       const workload = emp?.dailyWorkload || 8.8;
 
-      // 2. Extrai ou converte a duração do registro
       let amount = record.durationAmount || 0;
       let unit = record.durationUnit;
 
-      // Suporte para registros antigos (Legacy) que só tinham o texto "2 dias"
       if (!unit && record.documentDuration) {
         const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
         if (match) {
@@ -88,22 +85,18 @@ export const Absenteismo: React.FC = () => {
         }
       }
 
-      // 3. Calcula as horas reais daquela falta
       let hours = 0;
       if (unit === 'Dias') hours = amount * workload;
       else if (unit === 'Horas') hours = amount;
 
       totalLostHours += hours;
 
-      // 4. Acumula nos indicadores
       if (record.documentType === 'Atestado') { atestados++; atestadosHours += hours; }
       if (record.documentType === 'Declaração') { declaracoes++; declaracoesHours += hours; }
       if (record.documentType === 'Falta Injustificada') { injustificadas++; injustificadasHours += hours; }
       if (record.documentType === 'Acompanhante de Dependente') { acompanhamentos++; acompanhamentosHours += hours; }
 
-      // Rank de Motivos (Por Horas)
       if (record.reason) reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + hours;
-      // Rank de Pessoas (Por Horas)
       if (record.employeeName) nameCounts[record.employeeName] = (nameCounts[record.employeeName] || 0) + hours;
     });
 
@@ -127,17 +120,53 @@ export const Absenteismo: React.FC = () => {
     }));
   };
 
+  const handleUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newUnit = e.target.value as 'Dias' | 'Horas';
+    setFormData(prev => ({ 
+      ...prev, 
+      durationUnit: newUnit, 
+      // Reseta os valores ao trocar para não causar confusão
+      durationAmount: newUnit === 'Dias' ? 1 : 0 
+    }));
+  };
+
+  // Controles específicos para separar Horas e Minutos na tela
+  const currentHours = Math.floor(formData.durationAmount || 0);
+  const currentMinutes = Math.round(((formData.durationAmount || 0) - currentHours) * 60);
+
+  const handleHourChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const h = Number(e.target.value) || 0;
+    setFormData(prev => ({ ...prev, durationAmount: h + (currentMinutes / 60) }));
+  };
+
+  const handleMinuteChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const m = Number(e.target.value) || 0;
+    setFormData(prev => ({ ...prev, durationAmount: currentHours + (m / 60) }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     const unit = formData.durationUnit || 'Dias';
-    const amount = formData.durationAmount || 1;
+    const amount = formData.durationAmount || 0;
+    
+    // Cria uma string bonita para salvar e mostrar na tabela (Ex: "2h 30m" ou "2 Dias")
+    let displayDuration = `${amount} ${unit}`;
+    if (unit === 'Horas') {
+      const h = Math.floor(amount);
+      const m = Math.round((amount - h) * 60);
+      if (h > 0 && m > 0) displayDuration = `${h}h ${m}m`;
+      else if (h > 0) displayDuration = `${h}h`;
+      else displayDuration = `${m}m`;
+    } else {
+      displayDuration = amount === 1 ? '1 Dia' : `${amount} Dias`;
+    }
     
     const newAbsence: AbsenceRecord = {
       ...(formData as AbsenceRecord),
       durationUnit: unit,
       durationAmount: amount,
-      documentDuration: `${amount} ${unit}`, // Salva no formato antigo também para compatibilidade
+      documentDuration: displayDuration, 
       id: isEditing && formData.id ? formData.id : crypto.randomUUID(),
       createdAt: isEditing && formData.createdAt ? formData.createdAt : new Date().toISOString()
     };
@@ -153,18 +182,28 @@ export const Absenteismo: React.FC = () => {
   };
 
   const handleEdit = (record: AbsenceRecord) => {
-    // Compatibilidade reversa ao editar registros antigos
     let amount = record.durationAmount;
     let unit = record.durationUnit;
     
+    // Lida com formatos de texto legados (antigos)
     if (!unit && record.documentDuration) {
-        const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
-        if (match) {
-            amount = parseFloat(match[1]);
-            unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
-        } else {
-            unit = 'Dias'; amount = 1;
-        }
+      const hMatch = record.documentDuration.match(/(\d+)h/i);
+      const mMatch = record.documentDuration.match(/(\d+)m/i);
+      
+      if (hMatch || mMatch) {
+          const h = hMatch ? parseInt(hMatch[1]) : 0;
+          const m = mMatch ? parseInt(mMatch[1]) : 0;
+          amount = h + (m / 60);
+          unit = 'Horas';
+      } else {
+          const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
+          if (match) {
+              amount = parseFloat(match[1]);
+              unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
+          } else {
+              unit = 'Dias'; amount = 1;
+          }
+      }
     }
 
     setFormData({
@@ -229,7 +268,6 @@ export const Absenteismo: React.FC = () => {
             </div>
           </div>
 
-          {/* Cards agora focados nas HORAS */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex items-center justify-between">
               <div>
@@ -268,7 +306,6 @@ export const Absenteismo: React.FC = () => {
             </div>
           </div>
 
-          {/* Ranks agora mostram Horas */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
               <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Principais Motivos (Por Horas)</h3>
@@ -332,20 +369,32 @@ export const Absenteismo: React.FC = () => {
                 <input type="date" name="absenceDate" value={formData.absenceDate || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
               </label>
 
-              {/* NOVOS CAMPOS DE DURAÇÃO */}
-              <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col text-sm font-medium text-slate-700">
+                Unidade de Tempo
+                <select name="durationUnit" value={formData.durationUnit || 'Dias'} onChange={handleUnitChange} className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                  <option value="Dias">Dias (Jornada Integral)</option>
+                  <option value="Horas">Horas Fixas</option>
+                </select>
+              </label>
+
+              {/* RENDERIZAÇÃO CONDICIONAL: DIAS x HORAS/MINUTOS */}
+              {formData.durationUnit === 'Dias' ? (
                 <label className="flex flex-col text-sm font-medium text-slate-700">
-                  Quantidade
-                  <input type="number" step="0.5" name="durationAmount" value={formData.durationAmount || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: 2" />
+                  Quantidade de Dias
+                  <input type="number" step="0.5" min="0" name="durationAmount" value={formData.durationAmount || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: 2" />
                 </label>
-                <label className="flex flex-col text-sm font-medium text-slate-700">
-                  Unidade
-                  <select name="durationUnit" value={formData.durationUnit || 'Dias'} onChange={handleInputChange} className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                    <option value="Dias">Dias (8.8 hrs)</option>
-                    <option value="Horas">Horas Fixas</option>
-                  </select>
-                </label>
-              </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <label className="flex flex-col text-sm font-bold text-slate-600">
+                    Horas
+                    <input type="number" min="0" value={currentHours} onChange={handleHourChange} className="mt-1 border border-slate-300 p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white" placeholder="Ex: 2" />
+                  </label>
+                  <label className="flex flex-col text-sm font-bold text-slate-600">
+                    Minutos
+                    <input type="number" min="0" max="59" value={currentMinutes} onChange={handleMinuteChange} className="mt-1 border border-slate-300 p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white" placeholder="Ex: 30" />
+                  </label>
+                </div>
+              )}
 
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Tipo de Registro
@@ -417,9 +466,8 @@ export const Absenteismo: React.FC = () => {
                         </td>
                         <td className="py-3">
                           <p className="font-medium">{formatDateToBR(record.absenceDate)}</p>
-                          {/* Exibe o novo formato visual de quantidade + unidade */}
                           <p className="text-xs font-bold text-slate-400">
-                            {record.durationAmount || ''} {record.durationUnit || record.documentDuration}
+                            {record.documentDuration}
                           </p>
                         </td>
                         <td className="py-3">
