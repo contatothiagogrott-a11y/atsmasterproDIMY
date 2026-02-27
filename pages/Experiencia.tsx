@@ -2,8 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Employee, ExperienceInterview } from '../types';
 import { addDays, differenceInDays, parseISO } from 'date-fns';
-import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar, Edit2, Trash2, Download } from 'lucide-react';
-import * as XLSX from 'xlsx'; // <--- BIBLIOTECA EXCEL ADICIONADA AQUI
+import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar, Edit2, Trash2, Download, Plus } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export const Experiencia: React.FC = () => {
   const { employees, updateEmployee, user, settings = [] } = useData();
@@ -24,9 +24,12 @@ export const Experiencia: React.FC = () => {
   const [filterSector, setFilterSector] = useState('Todos');
   const [filterUnit, setFilterUnit] = useState('Todas');
 
+  // --- ESTADOS DO MODAL ---
+  const [manualEntry, setManualEntry] = useState(false);
   const [interviewingEmp, setInterviewingEmp] = useState<Employee | null>(null);
   const [interviewData, setInterviewData] = useState<Partial<ExperienceInterview>>({
     period: '1º Período',
+    interviewDate: new Date().toISOString().split('T')[0],
     qLeader: 0, qColleagues: 0, qTraining: 0, 
     qJobSatisfaction: 0, qCompanySatisfaction: 0, qBenefits: 0,
     trainerName: '', comments: ''
@@ -112,7 +115,6 @@ export const Experiencia: React.FC = () => {
       return;
     }
 
-    // Função para formatar os dados para as colunas do Excel
     const formatDataForExcel = (data: any[]) => data.map(inv => ({
       'Nome': inv.employeeName,
       'Data Entrevista': formatDateToBR(inv.interviewDate),
@@ -132,29 +134,22 @@ export const Experiencia: React.FC = () => {
     }));
 
     const workbook = XLSX.utils.book_new();
-
-    // 1. Criar a aba GERAL
     const geralData = formatDataForExcel(allCompletedInterviews);
     const worksheetGeral = XLSX.utils.json_to_sheet(geralData);
     XLSX.utils.book_append_sheet(workbook, worksheetGeral, "Geral");
 
-    // 2. Descobrir quais setores únicos existem no filtro atual
     const uniqueSectors = Array.from(new Set(allCompletedInterviews.map(inv => inv.employeeSector)));
 
-    // 3. Criar uma aba para cada Setor
     uniqueSectors.forEach(sector => {
       const sectorInterviews = allCompletedInterviews.filter(inv => inv.employeeSector === sector);
       if (sectorInterviews.length > 0) {
         const sectorData = formatDataForExcel(sectorInterviews);
         const worksheetSector = XLSX.utils.json_to_sheet(sectorData);
-        
-        // O Excel tem limite de 31 caracteres para o nome da aba e não aceita caracteres especiais
         const safeSheetName = sector.replace(/[\\/?*[\]:]/g, '').substring(0, 31);
         XLSX.utils.book_append_sheet(workbook, worksheetSector, safeSheetName);
       }
     });
 
-    // Salvar o arquivo
     const fileName = `Relatorio_Experiencia_${filterStart}_a_${filterEnd}.xlsx`;
     XLSX.writeFile(workbook, fileName);
   };
@@ -230,6 +225,7 @@ export const Experiencia: React.FC = () => {
 
     await updateEmployee(updatedEmp);
     setInterviewingEmp(null);
+    setManualEntry(false);
     alert(`Entrevista ${isEditing ? 'atualizada' : 'salva'} com sucesso!`);
   };
 
@@ -237,6 +233,7 @@ export const Experiencia: React.FC = () => {
     const emp = employees.find(e => e.id === interviewWithMeta.employeeId);
     if (!emp) return;
     
+    setManualEntry(false);
     setInterviewingEmp(emp);
     setInterviewData(interviewWithMeta); 
   };
@@ -301,14 +298,36 @@ export const Experiencia: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      <div className="flex items-center space-x-3 mb-2">
-        <div className="p-3 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
-          <CalendarClock size={24} />
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
+        <div className="flex items-center space-x-3">
+          <div className="p-3 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
+            <CalendarClock size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">Acompanhamento de Experiência</h1>
+            <p className="text-slate-500 text-sm">Gestão de prazos e Entrevistas de Check-in</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Acompanhamento de Experiência</h1>
-          <p className="text-slate-500 text-sm">Gestão de prazos e Entrevistas de Check-in</p>
-        </div>
+
+        {/* BOTÃO DE REGISTRO RETROATIVO */}
+        <button 
+          onClick={() => {
+            setManualEntry(true);
+            setInterviewingEmp(null);
+            setInterviewData({
+              period: '1º Período',
+              interviewDate: new Date().toISOString().split('T')[0],
+              qLeader: 0, qColleagues: 0, qTraining: 0, 
+              qJobSatisfaction: 0, qCompanySatisfaction: 0, qBenefits: 0,
+              trainerName: '', comments: ''
+            });
+          }}
+          className="flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-5 py-2.5 rounded-xl font-bold transition-colors border border-indigo-200"
+        >
+          <Plus size={18} />
+          Registro Retroativo
+        </button>
       </div>
 
       <div className="flex space-x-2 border-b border-slate-200">
@@ -352,7 +371,6 @@ export const Experiencia: React.FC = () => {
             </div>
           </div>
 
-          {/* BOTÃO EXPORTAR AQUI */}
           <button onClick={handleExportExcel} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-sm transition-colors active:scale-95">
             <Download size={16} />
             Baixar Relatório (Excel)
@@ -403,8 +421,12 @@ export const Experiencia: React.FC = () => {
                       ) : (
                         <button 
                           onClick={() => { 
+                            setManualEntry(false);
                             setInterviewingEmp(emp as Employee); 
-                            setInterviewData({ period: emp.currentPeriod as any }); 
+                            setInterviewData({ 
+                              period: emp.currentPeriod as any,
+                              interviewDate: new Date().toISOString().split('T')[0]
+                            }); 
                           }}
                           className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
                         >
@@ -560,23 +582,70 @@ export const Experiencia: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DO FORMULÁRIO DE ENTREVISTA */}
-      {interviewingEmp && (
+      {/* MODAL DO FORMULÁRIO DE ENTREVISTA (Automático, Edição e Retroativo) */}
+      {(interviewingEmp || manualEntry) && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
             
             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50 rounded-t-2xl shrink-0">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">
-                  {interviewData.id ? 'Editar Entrevista' : `Entrevista de ${interviewData.period}`}
+                  {interviewData.id ? 'Editar Entrevista' : manualEntry ? 'Registro Retroativo' : `Entrevista de ${interviewData.period}`}
                 </h2>
-                <p className="text-sm text-slate-500 mt-1">{interviewingEmp.name} • Adm: {parseISO(interviewingEmp.admissionDate).toLocaleDateString('pt-BR')}</p>
+                {interviewingEmp ? (
+                  <p className="text-sm text-slate-500 mt-1">{interviewingEmp.name} • Adm: {parseISO(interviewingEmp.admissionDate).toLocaleDateString('pt-BR')}</p>
+                ) : (
+                  <p className="text-sm text-slate-500 mt-1">Preencha os dados abaixo para inserir uma avaliação antiga.</p>
+                )}
               </div>
-              <button onClick={() => { setInterviewingEmp(null); setInterviewData({}); }} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><X size={20} /></button>
+              <button onClick={() => { setInterviewingEmp(null); setInterviewData({}); setManualEntry(false); }} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><X size={20} /></button>
             </div>
 
             <form id="interview-form" onSubmit={handleSaveInterview} className="p-6 space-y-8 overflow-y-auto custom-scrollbar">
               
+              {/* BLOCO DE DADOS CADASTRAIS (Aparece com destaque no Modo Manual) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-6 border-b border-slate-100">
+                <div className="space-y-2">
+                  <label className="text-sm font-bold text-slate-700">Data da Entrevista</label>
+                  <input type="date" required className="w-full border border-slate-300 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500" value={interviewData.interviewDate || ''} onChange={e => setInterviewData({...interviewData, interviewDate: e.target.value})} />
+                </div>
+                
+                {manualEntry && !interviewData.id && (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-700">Colaborador</label>
+                      <select 
+                        required 
+                        className="w-full border border-slate-300 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                        value={interviewingEmp?.id || ''} 
+                        onChange={e => {
+                          const emp = employees.find(x => x.id === e.target.value);
+                          setInterviewingEmp(emp || null);
+                        }}
+                      >
+                        <option value="">Selecione...</option>
+                        {employees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{emp.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-slate-700">Período</label>
+                      <select 
+                        required 
+                        className="w-full border border-slate-300 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                        value={interviewData.period} 
+                        onChange={e => setInterviewData({...interviewData, period: e.target.value as any})}
+                      >
+                        <option value="1º Período">1º Período</option>
+                        <option value="2º Período">2º Período</option>
+                        <option value="Desligamento">Desligamento</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
                 <ScoreSelector label="1. Acolhimento da Liderança" value={interviewData.qLeader || 0} onChange={v => setInterviewData({...interviewData, qLeader: v})} />
                 <ScoreSelector label="2. Acolhimento dos Colegas" value={interviewData.qColleagues || 0} onChange={v => setInterviewData({...interviewData, qColleagues: v})} />
@@ -599,14 +668,14 @@ export const Experiencia: React.FC = () => {
             </form>
 
             <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
-              <button type="button" onClick={() => { setInterviewingEmp(null); setInterviewData({}); }} className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
+              <button type="button" onClick={() => { setInterviewingEmp(null); setInterviewData({}); setManualEntry(false); }} className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
               <button 
                 type="submit" 
                 form="interview-form"
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-xl font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" 
-                disabled={!interviewData.qLeader || !interviewData.qColleagues || !interviewData.qTraining || !interviewData.qJobSatisfaction || !interviewData.qCompanySatisfaction || !interviewData.qBenefits}
+                disabled={!interviewingEmp || !interviewData.qLeader || !interviewData.qColleagues || !interviewData.qTraining || !interviewData.qJobSatisfaction || !interviewData.qCompanySatisfaction || !interviewData.qBenefits}
               >
-                Salvar Alterações
+                {interviewData.id ? 'Salvar Alterações' : 'Registrar Avaliação'}
               </button>
             </div>
           </div>
