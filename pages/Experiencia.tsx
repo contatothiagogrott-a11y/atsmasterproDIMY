@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Employee, ExperienceInterview } from '../types';
 import { addDays, differenceInDays, parseISO } from 'date-fns';
-import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar, Edit2, Trash2 } from 'lucide-react';
+import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar, Edit2, Trash2, Download } from 'lucide-react';
+import * as XLSX from 'xlsx'; // <--- BIBLIOTECA EXCEL ADICIONADA AQUI
 
 export const Experiencia: React.FC = () => {
   const { employees, updateEmployee, user, settings = [] } = useData();
@@ -83,7 +84,7 @@ export const Experiencia: React.FC = () => {
         emp.experienceInterviews.forEach(interview => {
           list.push({
             ...interview,
-            employeeId: emp.id, // ID do colaborador para podermos editar depois
+            employeeId: emp.id, 
             employeeName: emp.name,
             employeeRole: interview.employeeRole || emp.role,
             employeeSector: interview.employeeSector || emp.sector || 'Geral',
@@ -103,6 +104,60 @@ export const Experiencia: React.FC = () => {
     }).sort((a, b) => new Date(b.interviewDate).getTime() - new Date(a.interviewDate).getTime());
 
   }, [employees, filterStart, filterEnd, filterSector, filterUnit]);
+
+  // --- LÓGICA DO EXPORT EXCEL ---
+  const handleExportExcel = () => {
+    if (allCompletedInterviews.length === 0) {
+      alert('Nenhum dado encontrado para exportar com os filtros atuais.');
+      return;
+    }
+
+    // Função para formatar os dados para as colunas do Excel
+    const formatDataForExcel = (data: any[]) => data.map(inv => ({
+      'Nome': inv.employeeName,
+      'Data Entrevista': formatDateToBR(inv.interviewDate),
+      'Período': inv.period,
+      'Setor': inv.employeeSector,
+      'Unidade': inv.employeeUnit,
+      'Cargo': inv.employeeRole,
+      'Nota: Liderança': inv.qLeader,
+      'Nota: Equipe': inv.qColleagues,
+      'Nota: Treinamento': inv.qTraining,
+      'Nota: Função': inv.qJobSatisfaction,
+      'Nota: Empresa': inv.qCompanySatisfaction,
+      'Nota: Benefícios': inv.qBenefits,
+      'Treinador Responsável': inv.trainerName,
+      'Comentários / Sugestões': inv.comments,
+      'Aplicado por': inv.interviewerName
+    }));
+
+    const workbook = XLSX.utils.book_new();
+
+    // 1. Criar a aba GERAL
+    const geralData = formatDataForExcel(allCompletedInterviews);
+    const worksheetGeral = XLSX.utils.json_to_sheet(geralData);
+    XLSX.utils.book_append_sheet(workbook, worksheetGeral, "Geral");
+
+    // 2. Descobrir quais setores únicos existem no filtro atual
+    const uniqueSectors = Array.from(new Set(allCompletedInterviews.map(inv => inv.employeeSector)));
+
+    // 3. Criar uma aba para cada Setor
+    uniqueSectors.forEach(sector => {
+      const sectorInterviews = allCompletedInterviews.filter(inv => inv.employeeSector === sector);
+      if (sectorInterviews.length > 0) {
+        const sectorData = formatDataForExcel(sectorInterviews);
+        const worksheetSector = XLSX.utils.json_to_sheet(sectorData);
+        
+        // O Excel tem limite de 31 caracteres para o nome da aba e não aceita caracteres especiais
+        const safeSheetName = sector.replace(/[\\/?*[\]:]/g, '').substring(0, 31);
+        XLSX.utils.book_append_sheet(workbook, worksheetSector, safeSheetName);
+      }
+    });
+
+    // Salvar o arquivo
+    const fileName = `Relatorio_Experiencia_${filterStart}_a_${filterEnd}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
+  };
 
   // --- LÓGICA DO eNPS ---
   const analytics = useMemo(() => {
@@ -144,7 +199,6 @@ export const Experiencia: React.FC = () => {
       interviewDate: interviewData.interviewDate || new Date().toISOString().split('T')[0],
       period: interviewData.period as any,
       
-      // Se for edição, mantém a fotografia antiga; se for novo, tira a fotografia agora.
       employeeRole: interviewData.employeeRole || interviewingEmp.role,
       employeeSector: interviewData.employeeSector || interviewingEmp.sector,
       employeeUnit: interviewData.employeeUnit || interviewingEmp.unit || '',
@@ -184,7 +238,7 @@ export const Experiencia: React.FC = () => {
     if (!emp) return;
     
     setInterviewingEmp(emp);
-    setInterviewData(interviewWithMeta); // Carrega os dados antigos no modal
+    setInterviewData(interviewWithMeta); 
   };
 
   const handleDeleteInterview = async (employeeId: string, interviewId: string) => {
@@ -222,14 +276,21 @@ export const Experiencia: React.FC = () => {
     </div>
   );
 
-  const getScoreBadge = (score: number) => {
-    switch(score) {
-      case 4: return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">4 - Ótimo</span>;
-      case 3: return <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px] font-bold">3 - Bom</span>;
-      case 2: return <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-[10px] font-bold">2 - Ruim</span>;
-      case 1: return <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded text-[10px] font-bold">1 - Péssimo</span>;
-      default: return '-';
-    }
+  const CompactScore = ({ label, score }: { label: string, score: number }) => {
+    let colorClass = 'bg-slate-100 text-slate-400';
+    if(score === 4) colorClass = 'bg-emerald-100 text-emerald-700';
+    if(score === 3) colorClass = 'bg-blue-100 text-blue-700';
+    if(score === 2) colorClass = 'bg-orange-100 text-orange-700';
+    if(score === 1) colorClass = 'bg-red-100 text-red-700';
+
+    return (
+      <div className="flex items-center justify-between gap-2 border-b border-slate-100 last:border-0 py-1">
+        <span className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{label}</span>
+        <span className={`w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-black ${colorClass}`}>
+          {score || '-'}
+        </span>
+      </div>
+    );
   };
 
   const formatDateToBR = (dateStr: string) => {
@@ -262,31 +323,41 @@ export const Experiencia: React.FC = () => {
         </button>
       </div>
 
-      {/* FILTROS GLOBAIS */}
+      {/* FILTROS GLOBAIS COM BOTÃO DE EXPORTAR EXCEL */}
       {(activeTab === 'relatorio' || activeTab === 'historico') && (
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-2">
-            <Calendar size={16} className="text-slate-400" />
-            <input type="date" value={filterStart} onChange={e => setFilterStart(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
-            <span className="text-slate-400 text-sm">até</span>
-            <input type="date" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2">
+          
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Calendar size={16} className="text-slate-400" />
+              <input type="date" value={filterStart} onChange={e => setFilterStart(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+              <span className="text-slate-400 text-sm">até</span>
+              <input type="date" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
+              <Filter size={16} className="text-slate-400" />
+              <select value={filterSector} onChange={e => setFilterSector(e.target.value)} className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]">
+                <option value="Todos">Todos os Setores</option>
+                {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
+              <MapPin size={16} className="text-slate-400" />
+              <select value={filterUnit} onChange={e => setFilterUnit(e.target.value)} className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]">
+                <option value="Todas">Todas as Unidades</option>
+                {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
-            <Filter size={16} className="text-slate-400" />
-            <select value={filterSector} onChange={e => setFilterSector(e.target.value)} className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]">
-              <option value="Todos">Todos os Setores</option>
-              {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-            </select>
-          </div>
+          {/* BOTÃO EXPORTAR AQUI */}
+          <button onClick={handleExportExcel} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-sm transition-colors active:scale-95">
+            <Download size={16} />
+            Baixar Relatório (Excel)
+          </button>
 
-          <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
-            <MapPin size={16} className="text-slate-400" />
-            <select value={filterUnit} onChange={e => setFilterUnit(e.target.value)} className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]">
-              <option value="Todas">Todas as Unidades</option>
-              {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-            </select>
-          </div>
         </div>
       )}
 
@@ -410,68 +481,76 @@ export const Experiencia: React.FC = () => {
       {/* ABA: RESPOSTAS INDIVIDUAIS */}
       {activeTab === 'historico' && (
         <div className="space-y-6 animate-in fade-in">
+          
+          {/* Legenda de Notas */}
+          {allCompletedInterviews.length > 0 && (
+            <div className="flex items-center justify-end gap-4 text-[10px] font-bold text-slate-500 uppercase">
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div> 4 - Ótimo</span>
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div> 3 - Bom</span>
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-orange-500"></div> 2 - Ruim</span>
+              <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-red-500"></div> 1 - Péssimo</span>
+            </div>
+          )}
+
           {allCompletedInterviews.length === 0 ? (
             <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border border-slate-200 shadow-sm">
               <MessageSquare size={48} className="mx-auto mb-4 opacity-20" />
               Nenhuma entrevista encontrada para os filtros selecionados.
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {allCompletedInterviews.map((interview, index) => (
-                <div key={index} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow relative group">
+                <div key={index} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow relative group flex flex-col">
                   
-                  {/* BOTÕES DE AÇÃO (Visíveis apenas para MASTER no hover) */}
                   {isMaster && (
-                    <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => handleEditInterview(interview)} className="p-1.5 bg-slate-100 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDeleteInterview(interview.employeeId, interview.id)} className="p-1.5 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={14} /></button>
+                    <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => handleEditInterview(interview)} className="p-1.5 bg-slate-100 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors"><Edit2 size={12} /></button>
+                      <button onClick={() => handleDeleteInterview(interview.employeeId, interview.id)} className="p-1.5 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={12} /></button>
                     </div>
                   )}
 
-                  <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-4 pr-16">
-                    <div>
-                      <h3 className="font-bold text-lg text-slate-800">{interview.employeeName}</h3>
-                      <p className="text-xs font-medium text-slate-500 mt-1">
-                        {interview.employeeRole} • {interview.employeeSector} {interview.employeeUnit !== 'Geral' ? `• ${interview.employeeUnit}` : ''}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-100 uppercase tracking-wider">
+                  <div className="flex flex-col mb-4 pr-12">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="bg-indigo-50 text-indigo-700 text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider">
                         {interview.period}
                       </span>
-                      <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase">{formatDateToBR(interview.interviewDate)}</p>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase">{formatDateToBR(interview.interviewDate)}</span>
                     </div>
+                    <h3 className="font-bold text-sm text-slate-800 truncate">{interview.employeeName}</h3>
+                    <p className="text-[11px] font-medium text-slate-500 truncate mt-0.5">
+                      {interview.employeeRole} • {interview.employeeSector} {interview.employeeUnit !== 'Geral' ? `• ${interview.employeeUnit}` : ''}
+                    </p>
                   </div>
 
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-2 mb-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Liderança</span> {getScoreBadge(interview.qLeader)}</div>
-                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Equipe</span> {getScoreBadge(interview.qColleagues)}</div>
-                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Treinamento</span> {getScoreBadge(interview.qTraining)}</div>
-                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Função</span> {getScoreBadge(interview.qJobSatisfaction)}</div>
-                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Empresa</span> {getScoreBadge(interview.qCompanySatisfaction)}</div>
-                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Benefícios</span> {getScoreBadge(interview.qBenefits)}</div>
+                  {/* Notas Super Compactas */}
+                  <div className="grid grid-cols-2 gap-x-4 mb-4 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <CompactScore label="Liderança" score={interview.qLeader} />
+                    <CompactScore label="Equipe" score={interview.qColleagues} />
+                    <CompactScore label="Treinamento" score={interview.qTraining} />
+                    <CompactScore label="Função" score={interview.qJobSatisfaction} />
+                    <CompactScore label="Empresa" score={interview.qCompanySatisfaction} />
+                    <CompactScore label="Benefícios" score={interview.qBenefits} />
                   </div>
 
-                  <div className="space-y-4">
-                    <div>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 mb-1">
-                        <UserCheck size={12}/> Treinador Responsável
-                      </span>
-                      <p className="text-sm font-medium text-slate-800">{interview.trainerName}</p>
+                  <div className="flex-1 flex flex-col gap-3">
+                    <div className="flex items-start gap-2">
+                      <UserCheck size={14} className="text-slate-400 mt-0.5 shrink-0"/>
+                      <div>
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Treinador</p>
+                        <p className="text-xs font-semibold text-slate-700 mt-1">{interview.trainerName}</p>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 mb-1">
-                        <MessageSquare size={12}/> Comentários / Sugestões
-                      </span>
-                      <p className="text-sm text-slate-700 italic bg-amber-50/50 p-3 rounded-lg border border-amber-100">
-                        "{interview.comments || 'Nenhum comentário registrado.'}"
-                      </p>
-                    </div>
+                    
+                    {interview.comments && (
+                      <div className="bg-amber-50/50 p-2.5 rounded-lg border border-amber-100/50 text-xs text-slate-700 italic flex-1">
+                        "{interview.comments}"
+                      </div>
+                    )}
                   </div>
 
-                  <div className="mt-6 pt-4 border-t border-slate-100 text-right">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                      Aplicado por: <span className="text-slate-600">{interview.interviewerName}</span>
+                  <div className="mt-4 pt-3 border-t border-slate-100 text-right">
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                      Por: <span className="text-slate-600">{interview.interviewerName}</span>
                     </p>
                   </div>
                 </div>
@@ -481,7 +560,7 @@ export const Experiencia: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DO FORMULÁRIO DE ENTREVISTA (Criação e Edição) */}
+      {/* MODAL DO FORMULÁRIO DE ENTREVISTA */}
       {interviewingEmp && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
