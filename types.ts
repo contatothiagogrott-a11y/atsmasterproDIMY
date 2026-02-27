@@ -206,6 +206,11 @@ export interface ExperienceInterview {
   interviewDate: string;
   period: '1º Período' | '2º Período' | 'Desligamento';
   
+  // --- FOTOGRAFIA DO MOMENTO (SNAPSHOT) ---
+  employeeRole?: string;
+  employeeSector?: string;
+  employeeUnit?: string;
+  
   // Avaliações de 1 a 4 (eNPS)
   qLeader: number;
   qColleagues: number;

@@ -2,18 +2,19 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Employee, ExperienceInterview } from '../types';
 import { addDays, differenceInDays, parseISO } from 'date-fns';
-import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar } from 'lucide-react';
+import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar, Edit2, Trash2 } from 'lucide-react';
 
 export const Experiencia: React.FC = () => {
-  // Importando 'settings' para puxarmos os Setores e Unidades
   const { employees, updateEmployee, user, settings = [] } = useData();
   
   const [activeTab, setActiveTab] = useState<'prazos' | 'relatorio' | 'historico'>('prazos');
   
-  // --- ESTADOS DE FILTRO (Para Relatório e Histórico) ---
+  const isMaster = user?.role === 'MASTER';
+
+  // --- ESTADOS DE FILTRO ---
   const [filterStart, setFilterStart] = useState(() => {
     const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth() - 3, 1).toISOString().split('T')[0]; // Padrão: Últimos 3 meses
+    return new Date(d.getFullYear(), d.getMonth() - 3, 1).toISOString().split('T')[0]; 
   });
   const [filterEnd, setFilterEnd] = useState(() => {
     const d = new Date();
@@ -22,7 +23,6 @@ export const Experiencia: React.FC = () => {
   const [filterSector, setFilterSector] = useState('Todos');
   const [filterUnit, setFilterUnit] = useState('Todas');
 
-  // Modal de Entrevista
   const [interviewingEmp, setInterviewingEmp] = useState<Employee | null>(null);
   const [interviewData, setInterviewData] = useState<Partial<ExperienceInterview>>({
     period: '1º Período',
@@ -31,7 +31,7 @@ export const Experiencia: React.FC = () => {
     trainerName: '', comments: ''
   });
 
-  // --- LÓGICA DE PRAZOS (Permanece sem filtros de data, pois olha para o "agora") ---
+  // --- LÓGICA DE PRAZOS ---
   const probationList = useMemo(() => {
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -75,7 +75,7 @@ export const Experiencia: React.FC = () => {
       .sort((a, b) => a.daysLeft - b.daysLeft); 
   }, [employees]);
 
-  // --- LÓGICA: EXTRAIR E FILTRAR TODAS AS RESPOSTAS INDIVIDUAIS ---
+  // --- LÓGICA: EXTRAIR E FILTRAR ---
   const allCompletedInterviews = useMemo(() => {
     let list: any[] = [];
     employees.forEach(emp => {
@@ -83,16 +83,16 @@ export const Experiencia: React.FC = () => {
         emp.experienceInterviews.forEach(interview => {
           list.push({
             ...interview,
+            employeeId: emp.id, // ID do colaborador para podermos editar depois
             employeeName: emp.name,
-            employeeRole: emp.role,
-            employeeSector: emp.sector || 'Geral',
-            employeeUnit: emp.unit || 'Geral'
+            employeeRole: interview.employeeRole || emp.role,
+            employeeSector: interview.employeeSector || emp.sector || 'Geral',
+            employeeUnit: interview.employeeUnit || emp.unit || 'Geral'
           });
         });
       }
     });
 
-    // Aplica os filtros de Data, Setor e Unidade
     return list.filter(inv => {
       const matchStart = !filterStart || inv.interviewDate >= filterStart;
       const matchEnd = !filterEnd || inv.interviewDate <= filterEnd;
@@ -104,7 +104,7 @@ export const Experiencia: React.FC = () => {
 
   }, [employees, filterStart, filterEnd, filterSector, filterUnit]);
 
-  // --- LÓGICA DO eNPS (Calculado dinamicamente com base na lista já filtrada acima) ---
+  // --- LÓGICA DO eNPS ---
   const analytics = useMemo(() => {
     const calculateNPS = (scoreArray: number[]) => {
       if (scoreArray.length === 0) return { promoters: 0, passives: 0, detractors: 0, score: 0, total: 0 };
@@ -132,15 +132,23 @@ export const Experiencia: React.FC = () => {
     };
   }, [allCompletedInterviews]);
 
-  // --- HANDLERS ---
+  // --- HANDLERS (SALVAR, EDITAR, EXCLUIR) ---
   const handleSaveInterview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!interviewingEmp) return;
 
-    const newInterview: ExperienceInterview = {
-      id: crypto.randomUUID(),
-      interviewDate: new Date().toISOString().split('T')[0],
+    const isEditing = !!interviewData.id;
+
+    const savedInterview: ExperienceInterview = {
+      id: interviewData.id || crypto.randomUUID(),
+      interviewDate: interviewData.interviewDate || new Date().toISOString().split('T')[0],
       period: interviewData.period as any,
+      
+      // Se for edição, mantém a fotografia antiga; se for novo, tira a fotografia agora.
+      employeeRole: interviewData.employeeRole || interviewingEmp.role,
+      employeeSector: interviewData.employeeSector || interviewingEmp.sector,
+      employeeUnit: interviewData.employeeUnit || interviewingEmp.unit || '',
+
       qLeader: interviewData.qLeader!,
       qColleagues: interviewData.qColleagues!,
       qTraining: interviewData.qTraining!,
@@ -149,19 +157,53 @@ export const Experiencia: React.FC = () => {
       qBenefits: interviewData.qBenefits!,
       trainerName: interviewData.trainerName || 'Não informado',
       comments: interviewData.comments || '',
-      interviewerName: user?.name || 'Sistema'
+      interviewerName: interviewData.interviewerName || user?.name || 'Sistema'
     };
+
+    let updatedInterviews;
+    if (isEditing) {
+      updatedInterviews = (interviewingEmp.experienceInterviews || []).map(inv => 
+        inv.id === savedInterview.id ? savedInterview : inv
+      );
+    } else {
+      updatedInterviews = [...(interviewingEmp.experienceInterviews || []), savedInterview];
+    }
 
     const updatedEmp = {
       ...interviewingEmp,
-      experienceInterviews: [...(interviewingEmp.experienceInterviews || []), newInterview]
+      experienceInterviews: updatedInterviews
     };
 
     await updateEmployee(updatedEmp);
     setInterviewingEmp(null);
-    alert('Entrevista salva com sucesso!');
+    alert(`Entrevista ${isEditing ? 'atualizada' : 'salva'} com sucesso!`);
   };
 
+  const handleEditInterview = (interviewWithMeta: any) => {
+    const emp = employees.find(e => e.id === interviewWithMeta.employeeId);
+    if (!emp) return;
+    
+    setInterviewingEmp(emp);
+    setInterviewData(interviewWithMeta); // Carrega os dados antigos no modal
+  };
+
+  const handleDeleteInterview = async (employeeId: string, interviewId: string) => {
+    if (!window.confirm('TEM CERTEZA? Isso excluirá essa entrevista do histórico e recalculará o eNPS.')) return;
+    
+    const emp = employees.find(e => e.id === employeeId);
+    if (!emp) return;
+
+    const updatedInterviews = (emp.experienceInterviews || []).filter(inv => inv.id !== interviewId);
+    
+    const updatedEmp = {
+      ...emp,
+      experienceInterviews: updatedInterviews
+    };
+
+    await updateEmployee(updatedEmp);
+  };
+
+  // --- HELPERS VISUAIS ---
   const getScoreColor = (score: number) => {
     if (score >= 50) return 'text-emerald-600'; 
     if (score > 0) return 'text-blue-500'; 
@@ -198,7 +240,6 @@ export const Experiencia: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* HEADER */}
       <div className="flex items-center space-x-3 mb-2">
         <div className="p-3 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
           <CalendarClock size={24} />
@@ -209,7 +250,6 @@ export const Experiencia: React.FC = () => {
         </div>
       </div>
 
-      {/* ABAS */}
       <div className="flex space-x-2 border-b border-slate-200">
         <button onClick={() => setActiveTab('prazos')} className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm transition-all border-b-2 ${activeTab === 'prazos' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
           <CalendarClock size={18} /><span>Prazos Ativos</span>
@@ -222,7 +262,7 @@ export const Experiencia: React.FC = () => {
         </button>
       </div>
 
-      {/* FILTROS GLOBAIS (Aparecem apenas nas abas de Relatório e Histórico) */}
+      {/* FILTROS GLOBAIS */}
       {(activeTab === 'relatorio' || activeTab === 'historico') && (
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2">
@@ -291,7 +331,10 @@ export const Experiencia: React.FC = () => {
                         <span className="inline-flex items-center gap-1 text-emerald-600 text-xs font-bold bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg"><CheckSquare size={14} /> Avaliado</span>
                       ) : (
                         <button 
-                          onClick={() => { setInterviewingEmp(emp as Employee); setInterviewData({ period: emp.currentPeriod as any }); }}
+                          onClick={() => { 
+                            setInterviewingEmp(emp as Employee); 
+                            setInterviewData({ period: emp.currentPeriod as any }); 
+                          }}
                           className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
                         >
                           Avaliar Agora
@@ -375,12 +418,21 @@ export const Experiencia: React.FC = () => {
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {allCompletedInterviews.map((interview, index) => (
-                <div key={index} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-                  <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-4">
+                <div key={index} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow relative group">
+                  
+                  {/* BOTÕES DE AÇÃO (Visíveis apenas para MASTER no hover) */}
+                  {isMaster && (
+                    <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => handleEditInterview(interview)} className="p-1.5 bg-slate-100 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDeleteInterview(interview.employeeId, interview.id)} className="p-1.5 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={14} /></button>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-4 pr-16">
                     <div>
                       <h3 className="font-bold text-lg text-slate-800">{interview.employeeName}</h3>
                       <p className="text-xs font-medium text-slate-500 mt-1">
-                        {interview.employeeRole} • {interview.employeeSector} {interview.employeeUnit ? `• ${interview.employeeUnit}` : ''}
+                        {interview.employeeRole} • {interview.employeeSector} {interview.employeeUnit !== 'Geral' ? `• ${interview.employeeUnit}` : ''}
                       </p>
                     </div>
                     <div className="text-right">
@@ -429,17 +481,19 @@ export const Experiencia: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DO FORMULÁRIO DE ENTREVISTA */}
+      {/* MODAL DO FORMULÁRIO DE ENTREVISTA (Criação e Edição) */}
       {interviewingEmp && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
             
             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50 rounded-t-2xl shrink-0">
               <div>
-                <h2 className="text-xl font-bold text-slate-800">Entrevista de {interviewData.period}</h2>
+                <h2 className="text-xl font-bold text-slate-800">
+                  {interviewData.id ? 'Editar Entrevista' : `Entrevista de ${interviewData.period}`}
+                </h2>
                 <p className="text-sm text-slate-500 mt-1">{interviewingEmp.name} • Adm: {parseISO(interviewingEmp.admissionDate).toLocaleDateString('pt-BR')}</p>
               </div>
-              <button onClick={() => setInterviewingEmp(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><X size={20} /></button>
+              <button onClick={() => { setInterviewingEmp(null); setInterviewData({}); }} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><X size={20} /></button>
             </div>
 
             <form id="interview-form" onSubmit={handleSaveInterview} className="p-6 space-y-8 overflow-y-auto custom-scrollbar">
@@ -466,14 +520,14 @@ export const Experiencia: React.FC = () => {
             </form>
 
             <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
-              <button type="button" onClick={() => setInterviewingEmp(null)} className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
+              <button type="button" onClick={() => { setInterviewingEmp(null); setInterviewData({}); }} className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
               <button 
                 type="submit" 
                 form="interview-form"
                 className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-xl font-bold shadow-md transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed" 
                 disabled={!interviewData.qLeader || !interviewData.qColleagues || !interviewData.qTraining || !interviewData.qJobSatisfaction || !interviewData.qCompanySatisfaction || !interviewData.qBenefits}
               >
-                Salvar Avaliação
+                Salvar Alterações
               </button>
             </div>
           </div>
