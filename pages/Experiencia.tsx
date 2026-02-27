@@ -2,12 +2,26 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Employee, ExperienceInterview } from '../types';
 import { addDays, differenceInDays, parseISO } from 'date-fns';
-import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, ChevronRight } from 'lucide-react';
+import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar } from 'lucide-react';
 
 export const Experiencia: React.FC = () => {
-  const { employees, updateEmployee, user } = useData();
-  const [activeTab, setActiveTab] = useState<'prazos' | 'relatorio'>('prazos');
+  // Importando 'settings' para puxarmos os Setores e Unidades
+  const { employees, updateEmployee, user, settings = [] } = useData();
   
+  const [activeTab, setActiveTab] = useState<'prazos' | 'relatorio' | 'historico'>('prazos');
+  
+  // --- ESTADOS DE FILTRO (Para Relatório e Histórico) ---
+  const [filterStart, setFilterStart] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() - 3, 1).toISOString().split('T')[0]; // Padrão: Últimos 3 meses
+  });
+  const [filterEnd, setFilterEnd] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), 11, 31).toISOString().split('T')[0];
+  });
+  const [filterSector, setFilterSector] = useState('Todos');
+  const [filterUnit, setFilterUnit] = useState('Todas');
+
   // Modal de Entrevista
   const [interviewingEmp, setInterviewingEmp] = useState<Employee | null>(null);
   const [interviewData, setInterviewData] = useState<Partial<ExperienceInterview>>({
@@ -17,7 +31,7 @@ export const Experiencia: React.FC = () => {
     trainerName: '', comments: ''
   });
 
-  // --- LÓGICA DE PRAZOS ---
+  // --- LÓGICA DE PRAZOS (Permanece sem filtros de data, pois olha para o "agora") ---
   const probationList = useMemo(() => {
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -27,7 +41,7 @@ export const Experiencia: React.FC = () => {
       .map(emp => {
         const admission = parseISO(emp.admissionDate);
         const days1 = emp.probationType === '45+45' ? 45 : 30;
-        const days2 = emp.probationType === '45+45' ? 90 : 90; // O total de experiência é 90 dias
+        const days2 = emp.probationType === '45+45' ? 90 : 90; 
 
         const endPeriod1 = addDays(admission, days1);
         const endPeriod2 = addDays(admission, days2);
@@ -37,9 +51,8 @@ export const Experiencia: React.FC = () => {
 
         let currentPeriod = '';
         let daysLeft = 0;
-        let urgency = 'ok'; // 'ok', 'warning' (<= 7 dias), 'danger' (< 0)
+        let urgency = 'ok';
 
-        // Descobre em qual período o colaborador está
         if (diff1 >= 0) {
           currentPeriod = '1º Período';
           daysLeft = diff1;
@@ -48,38 +61,59 @@ export const Experiencia: React.FC = () => {
           daysLeft = diff2;
         } else {
           currentPeriod = 'Efetivado';
-          daysLeft = diff2; // Ficará negativo mostrando há quantos dias passou
+          daysLeft = diff2; 
         }
 
         if (daysLeft <= 7 && daysLeft >= 0) urgency = 'warning';
         if (daysLeft < 0) urgency = 'danger';
 
-        // Verifica se a entrevista deste período já foi feita
         const alreadyInterviewed = emp.experienceInterviews?.some(i => i.period === currentPeriod);
 
         return { ...emp, currentPeriod, daysLeft, urgency, endPeriod1, endPeriod2, alreadyInterviewed };
       })
-      .filter(emp => emp.currentPeriod !== 'Efetivado') // Oculta quem já passou dos 90 dias
-      .sort((a, b) => a.daysLeft - b.daysLeft); // Ordena pelos mais urgentes (menor prazo primeiro)
+      .filter(emp => emp.currentPeriod !== 'Efetivado') 
+      .sort((a, b) => a.daysLeft - b.daysLeft); 
   }, [employees]);
 
-  // --- LÓGICA DO eNPS ---
-  const analytics = useMemo(() => {
-    let allInterviews: ExperienceInterview[] = [];
+  // --- LÓGICA: EXTRAIR E FILTRAR TODAS AS RESPOSTAS INDIVIDUAIS ---
+  const allCompletedInterviews = useMemo(() => {
+    let list: any[] = [];
     employees.forEach(emp => {
-      if (emp.experienceInterviews) allInterviews = [...allInterviews, ...emp.experienceInterviews];
+      if (emp.experienceInterviews && emp.experienceInterviews.length > 0) {
+        emp.experienceInterviews.forEach(interview => {
+          list.push({
+            ...interview,
+            employeeName: emp.name,
+            employeeRole: emp.role,
+            employeeSector: emp.sector || 'Geral',
+            employeeUnit: emp.unit || 'Geral'
+          });
+        });
+      }
     });
 
+    // Aplica os filtros de Data, Setor e Unidade
+    return list.filter(inv => {
+      const matchStart = !filterStart || inv.interviewDate >= filterStart;
+      const matchEnd = !filterEnd || inv.interviewDate <= filterEnd;
+      const matchSector = filterSector === 'Todos' || inv.employeeSector === filterSector;
+      const matchUnit = filterUnit === 'Todas' || inv.employeeUnit === filterUnit;
+      
+      return matchStart && matchEnd && matchSector && matchUnit;
+    }).sort((a, b) => new Date(b.interviewDate).getTime() - new Date(a.interviewDate).getTime());
+
+  }, [employees, filterStart, filterEnd, filterSector, filterUnit]);
+
+  // --- LÓGICA DO eNPS (Calculado dinamicamente com base na lista já filtrada acima) ---
+  const analytics = useMemo(() => {
     const calculateNPS = (scoreArray: number[]) => {
       if (scoreArray.length === 0) return { promoters: 0, passives: 0, detractors: 0, score: 0, total: 0 };
       const total = scoreArray.length;
       
-      // Lógica exata: 4 = Promotor, 3 = Passivo, 1 ou 2 = Detrator
       const promoters = scoreArray.filter(s => s === 4).length;
       const passives = scoreArray.filter(s => s === 3).length;
       const detractors = scoreArray.filter(s => s <= 2).length;
       
-      // Fórmula: % Promotores - % Detratores
       const pctPromotores = (promoters / total) * 100;
       const pctDetratores = (detractors / total) * 100;
       const score = Math.round(pctPromotores - pctDetratores);
@@ -88,15 +122,15 @@ export const Experiencia: React.FC = () => {
     };
 
     return {
-      total: allInterviews.length,
-      leader: calculateNPS(allInterviews.map(i => i.qLeader)),
-      colleagues: calculateNPS(allInterviews.map(i => i.qColleagues)),
-      training: calculateNPS(allInterviews.map(i => i.qTraining)),
-      job: calculateNPS(allInterviews.map(i => i.qJobSatisfaction)),
-      company: calculateNPS(allInterviews.map(i => i.qCompanySatisfaction)),
-      benefits: calculateNPS(allInterviews.map(i => i.qBenefits)),
+      total: allCompletedInterviews.length,
+      leader: calculateNPS(allCompletedInterviews.map(i => i.qLeader)),
+      colleagues: calculateNPS(allCompletedInterviews.map(i => i.qColleagues)),
+      training: calculateNPS(allCompletedInterviews.map(i => i.qTraining)),
+      job: calculateNPS(allCompletedInterviews.map(i => i.qJobSatisfaction)),
+      company: calculateNPS(allCompletedInterviews.map(i => i.qCompanySatisfaction)),
+      benefits: calculateNPS(allCompletedInterviews.map(i => i.qBenefits)),
     };
-  }, [employees]);
+  }, [allCompletedInterviews]);
 
   // --- HANDLERS ---
   const handleSaveInterview = async (e: React.FormEvent) => {
@@ -125,16 +159,15 @@ export const Experiencia: React.FC = () => {
 
     await updateEmployee(updatedEmp);
     setInterviewingEmp(null);
-    alert('Entrevista salva com sucesso! O termômetro eNPS foi atualizado.');
+    alert('Entrevista salva com sucesso!');
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 50) return 'text-emerald-600'; // Zona de Excelência / Qualidade
-    if (score > 0) return 'text-blue-500'; // Zona de Aperfeiçoamento
-    return 'text-red-500'; // Zona Crítica
+    if (score >= 50) return 'text-emerald-600'; 
+    if (score > 0) return 'text-blue-500'; 
+    return 'text-red-500'; 
   };
 
-  // Componente Reutilizável para os botões de nota (1 a 4)
   const ScoreSelector = ({ value, onChange, label }: { value: number, onChange: (v: number) => void, label: string }) => (
     <div className="space-y-2">
       <label className="text-sm font-bold text-slate-700 block">{label}</label>
@@ -146,6 +179,22 @@ export const Experiencia: React.FC = () => {
       </div>
     </div>
   );
+
+  const getScoreBadge = (score: number) => {
+    switch(score) {
+      case 4: return <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold">4 - Ótimo</span>;
+      case 3: return <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px] font-bold">3 - Bom</span>;
+      case 2: return <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-[10px] font-bold">2 - Ruim</span>;
+      case 1: return <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded text-[10px] font-bold">1 - Péssimo</span>;
+      default: return '-';
+    }
+  };
+
+  const formatDateToBR = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -160,6 +209,7 @@ export const Experiencia: React.FC = () => {
         </div>
       </div>
 
+      {/* ABAS */}
       <div className="flex space-x-2 border-b border-slate-200">
         <button onClick={() => setActiveTab('prazos')} className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm transition-all border-b-2 ${activeTab === 'prazos' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
           <CalendarClock size={18} /><span>Prazos Ativos</span>
@@ -167,7 +217,38 @@ export const Experiencia: React.FC = () => {
         <button onClick={() => setActiveTab('relatorio')} className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm transition-all border-b-2 ${activeTab === 'relatorio' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
           <BarChart size={18} /><span>Termômetro eNPS</span>
         </button>
+        <button onClick={() => setActiveTab('historico')} className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm transition-all border-b-2 ${activeTab === 'historico' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+          <MessageSquare size={18} /><span>Respostas Individuais</span>
+        </button>
       </div>
+
+      {/* FILTROS GLOBAIS (Aparecem apenas nas abas de Relatório e Histórico) */}
+      {(activeTab === 'relatorio' || activeTab === 'historico') && (
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-4 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2">
+            <Calendar size={16} className="text-slate-400" />
+            <input type="date" value={filterStart} onChange={e => setFilterStart(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+            <span className="text-slate-400 text-sm">até</span>
+            <input type="date" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
+            <Filter size={16} className="text-slate-400" />
+            <select value={filterSector} onChange={e => setFilterSector(e.target.value)} className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]">
+              <option value="Todos">Todos os Setores</option>
+              {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
+            <MapPin size={16} className="text-slate-400" />
+            <select value={filterUnit} onChange={e => setFilterUnit(e.target.value)} className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]">
+              <option value="Todas">Todas as Unidades</option>
+              {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* ABA: PRAZOS ATIVOS */}
       {activeTab === 'prazos' && (
@@ -220,7 +301,7 @@ export const Experiencia: React.FC = () => {
                   </tr>
                 ))}
                 {probationList.length === 0 && (
-                  <tr><td colSpan={5} className="p-12 text-center text-slate-400">Excelente! Nenhum colaborador em período de experiência no momento.</td></tr>
+                  <tr><td colSpan={5} className="p-12 text-center text-slate-400">Excelente! Nenhum colaborador pendente de experiência no momento.</td></tr>
                 )}
               </tbody>
             </table>
@@ -240,7 +321,7 @@ export const Experiencia: React.FC = () => {
               <p className="text-indigo-200">Visão geral do acolhimento, calculada subtraindo Detratores (1 e 2) de Promotores (4).</p>
             </div>
             <div className="bg-indigo-800 p-4 rounded-2xl border border-indigo-700 text-center min-w-[150px] z-10">
-              <p className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-1">Entrevistas Feitas</p>
+              <p className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-1">Entrevistas Filtradas</p>
               <p className="text-4xl font-black">{analytics.total}</p>
             </div>
           </div>
@@ -268,7 +349,6 @@ export const Experiencia: React.FC = () => {
                   <div className="flex justify-between items-center"><span className="flex items-center gap-2 font-medium text-slate-600"><div className="w-2 h-2 rounded-full bg-red-500"></div> Detratores (1 ou 2)</span> <b className="text-slate-800">{item.data.detractors}</b></div>
                 </div>
                 
-                {/* Barra Visual (100%) */}
                 {item.data.total > 0 ? (
                   <div className="w-full h-1.5 rounded-full overflow-hidden mt-5 flex">
                     <div style={{ width: `${(item.data.detractors / item.data.total) * 100}%` }} className="bg-red-500 h-full"></div>
@@ -284,12 +364,76 @@ export const Experiencia: React.FC = () => {
         </div>
       )}
 
+      {/* ABA: RESPOSTAS INDIVIDUAIS */}
+      {activeTab === 'historico' && (
+        <div className="space-y-6 animate-in fade-in">
+          {allCompletedInterviews.length === 0 ? (
+            <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <MessageSquare size={48} className="mx-auto mb-4 opacity-20" />
+              Nenhuma entrevista encontrada para os filtros selecionados.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {allCompletedInterviews.map((interview, index) => (
+                <div key={index} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-4 mb-4">
+                    <div>
+                      <h3 className="font-bold text-lg text-slate-800">{interview.employeeName}</h3>
+                      <p className="text-xs font-medium text-slate-500 mt-1">
+                        {interview.employeeRole} • {interview.employeeSector} {interview.employeeUnit ? `• ${interview.employeeUnit}` : ''}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="bg-indigo-50 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-100 uppercase tracking-wider">
+                        {interview.period}
+                      </span>
+                      <p className="text-[10px] text-slate-400 mt-2 font-bold uppercase">{formatDateToBR(interview.interviewDate)}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-2 mb-6 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Liderança</span> {getScoreBadge(interview.qLeader)}</div>
+                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Equipe</span> {getScoreBadge(interview.qColleagues)}</div>
+                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Treinamento</span> {getScoreBadge(interview.qTraining)}</div>
+                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Função</span> {getScoreBadge(interview.qJobSatisfaction)}</div>
+                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Empresa</span> {getScoreBadge(interview.qCompanySatisfaction)}</div>
+                    <div className="flex flex-col"><span className="text-[10px] uppercase text-slate-500 font-bold mb-1">Benefícios</span> {getScoreBadge(interview.qBenefits)}</div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 mb-1">
+                        <UserCheck size={12}/> Treinador Responsável
+                      </span>
+                      <p className="text-sm font-medium text-slate-800">{interview.trainerName}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1 mb-1">
+                        <MessageSquare size={12}/> Comentários / Sugestões
+                      </span>
+                      <p className="text-sm text-slate-700 italic bg-amber-50/50 p-3 rounded-lg border border-amber-100">
+                        "{interview.comments || 'Nenhum comentário registrado.'}"
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-6 pt-4 border-t border-slate-100 text-right">
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                      Aplicado por: <span className="text-slate-600">{interview.interviewerName}</span>
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* MODAL DO FORMULÁRIO DE ENTREVISTA */}
       {interviewingEmp && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
             
-            {/* Header Modal */}
             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50 rounded-t-2xl shrink-0">
               <div>
                 <h2 className="text-xl font-bold text-slate-800">Entrevista de {interviewData.period}</h2>
@@ -298,7 +442,6 @@ export const Experiencia: React.FC = () => {
               <button onClick={() => setInterviewingEmp(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><X size={20} /></button>
             </div>
 
-            {/* Body Modal Scrollable */}
             <form id="interview-form" onSubmit={handleSaveInterview} className="p-6 space-y-8 overflow-y-auto custom-scrollbar">
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
@@ -322,7 +465,6 @@ export const Experiencia: React.FC = () => {
               </div>
             </form>
 
-            {/* Footer Modal */}
             <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
               <button type="button" onClick={() => setInterviewingEmp(null)} className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
               <button 
@@ -334,7 +476,6 @@ export const Experiencia: React.FC = () => {
                 Salvar Avaliação
               </button>
             </div>
-
           </div>
         </div>
       )}
