@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { Employee, EmployeeStatus, EmployeeHistoryRecord, ContractType, EmployeeHistoryType } from '../types';
+import { Employee, EmployeeStatus, EmployeeHistoryRecord, ContractType, EmployeeHistoryType, ProbationType } from '../types';
 import { 
   Contact, Plus, Search, Filter, Edit2, Trash2, 
   History, Calendar, Phone, Briefcase, MapPin, 
@@ -21,7 +21,8 @@ export const Colaboradores: React.FC = () => {
   const [formData, setFormData] = useState<Partial<Employee>>({
     status: 'Ativo',
     contractType: 'CLT',
-    dailyWorkload: 8.8, // <--- Valor padrão sugerido 
+    dailyWorkload: 8.8,
+    probationType: '45+45', // <--- VALOR PADRÃO
     history: []
   });
 
@@ -85,11 +86,11 @@ export const Colaboradores: React.FC = () => {
       await addEmployee(employeeData);
     }
     setView('list');
-    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, history: [] });
+    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] });
   };
 
   const handleEdit = (emp: Employee) => {
-    setFormData({ ...emp, dailyWorkload: emp.dailyWorkload || 8.8 });
+    setFormData({ ...emp, dailyWorkload: emp.dailyWorkload || 8.8, probationType: emp.probationType || '45+45' });
     setView('form');
   };
 
@@ -159,7 +160,7 @@ export const Colaboradores: React.FC = () => {
         
         {view === 'list' && (
           <button 
-            onClick={() => { setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, history: [] }); setView('form'); }}
+            onClick={() => { setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] }); setView('form'); }}
             className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg"
           >
             <Plus size={20} />
@@ -392,21 +393,18 @@ export const Colaboradores: React.FC = () => {
                   <input required className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} />
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:col-span-2">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:col-span-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">Data Nascimento</label>
+                    <label className="text-sm font-bold text-slate-700">Nascimento</label>
                     <input type="date" required className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={formData.birthDate || ''} onChange={e => setFormData({...formData, birthDate: e.target.value})} />
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">Admissão</label>
                     <input type="date" required className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500" value={formData.admissionDate || ''} onChange={e => setFormData({...formData, admissionDate: e.target.value})} />
                   </div>
-                  
-                  {/* NOVO CAMPO: JORNADA DIÁRIA */}
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700 flex justify-between">
-                      <span>Jornada Diária</span>
-                      <span className="text-[10px] text-slate-400 font-normal">Ex: 8.8 para 8h48m</span>
+                      <span>Jornada (Horas)</span>
                     </label>
                     <input 
                       type="number" 
@@ -416,6 +414,20 @@ export const Colaboradores: React.FC = () => {
                       value={formData.dailyWorkload || 8.8} 
                       onChange={e => setFormData({...formData, dailyWorkload: Number(e.target.value)})} 
                     />
+                  </div>
+                  {/* NOVO CAMPO: EXPERIÊNCIA */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-slate-700">Contrato de Exp.</label>
+                    <select 
+                      required 
+                      className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
+                      value={formData.probationType || '45+45'} 
+                      onChange={e => setFormData({...formData, probationType: e.target.value as ProbationType})}
+                    >
+                      <option value="45+45">45 + 45 dias</option>
+                      <option value="30+60">30 + 60 dias</option>
+                      <option value="Nenhum">Sem Experiência</option>
+                    </select>
                   </div>
                 </div>
               </div>

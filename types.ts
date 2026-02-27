@@ -197,6 +197,32 @@ export interface AbsenceRecord {
 }
 
 // ==========================================
+// NOVAS INTERFACES: EXPERIÊNCIA E eNPS
+// ==========================================
+export type ProbationType = '45+45' | '30+60' | 'Nenhum';
+
+export interface ExperienceInterview {
+  id: string;
+  interviewDate: string;
+  period: '1º Período' | '2º Período' | 'Desligamento';
+  
+  // Avaliações de 1 a 4 (eNPS)
+  qLeader: number;
+  qColleagues: number;
+  qTraining: number;
+  qJobSatisfaction: number;
+  qCompanySatisfaction: number;
+  qBenefits: number;
+  
+  // Perguntas Abertas
+  trainerName: string;
+  comments: string;
+  
+  // Auditoria
+  interviewerName: string;
+}
+
+// ==========================================
 // NOVAS INTERFACES: COLABORADORES
 // ==========================================
 export type EmployeeStatus = 'Ativo' | 'Inativo' | 'Afastado';
@@ -229,6 +255,10 @@ export interface Employee {
 
   // NOVO: Jornada do colaborador
   dailyWorkload?: number; // Ex: 8.8 para CLT normal, 6.0 para Estagiário
+
+  // --- NOVOS CAMPOS PARA EXPERIÊNCIA ---
+  probationType?: ProbationType; 
+  experienceInterviews?: ExperienceInterview[];
 
   terminationReason?: string;
   leaveReason?: string;

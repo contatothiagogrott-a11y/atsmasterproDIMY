@@ -14,7 +14,8 @@ import {
   CalendarX,
   ChevronDown,
   ChevronRight,
-  Contact 
+  Contact,
+  CalendarClock // <--- NOVO ÍCONE IMPORTADO
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -22,7 +23,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Estado para controlar o menu sanfona
   const [isRecrutamentoOpen, setIsRecrutamentoOpen] = useState(true);
 
   const handleLogout = () => {
@@ -36,9 +36,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const isMaster = user?.role === 'MASTER';
   const isAuxiliar = user?.role === 'AUXILIAR_RH';
   
-  // O Master vê tudo. O Auxiliar só vê Absenteísmo em "Gestão de Pessoas"
   const canViewAbsenteismo = isMaster || isAuxiliar;
-  const canViewColaboradores = isMaster; // <--- Trava: Apenas Master vê a base de colaboradores
+  const canViewColaboradores = isMaster; 
+  const canViewExperiencia = isMaster; // <--- NOVA TRAVA: Somente Master vê as entrevistas de experiência
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -104,7 +104,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           )}
 
           {/* === GESTÃO DE PESSOAS === */}
-          {(canViewAbsenteismo || canViewColaboradores) && (
+          {(canViewAbsenteismo || canViewColaboradores || canViewExperiencia) && (
             <div className="pt-4 pb-1">
               <span className="px-4 text-xs font-bold uppercase tracking-wider text-slate-400">Gestão de Pessoas</span>
             </div>
@@ -121,6 +121,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <Link to="/absenteismo" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
               <CalendarX size={20} />
               <span className="font-semibold">Absenteísmo</span>
+            </Link>
+          )}
+
+          {/* --- NOVO BOTÃO: EXPERIÊNCIA --- */}
+          {canViewExperiencia && (
+            <Link to="/experiencia" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/experiencia') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
+              <CalendarClock size={20} />
+              <span className="font-semibold">Acomp. de Experiência</span>
             </Link>
           )}
 
