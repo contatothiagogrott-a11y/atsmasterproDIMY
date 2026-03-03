@@ -17,6 +17,7 @@ import { StrategicReport } from './pages/StrategicReport';
 import { Absenteismo } from './pages/Absenteismo'; 
 import { Colaboradores } from './pages/Colaboradores';
 import { Experiencia } from './pages/Experiencia';
+import { Reunioes } from './pages/Reunioes';
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
