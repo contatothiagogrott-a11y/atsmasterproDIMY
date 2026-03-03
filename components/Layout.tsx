@@ -15,7 +15,8 @@ import {
   ChevronDown,
   ChevronRight,
   Contact,
-  CalendarClock // <--- NOVO ÍCONE IMPORTADO
+  CalendarClock,
+  Coffee // <--- Ícone Novo Importado
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -23,7 +24,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const location = useLocation();
   const navigate = useNavigate();
 
+  // Estados para os menus sanfona
   const [isRecrutamentoOpen, setIsRecrutamentoOpen] = useState(true);
+  const [isGestaoOpen, setIsGestaoOpen] = useState(true); // <--- NOVO ESTADO
 
   const handleLogout = () => {
     logout();
@@ -32,13 +35,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  // Lógica de permissões refinada
+  // Lógica de permissões
   const isMaster = user?.role === 'MASTER';
   const isAuxiliar = user?.role === 'AUXILIAR_RH';
   
   const canViewAbsenteismo = isMaster || isAuxiliar;
   const canViewColaboradores = isMaster; 
-  const canViewExperiencia = isMaster; // <--- NOVA TRAVA: Somente Master vê as entrevistas de experiência
+  const canViewExperiencia = isMaster; 
+  const canViewReunioes = isMaster || isAuxiliar; // <--- Define quem pode ver Cafés e Reuniões
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -103,33 +107,51 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
           )}
 
-          {/* === GESTÃO DE PESSOAS === */}
-          {(canViewAbsenteismo || canViewColaboradores || canViewExperiencia) && (
-            <div className="pt-4 pb-1">
-              <span className="px-4 text-xs font-bold uppercase tracking-wider text-slate-400">Gestão de Pessoas</span>
+          {/* === MENU EXPANSÍVEL: GESTÃO DE PESSOAS === */}
+          {(canViewAbsenteismo || canViewColaboradores || canViewExperiencia || canViewReunioes) && (
+            <div className="pt-2 pb-1">
+              <button 
+                onClick={() => setIsGestaoOpen(!isGestaoOpen)}
+                className="w-full flex items-center justify-between px-4 py-2 text-slate-400 hover:text-blue-600 transition-colors"
+              >
+                <span className="text-xs font-bold uppercase tracking-wider">Gestão de Pessoas</span>
+                {isGestaoOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+              </button>
+
+              {isGestaoOpen && (
+                <div className="mt-1 space-y-1 border-l-2 border-slate-100 ml-4 pl-2">
+                  
+                  {canViewColaboradores && (
+                    <Link to="/colaboradores" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/colaboradores') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                      <Contact size={18} />
+                      <span>Colaboradores</span>
+                    </Link>
+                  )}
+
+                  {canViewAbsenteismo && (
+                    <Link to="/absenteismo" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                      <CalendarX size={18} />
+                      <span>Absenteísmo</span>
+                    </Link>
+                  )}
+
+                  {canViewExperiencia && (
+                    <Link to="/experiencia" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/experiencia') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                      <CalendarClock size={18} />
+                      <span>Acomp. de Experiência</span>
+                    </Link>
+                  )}
+
+                  {canViewReunioes && (
+                    <Link to="/reunioes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/reunioes') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                      <Coffee size={18} />
+                      <span>Cafés e Reuniões</span>
+                    </Link>
+                  )}
+
+                </div>
+              )}
             </div>
-          )}
-
-          {canViewColaboradores && (
-            <Link to="/colaboradores" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/colaboradores') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
-              <Contact size={20} />
-              <span className="font-semibold">Colaboradores</span>
-            </Link>
-          )}
-
-          {canViewAbsenteismo && (
-            <Link to="/absenteismo" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
-              <CalendarX size={20} />
-              <span className="font-semibold">Absenteísmo</span>
-            </Link>
-          )}
-
-          {/* --- NOVO BOTÃO: EXPERIÊNCIA --- */}
-          {canViewExperiencia && (
-            <Link to="/experiencia" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/experiencia') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
-              <CalendarClock size={20} />
-              <span className="font-semibold">Acomp. de Experiência</span>
-            </Link>
           )}
 
           <div className="pt-4 pb-1">

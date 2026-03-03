@@ -272,3 +272,17 @@ export interface Employee {
   createdAt?: string;
   deletedAt?: string;
 }
+
+// ==========================================
+// NOVAS INTERFACES: CAFÉS E REUNIÕES
+// ==========================================
+export interface MeetingEvent {
+  id: string;
+  title: string;        // Ex: "Café da Manhã - Aniversariantes" ou "Integração"
+  date: string;         // Data (YYYY-MM-DD)
+  time: string;         // Horário (HH:mm)
+  location: string;     // Ex: "Copa" ou "Sala de Reuniões A"
+  requirements: string; // O que precisará (Ex: "Comprar bolo, projetor ligado")
+  participantCount: number; // Quantidade de pessoas
+  createdAt: string;
+}

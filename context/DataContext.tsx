@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom'; 
-import { User, Job, Candidate, TalentProfile, SettingItem, AbsenceRecord, Employee } from '../types'; // <--- Employee adicionado
+import { User, Job, Candidate, TalentProfile, SettingItem, AbsenceRecord, Employee, MeetingEvent } from '../types'; // <--- MeetingEvent adicionado
 
 interface DataContextType {
   user: User | null;
@@ -41,11 +41,16 @@ interface DataContextType {
   updateAbsence: (a: AbsenceRecord) => Promise<void>;
   removeAbsence: (id: string) => Promise<void>;
 
-  // --- NOVA SESSÃO: COLABORADORES ---
   employees: Employee[];
   addEmployee: (e: Employee) => Promise<void>;
   updateEmployee: (e: Employee) => Promise<void>;
   removeEmployee: (id: string) => Promise<void>;
+
+  // --- NOVA SESSÃO: REUNIÕES ---
+  meetings: MeetingEvent[];
+  addMeeting: (m: MeetingEvent) => Promise<void>;
+  updateMeeting: (m: MeetingEvent) => Promise<void>;
+  removeMeeting: (id: string) => Promise<void>;
 
   trash: any[];
   restoreItem: (id: string) => Promise<void>;
@@ -53,6 +58,7 @@ interface DataContextType {
 
   refreshData: () => Promise<void>;
   loading: boolean;
+  isMockMode?: boolean; // Para evitar erro de tipagem caso use no Layout
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -65,7 +71,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [talents, setTalents] = useState<TalentProfile[]>([]);
   const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]); // Estado dos colaboradores
+  const [employees, setEmployees] = useState<Employee[]>([]); 
+  const [meetings, setMeetings] = useState<MeetingEvent[]>([]); // <--- NOVO ESTADO
   const [trash, setTrash] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
@@ -92,7 +99,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.talents) setTalents(data.talents);
       if (data.candidates) setCandidates(data.candidates);
       if (data.absences) setAbsences(data.absences);
-      if (data.employees) setEmployees(data.employees); // Carrega colaboradores da API
+      if (data.employees) setEmployees(data.employees); 
+      if (data.meetings) setMeetings(data.meetings); // <--- CARREGA DO BANCO
       if (data.trash) setTrash(data.trash);
       
     } catch (error) {
@@ -306,7 +314,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
-  // --- CRUD COLABORADORES ---
   const addEmployee = async (e: Employee) => {
     setEmployees(prev => [...prev, e]);
     await saveEntity('employee', e);
@@ -320,6 +327,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
+  // --- CRUD REUNIÕES (NOVO) ---
+  const addMeeting = async (m: MeetingEvent) => {
+    setMeetings(prev => [...prev, m]);
+    await saveEntity('meeting', m); // O servidor deve salvar como arquivo meeting.json ou similar
+  };
+  const updateMeeting = async (m: MeetingEvent) => {
+    setMeetings(prev => prev.map(ex => ex.id === m.id ? m : ex));
+    await saveEntity('meeting', m);
+  };
+  const removeMeeting = async (id: string) => {
+    setMeetings(prev => prev.filter(m => m.id !== id));
+    await deleteEntity(id);
+  };
+
   return (
     <DataContext.Provider value={{
       user, login, logout, 
@@ -330,7 +351,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       candidates, addCandidate, updateCandidate, removeCandidate,
       talents, addTalent, removeTalent, updateTalent,
       absences, addAbsence, updateAbsence, removeAbsence,
-      employees, addEmployee, updateEmployee, removeEmployee, // <--- EXPOSTO AQUI
+      employees, addEmployee, updateEmployee, removeEmployee, 
+      meetings, addMeeting, updateMeeting, removeMeeting, // <--- REUNIÕES EXPOSTAS AQUI
       trash, restoreItem, permanentlyDeleteItem,
       refreshData, loading
     }}>
