@@ -95,7 +95,8 @@ export default async function handler(request: any, response: any) {
       if (data.talents) for (const item of data.talents) await insertEntity('talent', item);
       if (data.candidates) for (const item of data.candidates) await insertEntity('candidate', item);
       if (data.absences) for (const item of data.absences) await insertEntity('absence', item);
-      if (data.employees) for (const item of data.employees) await insertEntity('employee', item); // <--- ADICIONADO
+      if (data.employees) for (const item of data.employees) await insertEntity('employee', item);
+      if (data.meetings) for (const item of data.meetings) await insertEntity('meeting', item); // <--- ADICIONADO REUNIÕES
       
       // Restaurar Lixeira
       if (data.trash) {
@@ -127,7 +128,8 @@ export default async function handler(request: any, response: any) {
         const talents = active('talent');
         const candidates = active('candidate');
         const absences = active('absence');
-        const employees = active('employee'); // <--- ADICIONADO
+        const employees = active('employee'); 
+        const meetings = active('meeting'); // <--- ADICIONADO REUNIÕES AQUI
 
         const trash = rawEntities
           .filter((e: any) => e.deleted_at !== null)
@@ -139,13 +141,14 @@ export default async function handler(request: any, response: any) {
           }));
 
         return response.status(200).json({ 
-          users, settings, jobs, talents, candidates, absences, employees, trash // <--- ADICIONADO employees
+          users, settings, jobs, talents, candidates, absences, employees, meetings, trash // <--- ADICIONADO meetings NO RETORNO
         });
 
       } catch (err: any) {
         if (err.code === '42P01' || err.message?.includes('does not exist')) {
            await initTables(sql);
-           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], absences: [], employees: [], trash: [] });
+           // Também incluído fallback vazio para meetings aqui:
+           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], absences: [], employees: [], meetings: [], trash: [] });
         }
         throw err;
       }

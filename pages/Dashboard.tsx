@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { 
   AlertTriangle, CalendarDays, UserCheck, Search, X, Lock, Unlock, 
-  ExternalLink, Target, AlertCircle, CalendarX, Users, UserMinus, Coffee
+  ExternalLink, Target, AlertCircle, CalendarX, Users, UserMinus, Coffee, Clock, MapPin
 } from 'lucide-react';
 import { parseISO, addDays, differenceInDays, isSameMonth } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
