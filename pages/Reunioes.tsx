@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
-import { MeetingEvent } from '../types';
-import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, FileText, Download, UserPlus, Presentation, X } from 'lucide-react';
+import { MeetingEvent, MeetingType } from '../types';
+import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, FileText, Download, UserPlus, Presentation, X, FileSpreadsheet, Upload } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export const Reunioes: React.FC = () => {
@@ -15,6 +15,16 @@ export const Reunioes: React.FC = () => {
 
   const [selectedSectorToAdd, setSelectedSectorToAdd] = useState('');
   const [selectedEmpToAdd, setSelectedEmpToAdd] = useState('');
+  
+  // Controle do Modelo do Excel
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [hasTemplate, setHasTemplate] = useState(false);
+
+  useEffect(() => {
+    if (localStorage.getItem('ats_excel_template_presenca')) {
+      setHasTemplate(true);
+    }
+  }, []);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -33,6 +43,40 @@ export const Reunioes: React.FC = () => {
       .sort((a: MeetingEvent, b: MeetingEvent) => b.date.localeCompare(a.date)); 
   }, [meetings, todayStr]);
 
+  // --- LÓGICA DO MODELO EXCEL ---
+  const handleTemplateClick = () => {
+    if (hasTemplate) {
+      if (window.confirm("Você já possui um modelo Excel salvo. Deseja substituí-lo por um novo?\n\n(Clique em Cancelar caso queira excluir o modelo atual)")) {
+        fileInputRef.current?.click();
+      } else {
+        if (window.confirm("Deseja EXCLUIR o modelo atual e usar o padrão gerado pelo sistema?")) {
+          localStorage.removeItem('ats_excel_template_presenca');
+          setHasTemplate(false);
+        }
+      }
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleTemplateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result?.toString().split(',')[1];
+      if (base64) {
+        localStorage.setItem('ats_excel_template_presenca', base64);
+        setHasTemplate(true);
+        alert('Modelo salvo com sucesso! O sistema usará esta planilha nas próximas exportações.');
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; // Reseta o input
+  };
+
+  // --- PARTICIPANTES ---
   const handleAddSector = () => {
     if (!selectedSectorToAdd) return;
     const empsInSector = employees.filter((e: any) => e.sector === selectedSectorToAdd && e.status === 'Ativo');
@@ -63,7 +107,6 @@ export const Reunioes: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     const finalCount = formData.participantIds && formData.participantIds.length > 0 
       ? formData.participantIds.length 
       : formData.participantCount;
@@ -103,60 +146,84 @@ export const Reunioes: React.FC = () => {
     }
   };
 
-  // --- NOVA LÓGICA DE EXPORTAÇÃO FORMATADA ---
+  // --- EXPORTAR LISTA (Injetando no Modelo Personalizado ou Gerando Padrão) ---
   const handleExportList = (meeting: MeetingEvent) => {
     if (!meeting.participantIds || meeting.participantIds.length === 0) {
       alert("Este evento não possui uma lista nominal de participantes cadastrada.");
       return;
     }
 
-    // Ordenar participantes por nome
+    const templateBase64 = localStorage.getItem('ats_excel_template_presenca');
+
+    // Mapeia e organiza a lista de participantes
     const participants = meeting.participantIds.map(id => {
       const emp = employees.find((e: any) => e.id === id);
-      return {
-        nome: emp?.name || 'Desconhecido',
-        setor: emp?.sector || '-'
-      };
-    }).sort((a, b) => a.nome.localeCompare(b.nome));
+      // Retorna Array compatível com a planilha [Nome, Vazio, Vazio, Cargo, Setor, Assinatura]
+      return [emp?.name || '-', '', '', emp?.role || '-', emp?.sector || '-', ''];
+    }).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
-    // Montando a matriz do Excel (AoA - Array of Arrays)
+    // SE TIVER MODELO SALVO: INJETA OS DADOS NELE
+    if (templateBase64) {
+      try {
+        const workbook = XLSX.read(templateBase64, { type: 'base64' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+
+        // Injetando dados nas células específicas do seu modelo
+        XLSX.utils.sheet_add_aoa(sheet, [[`Data: ${formatDateToBR(meeting.date)}`]], { origin: 'F5' });
+        
+        let typeStr = '(   ) Reunião  (   ) Treinamento  (   ) Outro';
+        if (meeting.type === 'Reunião') typeStr = '( X ) Reunião  (   ) Treinamento  (   ) Outro';
+        else if (meeting.type === 'Treinamento') typeStr = '(   ) Reunião  ( X ) Treinamento  (   ) Outro';
+        else typeStr = `(   ) Reunião  (   ) Treinamento  ( X ) Outro: ${meeting.type}`;
+        XLSX.utils.sheet_add_aoa(sheet, [[typeStr]], { origin: 'C5' });
+
+        XLSX.utils.sheet_add_aoa(sheet, [[meeting.title]], { origin: 'C6' }); // Título
+        XLSX.utils.sheet_add_aoa(sheet, [[meeting.location]], { origin: 'C7' }); // Local
+        XLSX.utils.sheet_add_aoa(sheet, [[meeting.time]], { origin: 'G7' }); // Duração/Hora
+        XLSX.utils.sheet_add_aoa(sheet, [[meeting.instructor || '-']], { origin: 'C8' }); // Instrutor
+
+        // Injetando participantes na linha 11 (origin: 'A11')
+        XLSX.utils.sheet_add_aoa(sheet, participants, { origin: 'A11' });
+
+        const fileName = `Presenca_${meeting.title.replace(/\s+/g, '_')}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+        return; // Sucesso, encerra aqui.
+
+      } catch (err) {
+        console.error("Erro ao usar modelo", err);
+        alert("O modelo salvo parece estar corrompido ou é incompatível. Exportando formato padrão do sistema.");
+      }
+    }
+
+    // SE NÃO TIVER MODELO (OU FALHAR): GERA UM PADRÃO DO ZERO
     const aoaData = [
-      ['[ LOGO AQUI ]', 'LISTA DE PRESENÇA', ''], // Linha 1
-      [''], // Linha 2 em branco
-      ['Tipo de atividade:', meeting.type || 'Reunião', `Data: ${formatDateToBR(meeting.date)}`], // Linha 3
-      ['Descrição da atividade:', meeting.title, ''], // Linha 4
-      ['Local:', meeting.location, `Horário / Duração: ${meeting.time}`], // Linha 5
-      ['Coordenador / Instrutor:', meeting.instructor || '-', ''], // Linha 6
-      [''], // Linha 7 em branco
-      ['NOME DO PARTICIPANTE', 'SETOR', 'ASSINATURA'] // Linha 8 (Cabeçalho da tabela)
+      ['[ SEU LOGO AQUI ]', 'LISTA DE PRESENÇA', ''], 
+      [''], 
+      ['Tipo de atividade:', meeting.type || 'Reunião', `Data: ${formatDateToBR(meeting.date)}`], 
+      ['Descrição da atividade:', meeting.title, ''], 
+      ['Local:', meeting.location, `Horário: ${meeting.time}`], 
+      ['Coordenador / Instrutor:', meeting.instructor || '-', ''], 
+      [''], 
+      ['NOME DO PARTICIPANTE', 'SETOR', 'ASSINATURA'] 
     ];
 
-    // Adicionando os participantes na matriz
     participants.forEach(p => {
-      aoaData.push([p.nome, p.setor, '_________________________________________']);
+      // Como o padrão só tem 3 colunas visualmente formatadas: Nome, Setor, Assinatura
+      aoaData.push([String(p[0]), String(p[4]), '_________________________________________']);
     });
 
     const worksheet = XLSX.utils.aoa_to_sheet(aoaData);
-
-    // Mesclando as células do cabeçalho para ficar elegante
     worksheet['!merges'] = [
-      { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } }, // Mescla "LISTA DE PRESENÇA" na linha 1
-      { s: { r: 3, c: 1 }, e: { r: 3, c: 2 } }, // Mescla o espaço do Título na linha 4
-      { s: { r: 5, c: 1 }, e: { r: 5, c: 2 } }  // Mescla o espaço do Instrutor na linha 6
+      { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } },
+      { s: { r: 3, c: 1 }, e: { r: 3, c: 2 } },
+      { s: { r: 5, c: 1 }, e: { r: 5, c: 2 } }
     ];
-
-    // Definindo a largura das colunas
-    worksheet['!cols'] = [
-      { wch: 45 }, // Coluna A: Nome (Larga)
-      { wch: 25 }, // Coluna B: Setor
-      { wch: 45 }  // Coluna C: Assinatura (Larga)
-    ];
+    worksheet['!cols'] = [{ wch: 45 }, { wch: 25 }, { wch: 45 }];
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Lista");
-    
-    const fileName = `Presenca_${meeting.title.replace(/\s+/g, '_')}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    XLSX.writeFile(workbook, `Presenca_${meeting.title.replace(/\s+/g, '_')}.xlsx`);
   };
 
   const formatDateToBR = (dateStr: string) => {
@@ -182,6 +249,8 @@ export const Reunioes: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
+      <input type="file" accept=".xlsx" className="hidden" ref={fileInputRef} onChange={handleTemplateUpload} />
+      
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
         <div className="flex items-center space-x-3">
           <div className="p-3 bg-orange-600 text-white rounded-xl shadow-lg shadow-orange-200">
@@ -194,24 +263,35 @@ export const Reunioes: React.FC = () => {
         </div>
 
         {view === 'list' && (
-          <button 
-            onClick={() => {
-              setIsEditing(false);
-              setFormData({ title: '', type: 'Reunião', instructor: '', date: todayStr, time: '09:00', location: '', requirements: '', participantCount: 1, participantIds: [] });
-              setView('form');
-            }}
-            className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-5 py-2.5 rounded-xl font-bold transition-colors shadow-sm"
-          >
-            <Plus size={18} />
-            Agendar Evento
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {/* BOTÃO PARA SUBIR A PLANILHA MODELO */}
+            <button 
+              onClick={handleTemplateClick}
+              className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all border ${hasTemplate ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+              title="Faça upload da sua planilha Excel (.xlsx) com a sua marca e cores para o sistema usar nas exportações."
+            >
+              <FileSpreadsheet size={18} />
+              {hasTemplate ? 'Modelo Configurado' : 'Subir Modelo Excel'}
+            </button>
+
+            <button 
+              onClick={() => {
+                setIsEditing(false);
+                setFormData({ title: '', type: 'Reunião', instructor: '', date: todayStr, time: '09:00', location: '', requirements: '', participantCount: 1, participantIds: [] });
+                setView('form');
+              }}
+              className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-5 py-2.5 rounded-xl font-bold transition-colors shadow-sm"
+            >
+              <Plus size={18} />
+              Agendar Evento
+            </button>
+          </div>
         )}
       </div>
 
       {view === 'list' && (
         <div className="space-y-8 animate-in fade-in">
           
-          {/* PRÓXIMOS EVENTOS */}
           <section>
             <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
               <Calendar className="text-orange-600" size={20} /> Próximos Eventos
@@ -263,7 +343,6 @@ export const Reunioes: React.FC = () => {
                       </div>
                     )}
 
-                    {/* BOTÃO EXPORTAR LISTA */}
                     {meeting.participantIds && meeting.participantIds.length > 0 && (
                       <button onClick={() => handleExportList(meeting)} className="w-full flex items-center justify-center gap-2 mt-auto bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2 rounded-xl text-xs font-bold transition-colors">
                         <Download size={14} /> Baixar Form. de Presença
@@ -275,7 +354,6 @@ export const Reunioes: React.FC = () => {
             )}
           </section>
 
-          {/* HISTÓRICO (EVENTOS PASSADOS) */}
           {pastMeetings.length > 0 && (
             <section className="pt-6 border-t border-slate-200">
               <h2 className="text-lg font-bold text-slate-400 mb-4 flex items-center gap-2">
@@ -342,7 +420,6 @@ export const Reunioes: React.FC = () => {
 
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
             
-            {/* LINHA 1: Título e Tipo */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-bold text-slate-700">Título do Evento</label>
@@ -360,7 +437,6 @@ export const Reunioes: React.FC = () => {
               </div>
             </div>
 
-            {/* LINHA 2: Data, Hora, Local e Instrutor */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="space-y-2 md:col-span-1">
                 <label className="text-sm font-bold text-slate-700">Data</label>
@@ -380,13 +456,11 @@ export const Reunioes: React.FC = () => {
               </div>
             </div>
 
-            {/* LINHA 3: Necessidades */}
             <div className="space-y-2">
               <label className="text-sm font-bold text-slate-700">O que será necessário? (Checklist / Comes e Bebes)</label>
               <textarea rows={2} placeholder="Ex: Comprar 2 bolos, ligar projetor, imprimir crachás..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 resize-none" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})}></textarea>
             </div>
 
-            {/* SESSÃO: LISTA DE PARTICIPANTES */}
             <div className="border-t border-slate-200 pt-6">
               <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2"><Users size={18} className="text-orange-600"/> Gestão de Participantes</h3>
               
@@ -396,7 +470,6 @@ export const Reunioes: React.FC = () => {
                 </p>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-                  {/* Add por Setor */}
                   <div className="flex gap-2">
                     <select value={selectedSectorToAdd} onChange={e => setSelectedSectorToAdd(e.target.value)} className="flex-1 border border-slate-300 p-2.5 rounded-lg text-sm outline-none bg-white">
                       <option value="">Adicionar Setor Inteiro...</option>
@@ -405,7 +478,6 @@ export const Reunioes: React.FC = () => {
                     <button type="button" onClick={handleAddSector} className="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">Adicionar</button>
                   </div>
                   
-                  {/* Add Individual */}
                   <div className="flex gap-2">
                     <select value={selectedEmpToAdd} onChange={e => setSelectedEmpToAdd(e.target.value)} className="flex-1 border border-slate-300 p-2.5 rounded-lg text-sm outline-none bg-white">
                       <option value="">Adicionar Colaborador Específico...</option>
@@ -415,7 +487,6 @@ export const Reunioes: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Exibição da Lista */}
                 {formData.participantIds && formData.participantIds.length > 0 ? (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
