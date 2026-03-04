@@ -137,13 +137,12 @@ export const Reunioes: React.FC = () => {
     setView('form');
   };
 
-  // --- NOVA FUNÇÃO DE DUPLICAR ---
   const handleCopy = (meeting: MeetingEvent) => {
     setFormData({
       title: `${meeting.title} (Cópia)`,
       type: meeting.type || 'Reunião',
       instructor: meeting.instructor || '',
-      date: todayStr, // Traz a cópia automaticamente para o dia de hoje
+      date: todayStr, 
       time: meeting.time,
       endTime: meeting.endTime || '',
       location: meeting.location,
@@ -151,7 +150,7 @@ export const Reunioes: React.FC = () => {
       participantCount: meeting.participantCount,
       participantIds: meeting.participantIds ? [...meeting.participantIds] : []
     });
-    setIsEditing(false); // Define como falso para criar um registro NOVO
+    setIsEditing(false); 
     setView('form');
   };
 
@@ -200,7 +199,7 @@ export const Reunioes: React.FC = () => {
       else if (meeting.type === 'Treinamento') typeStr = '(   ) Reunião  ( X ) Treinamento  (   ) Outro:';
       else typeStr = `(   ) Reunião  (   ) Treinamento  ( X ) Outro: ${meeting.type}`;
 
-      const horarioStr = meeting.endTime ? `Duração/Hora: ${meeting.time} às ${meeting.endTime}` : `Duração/Hora: ${meeting.time}`;
+      const horarioStr = meeting.endTime ? `${meeting.time} às ${meeting.endTime}` : meeting.time;
 
       const c5 = sheet.getCell('C5'); if(c5) c5.value = typeStr;
       const f5 = sheet.getCell('F5'); if(f5) f5.value = `Data: ${formatDateToBR(meeting.date)}`;
@@ -209,7 +208,8 @@ export const Reunioes: React.FC = () => {
       const f7 = sheet.getCell('F7'); if(f7) f7.value = horarioStr;
       const c8 = sheet.getCell('C8'); if(c8) c8.value = meeting.instructor || '-';
 
-      let startRow = 11;
+      // --- CORREÇÃO: COMEÇANDO A PREENCHER NA LINHA 12 PARA NÃO APAGAR O CABEÇALHO ---
+      let startRow = 12;
       participants.forEach((p, index) => {
         const row = sheet.getRow(startRow + index);
         row.getCell(1).value = p.nome;     
