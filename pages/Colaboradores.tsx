@@ -17,12 +17,13 @@ export const Colaboradores: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<EmployeeStatus | 'Todos' | 'Pendentes'>('Ativo');
   const [sectorFilter, setSectorFilter] = useState('Todos');
   const [unitFilter, setUnitFilter] = useState('Todas');
+  const [contractFilter, setContractFilter] = useState<ContractType | 'Todos'>('Todos'); // <--- NOVO ESTADO DE FILTRO
 
   const [formData, setFormData] = useState<Partial<Employee>>({
     status: 'Ativo',
     contractType: 'CLT',
     dailyWorkload: 8.8,
-    probationType: '45+45', // <--- VALOR PADRÃO
+    probationType: '45+45',
     history: []
   });
 
@@ -45,10 +46,13 @@ export const Colaboradores: React.FC = () => {
 
       const matchesSector = sectorFilter === 'Todos' || emp.sector === sectorFilter;
       const matchesUnit = unitFilter === 'Todas' || emp.unit === unitFilter;
+      
+      // <--- NOVA REGRA DE FILTRO DE CONTRATO
+      const matchesContract = contractFilter === 'Todos' || emp.contractType === contractFilter; 
 
-      return matchesSearch && matchesStatus && matchesSector && matchesUnit;
+      return matchesSearch && matchesStatus && matchesSector && matchesUnit && matchesContract;
     });
-  }, [employees, searchTerm, statusFilter, sectorFilter, unitFilter]);
+  }, [employees, searchTerm, statusFilter, sectorFilter, unitFilter, contractFilter]);
 
   const unifiedHistory = useMemo(() => {
     if (!selectedEmployee) return [];
@@ -172,7 +176,7 @@ export const Colaboradores: React.FC = () => {
       {view === 'list' && (
         <>
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
               <input 
                 type="text" 
@@ -183,7 +187,23 @@ export const Colaboradores: React.FC = () => {
               />
             </div>
 
-            <div className="flex flex-wrap md:flex-nowrap gap-3">
+            <div className="flex flex-wrap gap-3">
+              {/* FILTRO DE CONTRATO (NOVO) */}
+              <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
+                <Briefcase size={16} className="text-slate-400" />
+                <select 
+                  className="bg-transparent py-2 text-sm outline-none cursor-pointer"
+                  value={contractFilter}
+                  onChange={e => setContractFilter(e.target.value as any)}
+                >
+                  <option value="Todos">Todos os Contratos</option>
+                  <option value="CLT">CLT</option>
+                  <option value="PJ">PJ</option>
+                  <option value="Estagiário">Estagiário</option>
+                  <option value="JA">Jovem Aprendiz</option>
+                </select>
+              </div>
+
               <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
                 <Filter size={16} className="text-slate-400" />
                 <select 
@@ -415,7 +435,6 @@ export const Colaboradores: React.FC = () => {
                       onChange={e => setFormData({...formData, dailyWorkload: Number(e.target.value)})} 
                     />
                   </div>
-                  {/* NOVO CAMPO: EXPERIÊNCIA */}
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700">Contrato de Exp.</label>
                     <select 
