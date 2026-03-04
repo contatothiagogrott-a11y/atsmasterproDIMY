@@ -276,13 +276,18 @@ export interface Employee {
 // ==========================================
 // NOVAS INTERFACES: CAFÉS E REUNIÕES
 // ==========================================
+export type MeetingType = 'Reunião' | 'Treinamento' | 'Integração' | 'Coffee Break' | 'Outros';
+
 export interface MeetingEvent {
   id: string;
-  title: string;        // Ex: "Café da Manhã - Aniversariantes" ou "Integração"
-  date: string;         // Data (YYYY-MM-DD)
-  time: string;         // Horário (HH:mm)
-  location: string;     // Ex: "Copa" ou "Sala de Reuniões A"
-  requirements: string; // O que precisará (Ex: "Comprar bolo, projetor ligado")
-  participantCount: number; // Quantidade de pessoas
+  title: string;        
+  type?: MeetingType;         // <--- NOVO: Tipo de evento
+  instructor?: string;        // <--- NOVO: Instrutor/Coordenador
+  date: string;         
+  time: string;         
+  location: string;     
+  requirements: string; 
+  participantCount: number; 
+  participantIds?: string[];  // <--- NOVO: Lista nominal de participantes
   createdAt: string;
 }
