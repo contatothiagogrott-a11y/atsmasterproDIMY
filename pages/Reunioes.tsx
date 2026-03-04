@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { MeetingEvent } from '../types';
-import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, Download, UserPlus, Presentation, X, FileSpreadsheet } from 'lucide-react';
+import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, Download, UserPlus, Presentation, X, FileSpreadsheet, Copy } from 'lucide-react';
 import ExcelJS from 'exceljs'; 
 
 export const Reunioes: React.FC = () => {
@@ -134,6 +134,24 @@ export const Reunioes: React.FC = () => {
       participantIds: meeting.participantIds || []
     });
     setIsEditing(true);
+    setView('form');
+  };
+
+  // --- NOVA FUNÇÃO DE DUPLICAR ---
+  const handleCopy = (meeting: MeetingEvent) => {
+    setFormData({
+      title: `${meeting.title} (Cópia)`,
+      type: meeting.type || 'Reunião',
+      instructor: meeting.instructor || '',
+      date: todayStr, // Traz a cópia automaticamente para o dia de hoje
+      time: meeting.time,
+      endTime: meeting.endTime || '',
+      location: meeting.location,
+      requirements: meeting.requirements,
+      participantCount: meeting.participantCount,
+      participantIds: meeting.participantIds ? [...meeting.participantIds] : []
+    });
+    setIsEditing(false); // Define como falso para criar um registro NOVO
     setView('form');
   };
 
@@ -296,11 +314,12 @@ export const Reunioes: React.FC = () => {
                   <div key={meeting.id} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-all relative group flex flex-col">
                     
                     <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => handleEdit(meeting)} className="p-1.5 bg-slate-100 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors"><Edit2 size={14} /></button>
-                      <button onClick={() => handleDelete(meeting.id)} className="p-1.5 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={14} /></button>
+                      <button onClick={() => handleCopy(meeting)} title="Duplicar Evento" className="p-1.5 bg-slate-100 hover:bg-emerald-100 text-slate-500 hover:text-emerald-600 rounded-lg transition-colors"><Copy size={14} /></button>
+                      <button onClick={() => handleEdit(meeting)} title="Editar Evento" className="p-1.5 bg-slate-100 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors"><Edit2 size={14} /></button>
+                      <button onClick={() => handleDelete(meeting.id)} title="Excluir Evento" className="p-1.5 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={14} /></button>
                     </div>
 
-                    <div className="mb-4 pr-16">
+                    <div className="mb-4 pr-24">
                       <div className="flex items-center gap-2 mb-2">
                         {meeting.date === todayStr && <span className="bg-red-100 text-red-700 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-widest animate-pulse">Hoje!</span>}
                         {isTomorrow(meeting.date) && <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-widest">Amanhã</span>}
@@ -360,7 +379,7 @@ export const Reunioes: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {pastMeetings.map((meeting: MeetingEvent) => (
-                      <tr key={meeting.id} className="text-slate-500 hover:bg-slate-50">
+                      <tr key={meeting.id} className="text-slate-500 hover:bg-slate-50 group">
                         <td className="p-4 whitespace-nowrap">
                           <span className="font-medium text-sm">{formatDateToBR(meeting.date)}</span>
                           <span className="text-xs ml-2 block sm:inline">{meeting.time} {meeting.endTime ? `às ${meeting.endTime}` : ''}</span>
@@ -384,7 +403,11 @@ export const Reunioes: React.FC = () => {
                           )}
                         </td>
                         <td className="p-4 text-right">
-                           <button onClick={() => handleDelete(meeting.id)} className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors"><Trash2 size={16} /></button>
+                          <div className="flex items-center justify-end gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => handleCopy(meeting)} title="Duplicar Evento" className="text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 p-1.5 rounded transition-colors"><Copy size={16} /></button>
+                            <button onClick={() => handleEdit(meeting)} title="Editar Evento" className="text-slate-400 hover:text-blue-500 hover:bg-blue-50 p-1.5 rounded transition-colors"><Edit2 size={16} /></button>
+                            <button onClick={() => handleDelete(meeting.id)} title="Excluir Evento" className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"><Trash2 size={16} /></button>
+                          </div>
                         </td>
                       </tr>
                     ))}
