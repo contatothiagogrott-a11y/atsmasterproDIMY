@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
-import { MeetingEvent, MeetingType } from '../types';
-import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, FileText, Download, UserPlus, Presentation, X, FileSpreadsheet, Upload } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { MeetingEvent } from '../types';
+import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, Download, UserPlus, Presentation, X, FileSpreadsheet } from 'lucide-react';
+import ExcelJS from 'exceljs'; // <--- NOVA BIBLIOTECA QUE MANTÉM O DESIGN
 
 export const Reunioes: React.FC = () => {
   const { meetings = [], addMeeting, updateMeeting, removeMeeting, employees = [], settings = [] } = useData() as any; 
@@ -49,7 +49,7 @@ export const Reunioes: React.FC = () => {
       if (window.confirm("Você já possui um modelo Excel salvo. Deseja substituí-lo por um novo?\n\n(Clique em Cancelar caso queira excluir o modelo atual)")) {
         fileInputRef.current?.click();
       } else {
-        if (window.confirm("Deseja EXCLUIR o modelo atual e usar o padrão gerado pelo sistema?")) {
+        if (window.confirm("Deseja EXCLUIR o modelo atual?")) {
           localStorage.removeItem('ats_excel_template_presenca');
           setHasTemplate(false);
         }
@@ -69,11 +69,11 @@ export const Reunioes: React.FC = () => {
       if (base64) {
         localStorage.setItem('ats_excel_template_presenca', base64);
         setHasTemplate(true);
-        alert('Modelo salvo com sucesso! O sistema usará esta planilha nas próximas exportações.');
+        alert('Seu Modelo Customizado foi salvo com sucesso! Ele será usado nas exportações.');
       }
     };
     reader.readAsDataURL(file);
-    e.target.value = ''; // Reseta o input
+    e.target.value = ''; 
   };
 
   // --- PARTICIPANTES ---
@@ -146,8 +146,8 @@ export const Reunioes: React.FC = () => {
     }
   };
 
-  // --- EXPORTAR LISTA (Injetando no Modelo Personalizado ou Gerando Padrão) ---
-  const handleExportList = (meeting: MeetingEvent) => {
+  // --- EXPORTAÇÃO EXCELJS (Preserva Design) ---
+  const handleExportList = async (meeting: MeetingEvent) => {
     if (!meeting.participantIds || meeting.participantIds.length === 0) {
       alert("Este evento não possui uma lista nominal de participantes cadastrada.");
       return;
@@ -155,75 +155,73 @@ export const Reunioes: React.FC = () => {
 
     const templateBase64 = localStorage.getItem('ats_excel_template_presenca');
 
-    // Mapeia e organiza a lista de participantes
-    const participants = meeting.participantIds.map(id => {
-      const emp = employees.find((e: any) => e.id === id);
-      // Retorna Array compatível com a planilha [Nome, Vazio, Vazio, Cargo, Setor, Assinatura]
-      return [emp?.name || '-', '', '', emp?.role || '-', emp?.sector || '-', ''];
-    }).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
-
-    // SE TIVER MODELO SALVO: INJETA OS DADOS NELE
-    if (templateBase64) {
-      try {
-        const workbook = XLSX.read(templateBase64, { type: 'base64' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-
-        // Injetando dados nas células específicas do seu modelo
-        XLSX.utils.sheet_add_aoa(sheet, [[`Data: ${formatDateToBR(meeting.date)}`]], { origin: 'F5' });
-        
-        let typeStr = '(   ) Reunião  (   ) Treinamento  (   ) Outro';
-        if (meeting.type === 'Reunião') typeStr = '( X ) Reunião  (   ) Treinamento  (   ) Outro';
-        else if (meeting.type === 'Treinamento') typeStr = '(   ) Reunião  ( X ) Treinamento  (   ) Outro';
-        else typeStr = `(   ) Reunião  (   ) Treinamento  ( X ) Outro: ${meeting.type}`;
-        XLSX.utils.sheet_add_aoa(sheet, [[typeStr]], { origin: 'C5' });
-
-        XLSX.utils.sheet_add_aoa(sheet, [[meeting.title]], { origin: 'C6' }); // Título
-        XLSX.utils.sheet_add_aoa(sheet, [[meeting.location]], { origin: 'C7' }); // Local
-        XLSX.utils.sheet_add_aoa(sheet, [[meeting.time]], { origin: 'G7' }); // Duração/Hora
-        XLSX.utils.sheet_add_aoa(sheet, [[meeting.instructor || '-']], { origin: 'C8' }); // Instrutor
-
-        // Injetando participantes na linha 11 (origin: 'A11')
-        XLSX.utils.sheet_add_aoa(sheet, participants, { origin: 'A11' });
-
-        const fileName = `Presenca_${meeting.title.replace(/\s+/g, '_')}.xlsx`;
-        XLSX.writeFile(workbook, fileName);
-        return; // Sucesso, encerra aqui.
-
-      } catch (err) {
-        console.error("Erro ao usar modelo", err);
-        alert("O modelo salvo parece estar corrompido ou é incompatível. Exportando formato padrão do sistema.");
-      }
+    if (!templateBase64) {
+      alert("Por favor, suba o seu arquivo 'Lista de presença.xlsx' clicando no botão 'Subir Modelo Excel' antes de exportar!");
+      return;
     }
 
-    // SE NÃO TIVER MODELO (OU FALHAR): GERA UM PADRÃO DO ZERO
-    const aoaData = [
-      ['[ SEU LOGO AQUI ]', 'LISTA DE PRESENÇA', ''], 
-      [''], 
-      ['Tipo de atividade:', meeting.type || 'Reunião', `Data: ${formatDateToBR(meeting.date)}`], 
-      ['Descrição da atividade:', meeting.title, ''], 
-      ['Local:', meeting.location, `Horário: ${meeting.time}`], 
-      ['Coordenador / Instrutor:', meeting.instructor || '-', ''], 
-      [''], 
-      ['NOME DO PARTICIPANTE', 'SETOR', 'ASSINATURA'] 
-    ];
+    const participants = meeting.participantIds.map(id => {
+      const emp = employees.find((e: any) => e.id === id);
+      return {
+        nome: emp?.name || '-',
+        cargo: emp?.role || '-',
+        setor: emp?.sector || '-'
+      };
+    }).sort((a, b) => a.nome.localeCompare(b.nome));
 
-    participants.forEach(p => {
-      // Como o padrão só tem 3 colunas visualmente formatadas: Nome, Setor, Assinatura
-      aoaData.push([String(p[0]), String(p[4]), '_________________________________________']);
-    });
+    try {
+      // Converte o base64 de volta para o formato que a biblioteca entende
+      const byteString = atob(templateBase64);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
 
-    const worksheet = XLSX.utils.aoa_to_sheet(aoaData);
-    worksheet['!merges'] = [
-      { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } },
-      { s: { r: 3, c: 1 }, e: { r: 3, c: 2 } },
-      { s: { r: 5, c: 1 }, e: { r: 5, c: 2 } }
-    ];
-    worksheet['!cols'] = [{ wch: 45 }, { wch: 25 }, { wch: 45 }];
+      // Carrega o seu modelo exato
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(ab);
+      const sheet = workbook.worksheets[0];
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Lista");
-    XLSX.writeFile(workbook, `Presenca_${meeting.title.replace(/\s+/g, '_')}.xlsx`);
+      // Mapeamento baseado no modelo que você enviou:
+      let typeStr = '(   ) Reunião  (   ) Treinamento  (   ) Outro:';
+      if (meeting.type === 'Reunião') typeStr = '( X ) Reunião  (   ) Treinamento  (   ) Outro:';
+      else if (meeting.type === 'Treinamento') typeStr = '(   ) Reunião  ( X ) Treinamento  (   ) Outro:';
+      else typeStr = `(   ) Reunião  (   ) Treinamento  ( X ) Outro: ${meeting.type}`;
+
+      // Injetando nos locais exatos do seu cabeçalho
+      const c5 = sheet.getCell('C5'); if(c5) c5.value = typeStr;
+      const f5 = sheet.getCell('F5'); if(f5) f5.value = `Data: ${formatDateToBR(meeting.date)}`;
+      const c6 = sheet.getCell('C6'); if(c6) c6.value = meeting.title;
+      const c7 = sheet.getCell('C7'); if(c7) c7.value = meeting.location;
+      const f7 = sheet.getCell('F7'); if(f7) f7.value = `Duração/Hora: ${meeting.time}`;
+      const c8 = sheet.getCell('C8'); if(c8) c8.value = meeting.instructor || '-';
+
+      // Preenchendo os participantes a partir da linha 11
+      let startRow = 11;
+      participants.forEach((p, index) => {
+        const row = sheet.getRow(startRow + index);
+        row.getCell(1).value = p.nome;     // Coluna A
+        row.getCell(4).value = p.cargo;    // Coluna D
+        row.getCell(5).value = p.setor;    // Coluna E
+        row.commit();
+      });
+
+      // Gera o arquivo mantendo as cores e logo originais!
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Presenca_${meeting.title.replace(/\s+/g, '_')}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+    } catch (err) {
+      console.error(err);
+      alert("Ocorreu um erro ao gerar a planilha. Verifique se o modelo não está corrompido.");
+    }
   };
 
   const formatDateToBR = (dateStr: string) => {
@@ -264,11 +262,9 @@ export const Reunioes: React.FC = () => {
 
         {view === 'list' && (
           <div className="flex flex-wrap gap-2">
-            {/* BOTÃO PARA SUBIR A PLANILHA MODELO */}
             <button 
               onClick={handleTemplateClick}
               className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all border ${hasTemplate ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-              title="Faça upload da sua planilha Excel (.xlsx) com a sua marca e cores para o sistema usar nas exportações."
             >
               <FileSpreadsheet size={18} />
               {hasTemplate ? 'Modelo Configurado' : 'Subir Modelo Excel'}
@@ -336,16 +332,9 @@ export const Reunioes: React.FC = () => {
                       </p>
                     </div>
 
-                    {meeting.requirements && (
-                      <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 text-sm text-orange-800 mb-4">
-                        <span className="font-bold text-[10px] uppercase tracking-widest block mb-1">O que preparar:</span>
-                        <p className="italic leading-snug">{meeting.requirements}</p>
-                      </div>
-                    )}
-
                     {meeting.participantIds && meeting.participantIds.length > 0 && (
                       <button onClick={() => handleExportList(meeting)} className="w-full flex items-center justify-center gap-2 mt-auto bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2 rounded-xl text-xs font-bold transition-colors">
-                        <Download size={14} /> Baixar Form. de Presença
+                        <Download size={14} /> Gerar Form. de Presença
                       </button>
                     )}
                   </div>
@@ -389,7 +378,7 @@ export const Reunioes: React.FC = () => {
                         <td className="p-4 text-center">
                           {meeting.participantIds && meeting.participantIds.length > 0 ? (
                             <button onClick={() => handleExportList(meeting)} className="text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1 rounded flex items-center justify-center gap-1 mx-auto text-xs font-bold transition-colors border border-emerald-200">
-                              <Download size={12}/> Baixar Form.
+                              <Download size={12}/> Gerar Form.
                             </button>
                           ) : (
                             <span className="text-xs text-slate-400 italic">Não possuía</span>

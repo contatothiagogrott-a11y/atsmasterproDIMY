@@ -1,4 +1,3 @@
-
 {
   "name": "ats-master-pro",
   "private": true,
@@ -14,6 +13,7 @@
     "@neondatabase/serverless": "^0.9.0",
     "bcryptjs": "^2.4.3",
     "date-fns": "^4.1.0",
+    "exceljs": "^4.4.0",
     "lucide-react": "^0.463.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
