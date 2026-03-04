@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { MeetingEvent, MeetingType } from '../types';
+import { MeetingEvent } from '../types';
 import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, FileText, Download, UserPlus, Presentation, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -13,13 +13,11 @@ export const Reunioes: React.FC = () => {
     title: '', type: 'Reunião', instructor: '', date: '', time: '', location: '', requirements: '', participantCount: 1, participantIds: []
   });
 
-  // Estados auxiliares para o seletor de participantes
   const [selectedSectorToAdd, setSelectedSectorToAdd] = useState('');
   const [selectedEmpToAdd, setSelectedEmpToAdd] = useState('');
 
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // --- LÓGICA DE LISTAGEM ---
   const upcomingMeetings = useMemo(() => {
     return meetings
       .filter((m: MeetingEvent) => m.date >= todayStr)
@@ -35,7 +33,6 @@ export const Reunioes: React.FC = () => {
       .sort((a: MeetingEvent, b: MeetingEvent) => b.date.localeCompare(a.date)); 
   }, [meetings, todayStr]);
 
-  // --- LÓGICA DE PARTICIPANTES ---
   const handleAddSector = () => {
     if (!selectedSectorToAdd) return;
     const empsInSector = employees.filter((e: any) => e.sector === selectedSectorToAdd && e.status === 'Ativo');
@@ -64,11 +61,9 @@ export const Reunioes: React.FC = () => {
     }));
   };
 
-  // --- HANDLERS PRINCIPAIS ---
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Atualiza a contagem baseada na lista nominal (se existir)
     const finalCount = formData.participantIds && formData.participantIds.length > 0 
       ? formData.participantIds.length 
       : formData.participantCount;
@@ -108,35 +103,62 @@ export const Reunioes: React.FC = () => {
     }
   };
 
+  // --- NOVA LÓGICA DE EXPORTAÇÃO FORMATADA ---
   const handleExportList = (meeting: MeetingEvent) => {
     if (!meeting.participantIds || meeting.participantIds.length === 0) {
       alert("Este evento não possui uma lista nominal de participantes cadastrada.");
       return;
     }
 
-    const dataToExport = meeting.participantIds.map(id => {
+    // Ordenar participantes por nome
+    const participants = meeting.participantIds.map(id => {
       const emp = employees.find((e: any) => e.id === id);
       return {
-        'Nome do Colaborador': emp?.name || 'Desconhecido',
-        'Setor': emp?.sector || '-',
-        'Unidade': emp?.unit || '-',
-        'Assinatura': '_______________________________________' // Espaço para assinar impresso
+        nome: emp?.name || 'Desconhecido',
+        setor: emp?.sector || '-'
       };
-    }).sort((a, b) => a['Nome do Colaborador'].localeCompare(b['Nome do Colaborador']));
+    }).sort((a, b) => a.nome.localeCompare(b.nome));
 
-    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-    
-    // Ajustando largura das colunas
-    worksheet['!cols'] = [{ wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 45 }];
+    // Montando a matriz do Excel (AoA - Array of Arrays)
+    const aoaData = [
+      ['[ LOGO AQUI ]', 'LISTA DE PRESENÇA', ''], // Linha 1
+      [''], // Linha 2 em branco
+      ['Tipo de atividade:', meeting.type || 'Reunião', `Data: ${formatDateToBR(meeting.date)}`], // Linha 3
+      ['Descrição da atividade:', meeting.title, ''], // Linha 4
+      ['Local:', meeting.location, `Horário / Duração: ${meeting.time}`], // Linha 5
+      ['Coordenador / Instrutor:', meeting.instructor || '-', ''], // Linha 6
+      [''], // Linha 7 em branco
+      ['NOME DO PARTICIPANTE', 'SETOR', 'ASSINATURA'] // Linha 8 (Cabeçalho da tabela)
+    ];
+
+    // Adicionando os participantes na matriz
+    participants.forEach(p => {
+      aoaData.push([p.nome, p.setor, '_________________________________________']);
+    });
+
+    const worksheet = XLSX.utils.aoa_to_sheet(aoaData);
+
+    // Mesclando as células do cabeçalho para ficar elegante
+    worksheet['!merges'] = [
+      { s: { r: 0, c: 1 }, e: { r: 0, c: 2 } }, // Mescla "LISTA DE PRESENÇA" na linha 1
+      { s: { r: 3, c: 1 }, e: { r: 3, c: 2 } }, // Mescla o espaço do Título na linha 4
+      { s: { r: 5, c: 1 }, e: { r: 5, c: 2 } }  // Mescla o espaço do Instrutor na linha 6
+    ];
+
+    // Definindo a largura das colunas
+    worksheet['!cols'] = [
+      { wch: 45 }, // Coluna A: Nome (Larga)
+      { wch: 25 }, // Coluna B: Setor
+      { wch: 45 }  // Coluna C: Assinatura (Larga)
+    ];
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Lista de Presença");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Lista");
     
-    const fileName = `Lista_Presenca_${meeting.title.replace(/\s+/g, '_')}_${meeting.date}.xlsx`;
+    const fileName = `Presenca_${meeting.title.replace(/\s+/g, '_')}.xlsx`;
     XLSX.writeFile(workbook, fileName);
   };
 
-  // --- HELPERS ---
   const formatDateToBR = (dateStr: string) => {
     if (!dateStr) return '';
     const [year, month, day] = dateStr.split('-');
@@ -244,7 +266,7 @@ export const Reunioes: React.FC = () => {
                     {/* BOTÃO EXPORTAR LISTA */}
                     {meeting.participantIds && meeting.participantIds.length > 0 && (
                       <button onClick={() => handleExportList(meeting)} className="w-full flex items-center justify-center gap-2 mt-auto bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2 rounded-xl text-xs font-bold transition-colors">
-                        <Download size={14} /> Exportar Lista de Presença
+                        <Download size={14} /> Baixar Form. de Presença
                       </button>
                     )}
                   </div>
@@ -289,7 +311,7 @@ export const Reunioes: React.FC = () => {
                         <td className="p-4 text-center">
                           {meeting.participantIds && meeting.participantIds.length > 0 ? (
                             <button onClick={() => handleExportList(meeting)} className="text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1 rounded flex items-center justify-center gap-1 mx-auto text-xs font-bold transition-colors border border-emerald-200">
-                              <Download size={12}/> Baixar Lista
+                              <Download size={12}/> Baixar Form.
                             </button>
                           ) : (
                             <span className="text-xs text-slate-400 italic">Não possuía</span>
@@ -364,7 +386,7 @@ export const Reunioes: React.FC = () => {
               <textarea rows={2} placeholder="Ex: Comprar 2 bolos, ligar projetor, imprimir crachás..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 resize-none" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})}></textarea>
             </div>
 
-            {/* SESSÃO: LISTA DE PARTICIPANTES (NOVO) */}
+            {/* SESSÃO: LISTA DE PARTICIPANTES */}
             <div className="border-t border-slate-200 pt-6">
               <h3 className="text-base font-bold text-slate-800 mb-4 flex items-center gap-2"><Users size={18} className="text-orange-600"/> Gestão de Participantes</h3>
               
