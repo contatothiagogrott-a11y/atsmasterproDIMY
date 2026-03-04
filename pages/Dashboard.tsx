@@ -38,20 +38,20 @@ export const Dashboard: React.FC = () => {
     const today = new Date();
     
     // Faltas do Mês Regente
-    const monthlyAbsences = (absences || []).filter(a => {
+    const monthlyAbsences = (absences || []).filter((a: any) => {
       if (!a.absenceDate) return false;
       return isSameMonth(parseISO(a.absenceDate), today);
     }).length;
 
     // Colaboradores Ativos (Segmentados)
-    const activeList = (employees || []).filter(e => e.status === 'Ativo');
-    const ativosCLT = activeList.filter(e => e.contractType === 'CLT').length;
-    const ativosPJ = activeList.filter(e => e.contractType === 'PJ').length;
-    const ativosEstagio = activeList.filter(e => e.contractType === 'Estagiário').length;
-    const ativosJA = activeList.filter(e => e.contractType === 'JA').length;
+    const activeList = (employees || []).filter((e: any) => e.status === 'Ativo');
+    const ativosCLT = activeList.filter((e: any) => e.contractType === 'CLT').length;
+    const ativosPJ = activeList.filter((e: any) => e.contractType === 'PJ').length;
+    const ativosEstagio = activeList.filter((e: any) => e.contractType === 'Estagiário').length;
+    const ativosJA = activeList.filter((e: any) => e.contractType === 'JA').length;
 
     // Colaboradores Afastados
-    const afastados = (employees || []).filter(e => e.status === 'Afastado').length;
+    const afastados = (employees || []).filter((e: any) => e.status === 'Afastado').length;
 
     return { 
       monthlyAbsences, 
@@ -65,24 +65,24 @@ export const Dashboard: React.FC = () => {
   const hasConfidentialAccess = useMemo(() => {
     if (!user) return false;
     if (user.role === 'MASTER') return true;
-    return jobs.some(j => j.isConfidential && (j.createdBy === user.id || j.allowedUserIds?.includes(user.id)));
+    return jobs.some((j: any) => j.isConfidential && (j.createdBy === user.id || j.allowedUserIds?.includes(user.id)));
   }, [jobs, user]);
 
   const { fJobs, fCandidates } = useMemo(() => {
-    let filteredJobs = jobs.filter(j => !j.isHidden);
+    let filteredJobs = jobs.filter((j: any) => !j.isHidden);
     
-    filteredJobs = filteredJobs.filter(j => {
+    filteredJobs = filteredJobs.filter((j: any) => {
         if (!j.isConfidential) return true;
         if (!user) return false;
         return user.role === 'MASTER' || j.createdBy === user.id || j.allowedUserIds?.includes(user.id);
     });
-    if (!showConfidential) filteredJobs = filteredJobs.filter(j => !j.isConfidential);
+    if (!showConfidential) filteredJobs = filteredJobs.filter((j: any) => !j.isConfidential);
 
-    if (sectorFilter) filteredJobs = filteredJobs.filter(j => j.sector === sectorFilter);
-    if (unitFilter) filteredJobs = filteredJobs.filter(j => j.unit === unitFilter);
+    if (sectorFilter) filteredJobs = filteredJobs.filter((j: any) => j.sector === sectorFilter);
+    if (unitFilter) filteredJobs = filteredJobs.filter((j: any) => j.unit === unitFilter);
 
-    const jobIds = new Set(filteredJobs.map(j => j.id));
-    const filteredCandidates = candidates.filter(c => {
+    const jobIds = new Set(filteredJobs.map((j: any) => j.id));
+    const filteredCandidates = candidates.filter((c: any) => {
         const isGeneral = c.jobId === 'general' && !sectorFilter && !unitFilter;
         return jobIds.has(c.jobId) || isGeneral;
     });
@@ -92,7 +92,7 @@ export const Dashboard: React.FC = () => {
 
   // --- 3. LÓGICAS DOS ALERTAS RECRUTAMENTO ---
   const pendingCandidates = useMemo(() => {
-      return fCandidates.filter(c => 
+      return fCandidates.filter((c: any) => 
           !['Aprovado', 'Reprovado', 'Desistência', 'Contratado'].includes(c.status)
       );
   }, [fCandidates]);
@@ -100,17 +100,17 @@ export const Dashboard: React.FC = () => {
   const oldOpenJobs = useMemo(() => {
       const today = new Date();
       const thirtyDaysAgo = addDays(today, -30);
-      return fJobs.filter(j => j.status === 'Aberta' && new Date(j.openedAt) < thirtyDaysAgo);
+      return fJobs.filter((j: any) => j.status === 'Aberta' && new Date(j.openedAt) < thirtyDaysAgo);
   }, [fJobs]);
 
   const upcomingOnboardings = useMemo(() => {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      return candidates.filter(c => {
+      return candidates.filter((c: any) => {
           if (c.status !== 'Contratado' || !c.timeline?.startDate) return false;
           const startDate = parseISO(c.timeline.startDate);
           return startDate >= todayStart; 
-      }).sort((a, b) => new Date(a.timeline!.startDate!).getTime() - new Date(b.timeline!.startDate!).getTime());
+      }).sort((a: any, b: any) => new Date(a.timeline!.startDate!).getTime() - new Date(b.timeline!.startDate!).getTime());
   }, [candidates]);
 
   // --- 4. RENDERIZAÇÃO DA TABELA INLINE ---
@@ -128,8 +128,8 @@ export const Dashboard: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {pendingCandidates.map(c => {
-                            const job = jobs.find(j => j.id === c.jobId);
+                        {pendingCandidates.map((c: any) => {
+                            const job = jobs.find((j: any) => j.id === c.jobId);
                             return (
                                 <tr key={c.id} className="hover:bg-amber-50 transition-colors">
                                     <td className="p-4 pl-6 font-black text-slate-700">{c.name}</td>
@@ -163,7 +163,7 @@ export const Dashboard: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {oldOpenJobs.map(j => {
+                        {oldOpenJobs.map((j: any) => {
                             const daysOpen = differenceInDays(new Date(), parseISO(j.openedAt));
                             return (
                                 <tr key={j.id} className="hover:bg-red-50 transition-colors">
@@ -195,7 +195,7 @@ export const Dashboard: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                        {upcomingOnboardings.map(c => {
+                        {upcomingOnboardings.map((c: any) => {
                             const startDateObj = parseISO(c.timeline!.startDate!);
                             const isTodayStart = startDateObj.toDateString() === new Date().toDateString();
                             return (
@@ -242,7 +242,7 @@ export const Dashboard: React.FC = () => {
             <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
             <select className="bg-slate-50 border-none rounded-xl text-sm p-2 font-bold outline-none cursor-pointer" value={sectorFilter} onChange={e => setSectorFilter(e.target.value)}>
                 <option value="">Todos os Setores</option>
-                {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                {settings.filter((s: any) => s.type === 'SECTOR').map((s: any) => <option key={s.id} value={s.name}>{s.name}</option>)}
             </select>
         </div>
       </div>
@@ -271,7 +271,9 @@ export const Dashboard: React.FC = () => {
                       {isToday ? 'HOJE:' : 'AMANHÃ:'} {m.title}
                     </h4>
                     <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm font-bold ${isToday ? 'text-orange-700' : 'text-blue-700'}`}>
-                      <span className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-md"><Clock size={14}/> {m.time}</span>
+                      <span className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-md">
+                        <Clock size={14}/> {m.time} {m.endTime ? `às ${m.endTime}` : ''}
+                      </span>
                       <span className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-md"><MapPin size={14}/> {m.location}</span>
                       <span className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-md"><Users size={14}/> {m.participantCount} pessoas</span>
                     </div>

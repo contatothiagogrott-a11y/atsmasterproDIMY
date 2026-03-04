@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { MeetingEvent } from '../types';
 import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, Download, UserPlus, Presentation, X, FileSpreadsheet } from 'lucide-react';
-import ExcelJS from 'exceljs'; // <--- NOVA BIBLIOTECA QUE MANTÉM O DESIGN
+import ExcelJS from 'exceljs'; 
 
 export const Reunioes: React.FC = () => {
   const { meetings = [], addMeeting, updateMeeting, removeMeeting, employees = [], settings = [] } = useData() as any; 
@@ -10,13 +10,12 @@ export const Reunioes: React.FC = () => {
   const [view, setView] = useState<'list' | 'form'>('list');
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Partial<MeetingEvent>>({
-    title: '', type: 'Reunião', instructor: '', date: '', time: '', location: '', requirements: '', participantCount: 1, participantIds: []
+    title: '', type: 'Reunião', instructor: '', date: '', time: '', endTime: '', location: '', requirements: '', participantCount: 1, participantIds: []
   });
 
   const [selectedSectorToAdd, setSelectedSectorToAdd] = useState('');
   const [selectedEmpToAdd, setSelectedEmpToAdd] = useState('');
   
-  // Controle do Modelo do Excel
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hasTemplate, setHasTemplate] = useState(false);
 
@@ -43,7 +42,6 @@ export const Reunioes: React.FC = () => {
       .sort((a: MeetingEvent, b: MeetingEvent) => b.date.localeCompare(a.date)); 
   }, [meetings, todayStr]);
 
-  // --- LÓGICA DO MODELO EXCEL ---
   const handleTemplateClick = () => {
     if (hasTemplate) {
       if (window.confirm("Você já possui um modelo Excel salvo. Deseja substituí-lo por um novo?\n\n(Clique em Cancelar caso queira excluir o modelo atual)")) {
@@ -76,7 +74,6 @@ export const Reunioes: React.FC = () => {
     e.target.value = ''; 
   };
 
-  // --- PARTICIPANTES ---
   const handleAddSector = () => {
     if (!selectedSectorToAdd) return;
     const empsInSector = employees.filter((e: any) => e.sector === selectedSectorToAdd && e.status === 'Ativo');
@@ -124,7 +121,7 @@ export const Reunioes: React.FC = () => {
       if(addMeeting) await addMeeting(newMeeting);
     }
     
-    setFormData({ title: '', type: 'Reunião', instructor: '', date: '', time: '', location: '', requirements: '', participantCount: 1, participantIds: [] });
+    setFormData({ title: '', type: 'Reunião', instructor: '', date: '', time: '', endTime: '', location: '', requirements: '', participantCount: 1, participantIds: [] });
     setIsEditing(false);
     setView('list');
   };
@@ -146,7 +143,6 @@ export const Reunioes: React.FC = () => {
     }
   };
 
-  // --- EXPORTAÇÃO EXCELJS (Preserva Design) ---
   const handleExportList = async (meeting: MeetingEvent) => {
     if (!meeting.participantIds || meeting.participantIds.length === 0) {
       alert("Este evento não possui uma lista nominal de participantes cadastrada.");
@@ -170,7 +166,6 @@ export const Reunioes: React.FC = () => {
     }).sort((a, b) => a.nome.localeCompare(b.nome));
 
     try {
-      // Converte o base64 de volta para o formato que a biblioteca entende
       const byteString = atob(templateBase64);
       const ab = new ArrayBuffer(byteString.length);
       const ia = new Uint8Array(ab);
@@ -178,36 +173,33 @@ export const Reunioes: React.FC = () => {
         ia[i] = byteString.charCodeAt(i);
       }
 
-      // Carrega o seu modelo exato
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(ab);
       const sheet = workbook.worksheets[0];
 
-      // Mapeamento baseado no modelo que você enviou:
       let typeStr = '(   ) Reunião  (   ) Treinamento  (   ) Outro:';
       if (meeting.type === 'Reunião') typeStr = '( X ) Reunião  (   ) Treinamento  (   ) Outro:';
       else if (meeting.type === 'Treinamento') typeStr = '(   ) Reunião  ( X ) Treinamento  (   ) Outro:';
       else typeStr = `(   ) Reunião  (   ) Treinamento  ( X ) Outro: ${meeting.type}`;
 
-      // Injetando nos locais exatos do seu cabeçalho
+      const horarioStr = meeting.endTime ? `Duração/Hora: ${meeting.time} às ${meeting.endTime}` : `Duração/Hora: ${meeting.time}`;
+
       const c5 = sheet.getCell('C5'); if(c5) c5.value = typeStr;
       const f5 = sheet.getCell('F5'); if(f5) f5.value = `Data: ${formatDateToBR(meeting.date)}`;
       const c6 = sheet.getCell('C6'); if(c6) c6.value = meeting.title;
       const c7 = sheet.getCell('C7'); if(c7) c7.value = meeting.location;
-      const f7 = sheet.getCell('F7'); if(f7) f7.value = `Duração/Hora: ${meeting.time}`;
+      const f7 = sheet.getCell('F7'); if(f7) f7.value = horarioStr;
       const c8 = sheet.getCell('C8'); if(c8) c8.value = meeting.instructor || '-';
 
-      // Preenchendo os participantes a partir da linha 11
       let startRow = 11;
       participants.forEach((p, index) => {
         const row = sheet.getRow(startRow + index);
-        row.getCell(1).value = p.nome;     // Coluna A
-        row.getCell(4).value = p.cargo;    // Coluna D
-        row.getCell(5).value = p.setor;    // Coluna E
+        row.getCell(1).value = p.nome;     
+        row.getCell(4).value = p.cargo;    
+        row.getCell(5).value = p.setor;    
         row.commit();
       });
 
-      // Gera o arquivo mantendo as cores e logo originais!
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       
@@ -273,7 +265,7 @@ export const Reunioes: React.FC = () => {
             <button 
               onClick={() => {
                 setIsEditing(false);
-                setFormData({ title: '', type: 'Reunião', instructor: '', date: todayStr, time: '09:00', location: '', requirements: '', participantCount: 1, participantIds: [] });
+                setFormData({ title: '', type: 'Reunião', instructor: '', date: todayStr, time: '09:00', endTime: '10:00', location: '', requirements: '', participantCount: 1, participantIds: [] });
                 setView('form');
               }}
               className="flex items-center justify-center gap-2 bg-orange-600 hover:bg-orange-700 text-white px-5 py-2.5 rounded-xl font-bold transition-colors shadow-sm"
@@ -322,7 +314,7 @@ export const Reunioes: React.FC = () => {
                     </div>
 
                     <div className="space-y-2 mb-4 flex-1">
-                      <p className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Clock size={16} className="text-orange-500"/> {meeting.time}</p>
+                      <p className="flex items-center gap-2 text-sm text-slate-600 font-medium"><Clock size={16} className="text-orange-500"/> {meeting.time} {meeting.endTime ? `às ${meeting.endTime}` : ''}</p>
                       <p className="flex items-center gap-2 text-sm text-slate-600 font-medium"><MapPin size={16} className="text-blue-500"/> {meeting.location}</p>
                       <p className="flex items-center gap-2 text-sm text-slate-600 font-medium">
                         <Users size={16} className="text-emerald-500"/> 
@@ -332,9 +324,16 @@ export const Reunioes: React.FC = () => {
                       </p>
                     </div>
 
+                    {meeting.requirements && (
+                      <div className="bg-orange-50 p-3 rounded-xl border border-orange-100 text-sm text-orange-800 mb-4">
+                        <span className="font-bold text-[10px] uppercase tracking-widest block mb-1">O que preparar:</span>
+                        <p className="italic leading-snug">{meeting.requirements}</p>
+                      </div>
+                    )}
+
                     {meeting.participantIds && meeting.participantIds.length > 0 && (
                       <button onClick={() => handleExportList(meeting)} className="w-full flex items-center justify-center gap-2 mt-auto bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2 rounded-xl text-xs font-bold transition-colors">
-                        <Download size={14} /> Gerar Form. de Presença
+                        <Download size={14} /> Baixar Form. de Presença
                       </button>
                     )}
                   </div>
@@ -364,7 +363,7 @@ export const Reunioes: React.FC = () => {
                       <tr key={meeting.id} className="text-slate-500 hover:bg-slate-50">
                         <td className="p-4 whitespace-nowrap">
                           <span className="font-medium text-sm">{formatDateToBR(meeting.date)}</span>
-                          <span className="text-xs ml-2">{meeting.time}</span>
+                          <span className="text-xs ml-2 block sm:inline">{meeting.time} {meeting.endTime ? `às ${meeting.endTime}` : ''}</span>
                         </td>
                         <td className="p-4 font-medium text-sm text-slate-600">
                           <p>{meeting.title}</p>
@@ -378,7 +377,7 @@ export const Reunioes: React.FC = () => {
                         <td className="p-4 text-center">
                           {meeting.participantIds && meeting.participantIds.length > 0 ? (
                             <button onClick={() => handleExportList(meeting)} className="text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1 rounded flex items-center justify-center gap-1 mx-auto text-xs font-bold transition-colors border border-emerald-200">
-                              <Download size={12}/> Gerar Form.
+                              <Download size={12}/> Baixar Form.
                             </button>
                           ) : (
                             <span className="text-xs text-slate-400 italic">Não possuía</span>
@@ -426,28 +425,34 @@ export const Reunioes: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
               <div className="space-y-2 md:col-span-1">
                 <label className="text-sm font-bold text-slate-700">Data</label>
                 <input required type="date" className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} />
               </div>
               <div className="space-y-2 md:col-span-1">
-                <label className="text-sm font-bold text-slate-700">Horário</label>
+                <label className="text-sm font-bold text-slate-700">Início</label>
                 <input required type="time" className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.time} onChange={e => setFormData({...formData, time: e.target.value})} />
               </div>
               <div className="space-y-2 md:col-span-1">
+                <label className="text-sm font-bold text-slate-700">Término</label>
+                <input type="time" className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.endTime || ''} onChange={e => setFormData({...formData, endTime: e.target.value})} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-bold text-slate-700">Local</label>
                 <input required type="text" placeholder="Ex: Copa..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} />
               </div>
-              <div className="space-y-2 md:col-span-1">
-                <label className="text-sm font-bold text-slate-700 flex items-center gap-1"><Presentation size={14}/> Instrutor(a)</label>
-                <input type="text" placeholder="Nome..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.instructor || ''} onChange={e => setFormData({...formData, instructor: e.target.value})} />
-              </div>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-slate-700">O que será necessário? (Checklist / Comes e Bebes)</label>
-              <textarea rows={2} placeholder="Ex: Comprar 2 bolos, ligar projetor, imprimir crachás..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 resize-none" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})}></textarea>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700 flex items-center gap-1"><Presentation size={14}/> Instrutor(a) / Coordenador</label>
+                <input type="text" placeholder="Nome..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.instructor || ''} onChange={e => setFormData({...formData, instructor: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700">O que será necessário? (Opcional)</label>
+                <input type="text" placeholder="Ex: Projetor, água e bolo..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} />
+              </div>
             </div>
 
             <div className="border-t border-slate-200 pt-6">

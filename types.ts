@@ -281,13 +281,14 @@ export type MeetingType = 'Reunião' | 'Treinamento' | 'Integração' | 'Coffee 
 export interface MeetingEvent {
   id: string;
   title: string;        
-  type?: MeetingType;         // <--- NOVO: Tipo de evento
-  instructor?: string;        // <--- NOVO: Instrutor/Coordenador
+  type?: MeetingType;         
+  instructor?: string;        
   date: string;         
-  time: string;         
+  time: string;               // Hora Início
+  endTime?: string;           // <--- NOVO: Hora Fim
   location: string;     
   requirements: string; 
   participantCount: number; 
-  participantIds?: string[];  // <--- NOVO: Lista nominal de participantes
+  participantIds?: string[];  
   createdAt: string;
 }
