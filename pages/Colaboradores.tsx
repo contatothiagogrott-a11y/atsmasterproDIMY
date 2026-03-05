@@ -91,73 +91,78 @@ export const Colaboradores: React.FC = () => {
     setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] });
   };
 
-  // =========================================================================
-  // EXTRATOR DE DATAS BLINDADO (Ignora horas, letras e barras invertidas)
-  // =========================================================================
-  const parseAnyDate = (dateVal: any) => {
-    if (!dateVal) return null;
+  // =================================================================================
+  // TRADUTOR E CORRETOR BLINDADO DE DATAS (Resolve o erro dos anos 2020 e 2005)
+  // =================================================================================
+  const formatToYMD = (dateVal: any) => {
+    if (!dateVal) return '';
     let str = String(dateVal).trim();
-    
-    // Corta qualquer horário grudado (seja com espaço " 18:00" ou com T "T18:00")
+
+    // 1. Resolve número serial do Excel (se vier direto da planilha)
+    if (/^\d{4,5}$/.test(str)) {
+      const jsDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
+      return jsDate.toISOString().split('T')[0];
+    }
+
+    // Remove qualquer horário colado na data (ex: T18:00 ou espaço 18:00)
     str = str.split('T')[0].split(' ')[0];
 
-    // Trata número serial do Excel
-    if (/^\d{4,5}$/.test(str)) {
-      const d = new Date((Number(str) - 25569) * 86400 * 1000);
-      return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+    // 2. AUTO-CORRETOR DA BASE DE DADOS (Conserta o "2020/03/2024" ou "2005-09-2018")
+    const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
+    if (corruptMatch) {
+        const wrongYear = corruptMatch[1]; // Pega o falso ano "2020" ou "2005"
+        const month = corruptMatch[2]; 
+        const actualYear = corruptMatch[3]; // Pega o ano real "2024"
+        const actualDay = wrongYear.substring(2); // Pega os últimos 2 dígitos (o dia real)
+        return `${actualYear}-${month}-${actualDay}`;
     }
 
-    const parts = str.match(/\d+/g); // Pega apenas os blocos de números puros
-    if (parts && parts.length >= 3) {
-      let year = 0, month = 0, day = 0;
-      
-      // Avalia onde está o ano (bloco com 4 dígitos)
-      if (parts[0].length === 4 && parts[2].length !== 4) {
-         year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]);
-      } else if (parts[2].length === 4) {
-         day = Number(parts[0]); month = Number(parts[1]); year = Number(parts[2]);
-      } else {
-         day = Number(parts[0]); month = Number(parts[1]); 
-         year = Number(parts[2]) > 50 ? 1900 + Number(parts[2]) : 2000 + Number(parts[2]);
-      }
-
-      // Previne inversões de formato americano
-      if (month > 12 && day <= 12) {
-        let tmp = month; month = day; day = tmp;
-      }
-
-      return { year, month, day };
+    // 3. Padrões normais (BR: DD/MM/AAAA, US: MM/DD/AAAA, ISO: AAAA-MM-DD)
+    const parts = str.split(/[\/\-]/);
+    if (parts.length === 3) {
+        let p0 = parts[0], p1 = parts[1], p2 = parts[2];
+        
+        if (p0.length === 4) { // Ex: 2024-03-20
+            return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+        } else if (p2.length === 4) { // Ex: 20/03/2024
+            let m = Number(p1);
+            if (m > 12) { // Formato Americano (MM/DD/AAAA)
+                return `${p2}-${p0.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+            } else { // Formato Brasil (DD/MM/AAAA)
+                return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
+            }
+        } else if (p2.length === 2) { // Formato curto DD/MM/AA
+            let y = Number(p2) > 50 ? 1900 + Number(p2) : 2000 + Number(p2);
+            return `${y}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
+        }
     }
-    return null;
+
+    // 4. Último recurso (Fallback do Javascript)
+    try {
+        const d = new Date(str);
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    } catch(e) {}
+
+    return '';
   };
 
-  // Converte para o INPUT (Formato que o HTML Exige: AAAA-MM-DD)
-  const formatToYMD = (dateVal: any) => {
-    const d = parseAnyDate(dateVal);
-    if (!d || isNaN(d.year)) return '';
-    const yyyy = String(d.year).padStart(4, '0');
-    const mm = String(d.month).padStart(2, '0');
-    const dd = String(d.day).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
-  // Converte para a TELA (Formato Brasil: DD/MM/AAAA)
   const formatDate = (dateVal: any) => {
-    const d = parseAnyDate(dateVal);
-    if (!d || isNaN(d.year)) return String(dateVal) || '-';
-    const yyyy = String(d.year).padStart(4, '0');
-    const mm = String(d.month).padStart(2, '0');
-    const dd = String(d.day).padStart(2, '0');
-    return `${dd}/${mm}/${yyyy}`;
+    const ymd = formatToYMD(dateVal); // Usa a nossa função segura para obter AAAA-MM-DD
+    if (!ymd) return '-';
+    const parts = ymd.split('-');
+    if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`; // Mostra sempre como DD/MM/AAAA
+    }
+    return String(dateVal);
   };
-  // =========================================================================
+  // =================================================================================
 
   const handleEdit = (emp: Employee) => {
     setFormData({ 
       ...emp, 
       dailyWorkload: emp.dailyWorkload || 8.8, 
       probationType: emp.probationType || '45+45',
-      // Passa pelo extrator blindado
+      // Aplica a correção instantânea antes de abrir o formulário
       birthDate: formatToYMD(emp.birthDate),
       admissionDate: formatToYMD(emp.admissionDate),
       leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn)
