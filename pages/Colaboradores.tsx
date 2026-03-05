@@ -19,7 +19,8 @@ export const Colaboradores: React.FC = () => {
   const [unitFilter, setUnitFilter] = useState('Todas');
   const [contractFilter, setContractFilter] = useState<ContractType | 'Todos'>('Todos');
 
-  const [formData, setFormData] = useState<Partial<Employee>>({
+  // Adicionado any para permitir campos adicionais como terminationDate sem quebrar o typescript
+  const [formData, setFormData] = useState<Partial<Employee> & any>({
     status: 'Ativo',
     contractType: 'CLT',
     dailyWorkload: 8.8,
@@ -114,16 +115,11 @@ export const Colaboradores: React.FC = () => {
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
         let p0 = parts[0], p1 = parts[1], p2 = parts[2];
-        
-        if (p0.length === 4) { 
-            return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
-        } else if (p2.length === 4) { 
+        if (p0.length === 4) return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+        else if (p2.length === 4) { 
             let m = Number(p1);
-            if (m > 12) { 
-                return `${p2}-${p0.padStart(2, '0')}-${p1.padStart(2, '0')}`;
-            } else { 
-                return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
-            }
+            if (m > 12) return `${p2}-${p0.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+            else return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
         } else if (p2.length === 2) { 
             let y = Number(p2) > 50 ? 1900 + Number(p2) : 2000 + Number(p2);
             return `${y}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
@@ -134,7 +130,6 @@ export const Colaboradores: React.FC = () => {
         const d = new Date(str);
         if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
     } catch(e) {}
-
     return '';
   };
 
@@ -155,7 +150,8 @@ export const Colaboradores: React.FC = () => {
       probationType: emp.probationType || '45+45',
       birthDate: formatToYMD(emp.birthDate),
       admissionDate: formatToYMD(emp.admissionDate),
-      leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn)
+      leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn),
+      terminationDate: formatToYMD((emp as any).terminationDate) // Captura a data de saída caso exista
     });
     setView('form');
   };
@@ -197,6 +193,12 @@ export const Colaboradores: React.FC = () => {
       default: return 'bg-slate-50 text-slate-700 border-slate-100';
     }
   };
+
+  // Lógica de opções de Desligamento
+  const standardTerminations = ['Pedido de Demissão (Voluntário)', 'Demissão sem justa causa (Involuntário)', 'Demissão por justa causa', 'Término de Contrato', 'Acordo Mútuo'];
+  const currentReason = formData.terminationReason || '';
+  const isCustomTermination = currentReason !== '' && !standardTerminations.includes(currentReason);
+  const selectValue = isCustomTermination ? 'Outros' : currentReason;
 
   return (
     <div className="space-y-6">
@@ -512,10 +514,42 @@ export const Colaboradores: React.FC = () => {
                 </div>
               )}
 
+              {/* --- NOVO BLOCO PARA INATIVOS (DESLIGAMENTO) --- */}
               {formData.status === 'Inativo' && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-2">
-                  <label className="text-sm font-bold text-red-800">Motivo do Desligamento</label>
-                  <input className="w-full border border-red-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" placeholder="Ex: Pedido de demissão..." value={formData.terminationReason || ''} onChange={e => setFormData({...formData, terminationReason: e.target.value})} />
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-red-800">Data de Desligamento</label>
+                    <input required type="date" className="w-full border border-red-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" value={formData.terminationDate || ''} onChange={e => setFormData({...formData, terminationDate: e.target.value})} />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-red-800">Motivo Principal</label>
+                    <select 
+                      required 
+                      className="w-full border border-red-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" 
+                      value={selectValue} 
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === 'Outros') setFormData({...formData, terminationReason: 'Outros motivos'});
+                        else setFormData({...formData, terminationReason: val});
+                      }}
+                    >
+                      <option value="">Selecione...</option>
+                      {standardTerminations.map(t => <option key={t} value={t}>{t}</option>)}
+                      <option value="Outros">Outros (Descrever...)</option>
+                    </select>
+                  </div>
+                  {isCustomTermination && (
+                    <div className="space-y-2 md:col-span-2 border-t border-red-200 pt-3">
+                      <label className="text-sm font-bold text-red-800">Descreva o Motivo (Outros)</label>
+                      <input 
+                        required 
+                        className="w-full border border-red-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" 
+                        placeholder="Ex: Mudança de cidade, insatisfação..." 
+                        value={formData.terminationReason === 'Outros motivos' ? '' : formData.terminationReason} 
+                        onChange={e => setFormData({...formData, terminationReason: e.target.value})} 
+                      />
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -556,7 +590,10 @@ export const Colaboradores: React.FC = () => {
                 <span className={`px-4 py-1 rounded-full border text-[10px] font-bold uppercase tracking-widest ${getContractBadgeColor(selectedEmployee.contractType)}`}>
                   {selectedEmployee.contractType}
                 </span>
-                <span className={`px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${selectedEmployee.status === 'Ativo' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                <span className={`px-4 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
+                    selectedEmployee.status === 'Ativo' ? 'bg-emerald-100 text-emerald-700' : 
+                    selectedEmployee.status === 'Afastado' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                }`}>
                   {selectedEmployee.status}
                 </span>
               </div>
@@ -567,7 +604,16 @@ export const Colaboradores: React.FC = () => {
                 <div className="flex justify-between"><span className="text-slate-400">Telefone:</span> <span className="font-bold text-slate-700">{selectedEmployee.phone}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Nascimento:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.birthDate)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Admissão:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.admissionDate)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Jornada (h/dia):</span> <span className="font-bold text-slate-700">{selectedEmployee.dailyWorkload || 8.8}</span></div>
+                
+                {/* MOSTRA DADOS DE DESLIGAMENTO CASO INATIVO */}
+                {selectedEmployee.status === 'Inativo' && (
+                  <>
+                    <div className="flex justify-between border-t border-red-100 pt-3"><span className="text-red-400">Desligamento:</span> <span className="font-bold text-red-600">{formatDate((selectedEmployee as any).terminationDate)}</span></div>
+                    <div className="flex justify-between"><span className="text-red-400">Motivo:</span> <span className="font-bold text-red-600 text-right max-w-[60%] leading-tight">{selectedEmployee.terminationReason}</span></div>
+                  </>
+                )}
+
+                <div className="flex justify-between border-t border-slate-100 pt-3"><span className="text-slate-400">Jornada (h/dia):</span> <span className="font-bold text-slate-700">{selectedEmployee.dailyWorkload || 8.8}</span></div>
               </div>
             </div>
             
