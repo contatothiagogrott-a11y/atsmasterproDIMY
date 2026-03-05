@@ -91,53 +91,45 @@ export const Colaboradores: React.FC = () => {
     setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] });
   };
 
-  // =================================================================================
-  // TRADUTOR E CORRETOR BLINDADO DE DATAS (Resolve o erro dos anos 2020 e 2005)
-  // =================================================================================
   const formatToYMD = (dateVal: any) => {
     if (!dateVal) return '';
     let str = String(dateVal).trim();
 
-    // 1. Resolve número serial do Excel (se vier direto da planilha)
     if (/^\d{4,5}$/.test(str)) {
       const jsDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
       return jsDate.toISOString().split('T')[0];
     }
 
-    // Remove qualquer horário colado na data (ex: T18:00 ou espaço 18:00)
     str = str.split('T')[0].split(' ')[0];
 
-    // 2. AUTO-CORRETOR DA BASE DE DADOS (Conserta o "2020/03/2024" ou "2005-09-2018")
     const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
     if (corruptMatch) {
-        const wrongYear = corruptMatch[1]; // Pega o falso ano "2020" ou "2005"
+        const wrongYear = corruptMatch[1]; 
         const month = corruptMatch[2]; 
-        const actualYear = corruptMatch[3]; // Pega o ano real "2024"
-        const actualDay = wrongYear.substring(2); // Pega os últimos 2 dígitos (o dia real)
+        const actualYear = corruptMatch[3]; 
+        const actualDay = wrongYear.substring(2); 
         return `${actualYear}-${month}-${actualDay}`;
     }
 
-    // 3. Padrões normais (BR: DD/MM/AAAA, US: MM/DD/AAAA, ISO: AAAA-MM-DD)
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
         let p0 = parts[0], p1 = parts[1], p2 = parts[2];
         
-        if (p0.length === 4) { // Ex: 2024-03-20
+        if (p0.length === 4) { 
             return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
-        } else if (p2.length === 4) { // Ex: 20/03/2024
+        } else if (p2.length === 4) { 
             let m = Number(p1);
-            if (m > 12) { // Formato Americano (MM/DD/AAAA)
+            if (m > 12) { 
                 return `${p2}-${p0.padStart(2, '0')}-${p1.padStart(2, '0')}`;
-            } else { // Formato Brasil (DD/MM/AAAA)
+            } else { 
                 return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
             }
-        } else if (p2.length === 2) { // Formato curto DD/MM/AA
+        } else if (p2.length === 2) { 
             let y = Number(p2) > 50 ? 1900 + Number(p2) : 2000 + Number(p2);
             return `${y}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
         }
     }
 
-    // 4. Último recurso (Fallback do Javascript)
     try {
         const d = new Date(str);
         if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
@@ -147,22 +139,20 @@ export const Colaboradores: React.FC = () => {
   };
 
   const formatDate = (dateVal: any) => {
-    const ymd = formatToYMD(dateVal); // Usa a nossa função segura para obter AAAA-MM-DD
+    const ymd = formatToYMD(dateVal); 
     if (!ymd) return '-';
     const parts = ymd.split('-');
     if (parts.length === 3) {
-        return `${parts[2]}/${parts[1]}/${parts[0]}`; // Mostra sempre como DD/MM/AAAA
+        return `${parts[2]}/${parts[1]}/${parts[0]}`; 
     }
     return String(dateVal);
   };
-  // =================================================================================
 
   const handleEdit = (emp: Employee) => {
     setFormData({ 
       ...emp, 
       dailyWorkload: emp.dailyWorkload || 8.8, 
       probationType: emp.probationType || '45+45',
-      // Aplica a correção instantânea antes de abrir o formulário
       birthDate: formatToYMD(emp.birthDate),
       admissionDate: formatToYMD(emp.admissionDate),
       leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn)
@@ -575,6 +565,7 @@ export const Colaboradores: React.FC = () => {
                 <div className="flex justify-between"><span className="text-slate-400">Unidade:</span> <span className="font-bold text-slate-700">{selectedEmployee.unit || 'Não informada'}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Cargo:</span> <span className="font-bold text-slate-700">{selectedEmployee.role}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Telefone:</span> <span className="font-bold text-slate-700">{selectedEmployee.phone}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Nascimento:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.birthDate)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Admissão:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.admissionDate)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Jornada (h/dia):</span> <span className="font-bold text-slate-700">{selectedEmployee.dailyWorkload || 8.8}</span></div>
               </div>
