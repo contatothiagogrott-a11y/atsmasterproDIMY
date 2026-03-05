@@ -91,28 +91,39 @@ export const Colaboradores: React.FC = () => {
     setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] });
   };
 
-  // FUNÇÃO NOVA: Converte a data de qualquer formato para YYYY-MM-DD para o Input funcionar
-  const formatToYMD = (dateVal: string | undefined | null) => {
+  // --- TRADUTOR INTELIGENTE DE DATAS (NOVO) ---
+  const formatToYMD = (dateVal: any) => {
     if (!dateVal) return '';
     const str = String(dateVal).trim();
-    
-    // Se veio do Excel/Importação no formato brasileiro: DD/MM/YYYY
-    if (str.includes('/')) {
-      const parts = str.split('/');
-      if (parts.length === 3) {
-        const day = parts[0].padStart(2, '0');
-        const month = parts[1].padStart(2, '0');
-        const year = parts[2];
-        if (year.length === 4) return `${year}-${month}-${day}`;
-      }
+
+    // 1. Tenta encontrar padrão YYYY-MM-DD (ex: 2024-03-05T... ou 2024-03-05)
+    const isoMatch = str.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
+
+    // 2. Tenta encontrar padrão com barras: DD/MM/YYYY ou DD/MM/YY
+    const brMatch = str.match(/(\d{2})\/(\d{2})\/(\d{2,4})/);
+    if (brMatch) {
+      const day = brMatch[1];
+      const month = brMatch[2];
+      let year = brMatch[3];
+      // Se o ano vier com 2 dígitos (ex: 23 ou 95), converte para 4 dígitos
+      if (year.length === 2) year = Number(year) > 50 ? `19${year}` : `20${year}`;
+      return `${year}-${month}-${day}`;
     }
-    
-    // Se veio do banco de dados no formato ISO YYYY-MM-DDTHH...
-    if (str.includes('T')) {
-      return str.split('T')[0];
+
+    // 3. Tenta identificar Número Serial do Excel (ex: 44197)
+    if (!isNaN(Number(str)) && Number(str) > 10000) {
+      const excelEpoch = new Date(1899, 11, 30);
+      const jsDate = new Date(excelEpoch.getTime() + Number(str) * 86400000);
+      return jsDate.toISOString().split('T')[0];
     }
-    
-    // Se já estiver certo
+
+    // 4. Fallback de emergência do JavaScript
+    try {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    } catch(e) {}
+
     return str;
   };
 
@@ -121,9 +132,10 @@ export const Colaboradores: React.FC = () => {
       ...emp, 
       dailyWorkload: emp.dailyWorkload || 8.8, 
       probationType: emp.probationType || '45+45',
-      // Aplicando o "tradutor" de datas aqui:
+      // Passamos pelo tradutor para garantir que o formulário leia corretamente
       birthDate: formatToYMD(emp.birthDate),
-      admissionDate: formatToYMD(emp.admissionDate)
+      admissionDate: formatToYMD(emp.admissionDate),
+      leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn)
     });
     setView('form');
   };
@@ -156,18 +168,15 @@ export const Colaboradores: React.FC = () => {
     setNewEvent({ date: new Date().toISOString().split('T')[0], type: 'Outros', description: '' }); 
   };
 
-  const formatDate = (dateVal: string | undefined | null) => {
+  const formatDate = (dateVal: any) => {
     if (!dateVal) return '-';
-    const dateStr = String(dateVal);
-    if (dateStr.includes('-')) {
-      const parts = dateStr.split('T')[0].split('-');
-      if (parts.length === 3) {
-        const [year, month, day] = parts;
-        return `${day}/${month}/${year}`;
-      }
+    // Usamos o nosso tradutor inteligente também na visualização!
+    const ymd = formatToYMD(dateVal);
+    const parts = ymd.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
     }
-    if (dateStr.includes('/')) return dateStr; // Retorna normal se já for DD/MM/YYYY
-    return dateStr; 
+    return String(dateVal);
   };
 
   const getContractBadgeColor = (type: string | undefined) => {
@@ -219,7 +228,6 @@ export const Colaboradores: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              {/* FILTRO DE CONTRATO (NOVO) */}
               <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
                 <Briefcase size={16} className="text-slate-400" />
                 <select 
