@@ -17,7 +17,7 @@ export const Colaboradores: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<EmployeeStatus | 'Todos' | 'Pendentes'>('Ativo');
   const [sectorFilter, setSectorFilter] = useState('Todos');
   const [unitFilter, setUnitFilter] = useState('Todas');
-  const [contractFilter, setContractFilter] = useState<ContractType | 'Todos'>('Todos'); // <--- NOVO ESTADO DE FILTRO
+  const [contractFilter, setContractFilter] = useState<ContractType | 'Todos'>('Todos');
 
   const [formData, setFormData] = useState<Partial<Employee>>({
     status: 'Ativo',
@@ -46,8 +46,6 @@ export const Colaboradores: React.FC = () => {
 
       const matchesSector = sectorFilter === 'Todos' || emp.sector === sectorFilter;
       const matchesUnit = unitFilter === 'Todas' || emp.unit === unitFilter;
-      
-      // <--- NOVA REGRA DE FILTRO DE CONTRATO
       const matchesContract = contractFilter === 'Todos' || emp.contractType === contractFilter; 
 
       return matchesSearch && matchesStatus && matchesSector && matchesUnit && matchesContract;
@@ -94,7 +92,14 @@ export const Colaboradores: React.FC = () => {
   };
 
   const handleEdit = (emp: Employee) => {
-    setFormData({ ...emp, dailyWorkload: emp.dailyWorkload || 8.8, probationType: emp.probationType || '45+45' });
+    setFormData({ 
+      ...emp, 
+      dailyWorkload: emp.dailyWorkload || 8.8, 
+      probationType: emp.probationType || '45+45',
+      // CORREÇÃO: Forçando o formato AAAA-MM-DD para os campos de data funcionarem
+      birthDate: emp.birthDate ? emp.birthDate.split('T')[0] : '',
+      admissionDate: emp.admissionDate ? emp.admissionDate.split('T')[0] : ''
+    });
     setView('form');
   };
 
@@ -188,7 +193,6 @@ export const Colaboradores: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              {/* FILTRO DE CONTRATO (NOVO) */}
               <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
                 <Briefcase size={16} className="text-slate-400" />
                 <select 
