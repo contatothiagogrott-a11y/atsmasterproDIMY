@@ -16,7 +16,8 @@ import {
   ChevronRight,
   Contact,
   CalendarClock,
-  Coffee // <--- Ícone Novo Importado
+  Coffee,
+  Gift // <--- Ícone Novo Importado
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -26,7 +27,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   // Estados para os menus sanfona
   const [isRecrutamentoOpen, setIsRecrutamentoOpen] = useState(true);
-  const [isGestaoOpen, setIsGestaoOpen] = useState(true); // <--- NOVO ESTADO
+  const [isGestaoOpen, setIsGestaoOpen] = useState(true);
 
   const handleLogout = () => {
     logout();
@@ -42,7 +43,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const canViewAbsenteismo = isMaster || isAuxiliar;
   const canViewColaboradores = isMaster; 
   const canViewExperiencia = isMaster; 
-  const canViewReunioes = isMaster || isAuxiliar; // <--- Define quem pode ver Cafés e Reuniões
+  const canViewReunioes = isMaster || isAuxiliar;
+  const canViewAniversariantes = isMaster || isAuxiliar; // <--- Define quem pode ver Aniversariantes
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -108,7 +110,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           )}
 
           {/* === MENU EXPANSÍVEL: GESTÃO DE PESSOAS === */}
-          {(canViewAbsenteismo || canViewColaboradores || canViewExperiencia || canViewReunioes) && (
+          {(canViewAbsenteismo || canViewColaboradores || canViewExperiencia || canViewReunioes || canViewAniversariantes) && (
             <div className="pt-2 pb-1">
               <button 
                 onClick={() => setIsGestaoOpen(!isGestaoOpen)}
@@ -125,6 +127,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     <Link to="/colaboradores" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/colaboradores') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
                       <Contact size={18} />
                       <span>Colaboradores</span>
+                    </Link>
+                  )}
+
+                  {/* --- NOVO LINK: ANIVERSARIANTES --- */}
+                  {canViewAniversariantes && (
+                    <Link to="/aniversariantes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/aniversariantes') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                      <Gift size={18} />
+                      <span>Aniversariantes</span>
                     </Link>
                   )}
 
