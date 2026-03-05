@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { Employee } from '../types';
-import { Gift, Calendar, FileSpreadsheet, Download, Search } from 'lucide-react';
+import { Gift, Calendar, FileSpreadsheet, Download, Search, Users } from 'lucide-react';
 import ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx'; // Necessário para a exportação geral rápida
 
 export const Aniversariantes: React.FC = () => {
   const { employees = [] } = useData() as any;
@@ -60,9 +61,12 @@ export const Aniversariantes: React.FC = () => {
     return null;
   };
 
+  const activeEmployees = useMemo(() => {
+    return employees.filter((emp: Employee) => emp.status === 'Ativo');
+  }, [employees]);
+
   const filteredEmployees = useMemo(() => {
-    return employees
-      .filter((emp: Employee) => emp.status === 'Ativo') 
+    return activeEmployees
       .filter((emp: Employee) => {
         const bd = extractMonthDay(emp.birthDate);
         if (!bd) return false;
@@ -74,7 +78,7 @@ export const Aniversariantes: React.FC = () => {
         const bdB = extractMonthDay(b.birthDate)!;
         return bdA.d - bdB.d;
       });
-  }, [employees, selectedMonth, searchTerm]);
+  }, [activeEmployees, selectedMonth, searchTerm]);
 
   // --- LÓGICA DO MODELO EXCEL ---
   const handleTemplateClick = () => {
@@ -109,6 +113,7 @@ export const Aniversariantes: React.FC = () => {
     e.target.value = ''; 
   };
 
+  // EXPORTAÇÃO DO MÊS (Usa o modelo do Excel que o usuário subiu)
   const handleExportList = async () => {
     const templateBase64 = localStorage.getItem('ats_excel_template_aniversariantes');
 
@@ -164,6 +169,31 @@ export const Aniversariantes: React.FC = () => {
     }
   };
 
+  // EXPORTAÇÃO GERAL (Todos os colaboradores ativos com dia e mês)
+  const handleExportAll = () => {
+    if (activeEmployees.length === 0) {
+      alert("Não há colaboradores ativos para exportar.");
+      return;
+    }
+
+    const dataToExport = activeEmployees.map((emp: Employee) => {
+      const bd = extractMonthDay(emp.birthDate);
+      const dateStr = bd ? `${String(bd.d).padStart(2, '0')}/${String(bd.m).padStart(2, '0')}` : '-';
+
+      return {
+        'Nome': emp.name,
+        'Setor': emp.sector,
+        'Unidade': emp.unit || '-',
+        'Aniversário (Dia/Mês)': dateStr
+      };
+    }).sort((a, b) => a.Nome.localeCompare(b.Nome)); // Ordena alfabeticamente
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Todos os Aniversários");
+    XLSX.writeFile(workbook, `Aniversarios_Geral_Ativos.xlsx`);
+  };
+
   return (
     <div className="space-y-6 pb-12 animate-in fade-in">
       <input type="file" accept=".xlsx" className="hidden" ref={fileInputRef} onChange={handleTemplateUpload} />
@@ -180,9 +210,19 @@ export const Aniversariantes: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {/* BOTÃO NOVO: Exportar Todos */}
+          <button 
+            onClick={handleExportAll}
+            className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold transition-colors shadow-sm"
+            title="Exporta uma planilha simples com todos os colaboradores ativos"
+          >
+            <Users size={18} />
+            Exportar Geral
+          </button>
+
           <button 
             onClick={handleTemplateClick}
-            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all border ${hasTemplate ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+            className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all border ${hasTemplate ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
           >
             <FileSpreadsheet size={18} />
             {hasTemplate ? 'Modelo Configurado' : 'Subir Modelo Excel'}
@@ -193,7 +233,7 @@ export const Aniversariantes: React.FC = () => {
             className="flex items-center justify-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-5 py-2.5 rounded-xl font-bold transition-colors shadow-sm"
           >
             <Download size={18} />
-            Exportar Mês Atual
+            Baixar Mês Atual
           </button>
         </div>
       </div>
