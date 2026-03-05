@@ -91,14 +91,39 @@ export const Colaboradores: React.FC = () => {
     setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] });
   };
 
+  // FUNÇÃO NOVA: Converte a data de qualquer formato para YYYY-MM-DD para o Input funcionar
+  const formatToYMD = (dateVal: string | undefined | null) => {
+    if (!dateVal) return '';
+    const str = String(dateVal).trim();
+    
+    // Se veio do Excel/Importação no formato brasileiro: DD/MM/YYYY
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        const day = parts[0].padStart(2, '0');
+        const month = parts[1].padStart(2, '0');
+        const year = parts[2];
+        if (year.length === 4) return `${year}-${month}-${day}`;
+      }
+    }
+    
+    // Se veio do banco de dados no formato ISO YYYY-MM-DDTHH...
+    if (str.includes('T')) {
+      return str.split('T')[0];
+    }
+    
+    // Se já estiver certo
+    return str;
+  };
+
   const handleEdit = (emp: Employee) => {
     setFormData({ 
       ...emp, 
       dailyWorkload: emp.dailyWorkload || 8.8, 
       probationType: emp.probationType || '45+45',
-      // CORREÇÃO: Forçando o formato AAAA-MM-DD para os campos de data funcionarem
-      birthDate: emp.birthDate ? emp.birthDate.split('T')[0] : '',
-      admissionDate: emp.admissionDate ? emp.admissionDate.split('T')[0] : ''
+      // Aplicando o "tradutor" de datas aqui:
+      birthDate: formatToYMD(emp.birthDate),
+      admissionDate: formatToYMD(emp.admissionDate)
     });
     setView('form');
   };
@@ -141,6 +166,7 @@ export const Colaboradores: React.FC = () => {
         return `${day}/${month}/${year}`;
       }
     }
+    if (dateStr.includes('/')) return dateStr; // Retorna normal se já for DD/MM/YYYY
     return dateStr; 
   };
 
@@ -193,6 +219,7 @@ export const Colaboradores: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-3">
+              {/* FILTRO DE CONTRATO (NOVO) */}
               <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
                 <Briefcase size={16} className="text-slate-400" />
                 <select 
