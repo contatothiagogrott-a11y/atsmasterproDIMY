@@ -93,9 +93,12 @@ export const SettingsPage: React.FC = () => {
   // =================================================================================
 
 
-  // --- LÓGICA DE EXCEL: EXPORTAR ---
+  // --- LÓGICA DE EXCEL: EXPORTAR (AGORA IGNORA INATIVOS) ---
   const handleExportEmployeesExcel = () => {
-    const dataToExport = employees.length > 0 ? employees.map(emp => ({
+    // Filtra para pegar apenas os colaboradores que NÃO estão Inativos
+    const activeEmployees = employees.filter((emp: Employee) => emp.status !== 'Inativo');
+
+    const dataToExport = activeEmployees.length > 0 ? activeEmployees.map((emp: Employee) => ({
       Nome: emp.name,
       Cargo: emp.role,
       Setor: emp.sector,
@@ -103,7 +106,6 @@ export const SettingsPage: React.FC = () => {
       Telefone: emp.phone,
       Contrato: emp.contractType,
       Status: emp.status,
-      // Usando o formatador visual DD/MM/AAAA para a planilha
       Nascimento: formatToBR(emp.birthDate),
       Admissao: formatToBR(emp.admissionDate)
     })) : [{
