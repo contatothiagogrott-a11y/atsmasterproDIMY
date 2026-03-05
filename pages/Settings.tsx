@@ -31,21 +31,84 @@ export const SettingsPage: React.FC = () => {
   const isMaster = currentUser?.role?.toUpperCase() === 'MASTER';
   const isAuxiliar = currentUser?.role === 'AUXILIAR_RH';
 
+  // =================================================================================
+  // TRADUTOR E CORRETOR BLINDADO DE DATAS PARA EXCEL
+  // =================================================================================
+  const formatToYMD = (dateVal: any) => {
+    if (!dateVal) return '';
+    let str = String(dateVal).trim();
+
+    if (/^\d{4,5}$/.test(str)) {
+      const jsDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
+      return jsDate.toISOString().split('T')[0];
+    }
+
+    str = str.split('T')[0].split(' ')[0];
+
+    const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
+    if (corruptMatch) {
+        const wrongYear = corruptMatch[1]; 
+        const month = corruptMatch[2]; 
+        const actualYear = corruptMatch[3]; 
+        const actualDay = wrongYear.substring(2); 
+        return `${actualYear}-${month}-${actualDay}`;
+    }
+
+    const parts = str.split(/[\/\-]/);
+    if (parts.length === 3) {
+        let p0 = parts[0], p1 = parts[1], p2 = parts[2];
+        
+        if (p0.length === 4) { 
+            return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+        } else if (p2.length === 4) { 
+            let m = Number(p1);
+            if (m > 12) { 
+                return `${p2}-${p0.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+            } else { 
+                return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
+            }
+        } else if (p2.length === 2) { 
+            let y = Number(p2) > 50 ? 1900 + Number(p2) : 2000 + Number(p2);
+            return `${y}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
+        }
+    }
+
+    try {
+        const d = new Date(str);
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    } catch(e) {}
+
+    return '';
+  };
+
+  const formatToBR = (dateVal: any) => {
+    const ymd = formatToYMD(dateVal); 
+    if (!ymd) return '';
+    const parts = ymd.split('-');
+    if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`; 
+    }
+    return String(dateVal);
+  };
+  // =================================================================================
+
+
   // --- LÓGICA DE EXCEL: EXPORTAR ---
   const handleExportEmployeesExcel = () => {
     const dataToExport = employees.length > 0 ? employees.map(emp => ({
       Nome: emp.name,
       Cargo: emp.role,
       Setor: emp.sector,
-      Unidade: emp.unit || '', // <--- UNIDADE ADICIONADA AQUI
+      Unidade: emp.unit || '', 
       Telefone: emp.phone,
       Contrato: emp.contractType,
       Status: emp.status,
-      Nascimento: emp.birthDate,
-      Admissao: emp.admissionDate
+      // Usando o formatador visual DD/MM/AAAA para a planilha
+      Nascimento: formatToBR(emp.birthDate),
+      Admissao: formatToBR(emp.admissionDate)
     })) : [{
-      Nome: '', Cargo: '', Setor: '', Unidade: '', // <--- UNIDADE NO MODELO VAZIO
-      Contrato: 'CLT', Status: 'Ativo', Nascimento: '1990-01-01', Admissao: '2024-01-01'
+      Nome: '', Cargo: '', Setor: '', Unidade: '',
+      Contrato: 'CLT', Status: 'Ativo', Nascimento: '01/01/1990', Admissao: '01/01/2024'
     }];
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -54,28 +117,10 @@ export const SettingsPage: React.FC = () => {
     XLSX.writeFile(workbook, `MODELO_IMPORT_COLABORADORES.xlsx`);
   };
 
-  // --- LÓGICA DE EXCEL: IMPORTAR (COM UNIDADE E VALIDAÇÃO) ---
+  // --- LÓGICA DE EXCEL: IMPORTAR ---
   const handleImportEmployeesExcel = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    const parseExcelDate = (dateVal: any) => {
-      if (!dateVal) return '';
-      if (typeof dateVal === 'number' || (!isNaN(Number(dateVal)) && String(dateVal).trim().length >= 4)) {
-        const excelEpoch = new Date(1899, 11, 30);
-        const jsDate = new Date(excelEpoch.getTime() + Number(dateVal) * 86400000);
-        return jsDate.toISOString().split('T')[0];
-      }
-      let str = String(dateVal).trim().replace(/-/g, '/');
-      const parts = str.split('/');
-      if (parts.length === 3) {
-        let [p1, p2, p3] = parts;
-        if (p3.length === 4) return `${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
-        if (p3.length === 2) return `20${p3}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
-        if (p1.length === 4) return `${p1}-${p2.padStart(2, '0')}-${p3.padStart(2, '0')}`;
-      }
-      return str; 
-    };
 
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -105,7 +150,7 @@ export const SettingsPage: React.FC = () => {
             if (!rawName) continue;
 
             const sectorFromExcel = (normalizedRow['setor'] || 'Geral').trim();
-            const unitFromExcel = (normalizedRow['unidade'] || '').trim(); // <--- LÊ UNIDADE DO EXCEL
+            const unitFromExcel = (normalizedRow['unidade'] || '').trim();
 
             const isSectorPending = !activeSectors.includes(sectorFromExcel.toLowerCase());
             const isUnitPending = unitFromExcel !== '' && !activeUnits.includes(unitFromExcel.toLowerCase());
@@ -129,12 +174,13 @@ export const SettingsPage: React.FC = () => {
                 ...existingEmp,
                 role: normalizedRow['cargo'] || existingEmp.role,
                 sector: sectorFromExcel,
-                unit: unitFromExcel, // <--- ATUALIZA UNIDADE
+                unit: unitFromExcel,
                 phone: String(normalizedRow['telefone'] || existingEmp.phone),
                 contractType: (normalizedRow['contrato'] as ContractType) || existingEmp.contractType,
                 status: (normalizedRow['status'] as EmployeeStatus) || existingEmp.status,
-                birthDate: parseExcelDate(rawBirth) || existingEmp.birthDate,
-                admissionDate: parseExcelDate(rawAdmission) || existingEmp.admissionDate,
+                // Aqui usamos o Tradutor Seguro YYYY-MM-DD
+                birthDate: formatToYMD(rawBirth) || existingEmp.birthDate,
+                admissionDate: formatToYMD(rawAdmission) || existingEmp.admissionDate,
                 hasPendingInfo: isPending,
               };
 
@@ -156,12 +202,13 @@ export const SettingsPage: React.FC = () => {
                 name: rawName,
                 role: normalizedRow['cargo'] || 'Não Definido',
                 sector: sectorFromExcel,
-                unit: unitFromExcel, // <--- ADICIONA UNIDADE
+                unit: unitFromExcel,
                 phone: String(normalizedRow['telefone'] || ''),
                 contractType: (normalizedRow['contrato'] as ContractType) || 'CLT',
                 status: (normalizedRow['status'] as EmployeeStatus) || 'Ativo',
-                birthDate: parseExcelDate(rawBirth),
-                admissionDate: parseExcelDate(rawAdmission) || new Date().toISOString().split('T')[0],
+                // Aqui usamos o Tradutor Seguro YYYY-MM-DD
+                birthDate: formatToYMD(rawBirth),
+                admissionDate: formatToYMD(rawAdmission) || new Date().toISOString().split('T')[0],
                 hasPendingInfo: isPending, 
                 history: isPending ? [{
                   id: crypto.randomUUID(),
