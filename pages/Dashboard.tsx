@@ -18,7 +18,6 @@ export const Dashboard: React.FC = () => {
   const [showConfidential, setShowConfidential] = useState(false);
   const [drillDownType, setDrillDownType] = useState<DrillDownType>(null);
 
-  // --- LÓGICA DE ALERTAS DE REUNIÃO (NOVO) ---
   const todayStr = new Date().toISOString().split('T')[0];
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -33,10 +32,19 @@ export const Dashboard: React.FC = () => {
       });
   }, [meetings, todayStr, tomorrowStr]);
 
-  // --- LÓGICA DE ANIVERSARIANTES (NOVO) ---
+  // --- Extrator Seguro (Resolve as datas corrompidas do BD) ---
   const extractMonthDay = (dateStr: any) => {
     if (!dateStr) return null;
     let str = String(dateStr).trim().split('T')[0].split(' ')[0];
+    
+    const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
+    if (corruptMatch) {
+        const wrongYear = corruptMatch[1]; 
+        const month = Number(corruptMatch[2]); 
+        const actualDay = Number(wrongYear.substring(2)); 
+        return { m: month, d: actualDay };
+    }
+
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
         let p0 = parts[0], p1 = parts[1], p2 = parts[2];
@@ -46,7 +54,11 @@ export const Dashboard: React.FC = () => {
             if (m > 12) return { m: Number(p0), d: Number(p1) }; 
             return { m: Number(p1), d: Number(p0) }; 
         }
-        if (p2.length === 2) return { m: Number(p1), d: Number(p0) }; 
+        if (p2.length === 2) {
+            let m = Number(p1);
+            if (m > 12) return { m: Number(p0), d: Number(p1) }; 
+            return { m: Number(p1), d: Number(p0) }; 
+        }
     }
     return null;
   };

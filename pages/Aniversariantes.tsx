@@ -27,27 +27,42 @@ export const Aniversariantes: React.FC = () => {
     { value: 11, label: 'Novembro' }, { value: 12, label: 'Dezembro' }
   ];
 
-  // Extrator seguro de mês e dia (ignora anos para não dar erro)
+  // --- Extrator Seguro (Resolve as datas corrompidas do BD) ---
   const extractMonthDay = (dateStr: any) => {
     if (!dateStr) return null;
     let str = String(dateStr).trim().split('T')[0].split(' ')[0];
+    
+    // Corrige instantaneamente as datas com o bug do ano trocado (Ex: 2028-03-1970)
+    const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
+    if (corruptMatch) {
+        const wrongYear = corruptMatch[1]; 
+        const month = Number(corruptMatch[2]); 
+        const actualDay = Number(wrongYear.substring(2)); // Pega os últimos 2 dígitos do falso ano
+        return { m: month, d: actualDay };
+    }
+
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
         let p0 = parts[0], p1 = parts[1], p2 = parts[2];
+        
         if (p0.length === 4) return { m: Number(p1), d: Number(p2) }; 
         if (p2.length === 4) { 
             let m = Number(p1);
             if (m > 12) return { m: Number(p0), d: Number(p1) }; 
             return { m: Number(p1), d: Number(p0) }; 
         }
-        if (p2.length === 2) return { m: Number(p1), d: Number(p0) }; 
+        if (p2.length === 2) {
+            let m = Number(p1);
+            if (m > 12) return { m: Number(p0), d: Number(p1) }; 
+            return { m: Number(p1), d: Number(p0) }; 
+        }
     }
     return null;
   };
 
   const filteredEmployees = useMemo(() => {
     return employees
-      .filter((emp: Employee) => emp.status === 'Ativo') // Apenas ativos
+      .filter((emp: Employee) => emp.status === 'Ativo') 
       .filter((emp: Employee) => {
         const bd = extractMonthDay(emp.birthDate);
         if (!bd) return false;
@@ -98,7 +113,7 @@ export const Aniversariantes: React.FC = () => {
     const templateBase64 = localStorage.getItem('ats_excel_template_aniversariantes');
 
     if (!templateBase64) {
-      alert("Por favor, suba o seu arquivo 'Modelo Lista de Aniversariantes.xlsx' clicando no botão 'Subir Modelo Excel' antes de exportar!");
+      alert("Por favor, suba o seu arquivo 'Modelo Lista de Aniversariantes.xlsx' clicando no botão branco antes de exportar!");
       return;
     }
 
@@ -119,19 +134,17 @@ export const Aniversariantes: React.FC = () => {
 
       const monthName = months.find(m => m.value === selectedMonth)?.label.toUpperCase() || '';
       
-      // Injeta o nome do mês na célula C5 (MÊS ,, JANEIRO)
       const c5 = sheet.getCell('C5'); 
       if (c5) c5.value = monthName;
 
-      // Preenche os aniversariantes a partir da linha 8
       let startRow = 8;
       filteredEmployees.forEach((emp: Employee, index) => {
         const bd = extractMonthDay(emp.birthDate);
         const dateStr = bd ? `${String(bd.d).padStart(2, '0')}/${String(bd.m).padStart(2, '0')}` : '';
 
         const row = sheet.getRow(startRow + index);
-        row.getCell(1).value = emp.name;     // NOME
-        row.getCell(4).value = dateStr;      // DIA/MÊS
+        row.getCell(1).value = emp.name;     
+        row.getCell(4).value = dateStr;      
         row.commit();
       });
 
@@ -147,7 +160,7 @@ export const Aniversariantes: React.FC = () => {
 
     } catch (err) {
       console.error(err);
-      alert("Ocorreu um erro ao gerar a planilha. Verifique se o modelo é válido.");
+      alert("Ocorreu um erro ao gerar a planilha. Verifique se o arquivo modelo está correto.");
     }
   };
 
@@ -223,10 +236,13 @@ export const Aniversariantes: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {filteredEmployees.map((emp: Employee) => {
                 const bd = extractMonthDay(emp.birthDate);
+                const isToday = bd && bd.m === (new Date().getMonth() + 1) && bd.d === new Date().getDate();
+                
                 return (
                   <tr key={emp.id} className="hover:bg-pink-50 transition-colors group">
                     <td className="p-4 pl-6 font-black text-pink-600">
                       {bd ? `${String(bd.d).padStart(2, '0')}/${String(bd.m).padStart(2, '0')}` : '-'}
+                      {isToday && <span className="ml-2 bg-pink-500 text-white text-[10px] px-2 py-0.5 rounded-full uppercase animate-pulse">Hoje!</span>}
                     </td>
                     <td className="p-4 font-bold text-slate-700">{emp.name}</td>
                     <td className="p-4 text-center text-slate-500">{emp.sector}</td>
