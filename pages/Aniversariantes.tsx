@@ -3,7 +3,7 @@ import { useData } from '../context/DataContext';
 import { Employee } from '../types';
 import { Gift, Calendar, FileSpreadsheet, Download, Search, Users } from 'lucide-react';
 import ExcelJS from 'exceljs';
-import * as XLSX from 'xlsx'; // Necessário para a exportação geral rápida
+import * as XLSX from 'xlsx'; 
 
 export const Aniversariantes: React.FC = () => {
   const { employees = [] } = useData() as any;
@@ -169,14 +169,35 @@ export const Aniversariantes: React.FC = () => {
     }
   };
 
-  // EXPORTAÇÃO GERAL (Todos os colaboradores ativos com dia e mês)
+  // EXPORTAÇÃO GERAL (Todos os colaboradores ativos organizados por Mês e Dia)
   const handleExportAll = () => {
     if (activeEmployees.length === 0) {
       alert("Não há colaboradores ativos para exportar.");
       return;
     }
 
-    const dataToExport = activeEmployees.map((emp: Employee) => {
+    // 1. Ordenar por Mês -> Dia -> Nome
+    const sortedEmployees = [...activeEmployees].sort((a: Employee, b: Employee) => {
+      const bdA = extractMonthDay(a.birthDate);
+      const bdB = extractMonthDay(b.birthDate);
+
+      // Se alguém não tiver data, joga pro final
+      if (!bdA && !bdB) return a.name.localeCompare(b.name);
+      if (!bdA) return 1;
+      if (!bdB) return -1;
+
+      // Ordena por Mês
+      if (bdA.m !== bdB.m) return bdA.m - bdB.m;
+      
+      // Ordena por Dia (se o mês for igual)
+      if (bdA.d !== bdB.d) return bdA.d - bdB.d;
+
+      // Desempata por Nome (se mês e dia forem iguais)
+      return a.name.localeCompare(b.name);
+    });
+
+    // 2. Mapear para o formato da planilha
+    const dataToExport = sortedEmployees.map((emp: Employee) => {
       const bd = extractMonthDay(emp.birthDate);
       const dateStr = bd ? `${String(bd.d).padStart(2, '0')}/${String(bd.m).padStart(2, '0')}` : '-';
 
@@ -186,7 +207,7 @@ export const Aniversariantes: React.FC = () => {
         'Unidade': emp.unit || '-',
         'Aniversário (Dia/Mês)': dateStr
       };
-    }).sort((a, b) => a.Nome.localeCompare(b.Nome)); // Ordena alfabeticamente
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
@@ -210,7 +231,6 @@ export const Aniversariantes: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {/* BOTÃO NOVO: Exportar Todos */}
           <button 
             onClick={handleExportAll}
             className="flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl font-bold transition-colors shadow-sm"
