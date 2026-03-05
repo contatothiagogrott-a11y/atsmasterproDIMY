@@ -91,58 +91,73 @@ export const Colaboradores: React.FC = () => {
     setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] });
   };
 
-  // --- TRADUTOR 1: Garante que o Formulário leia YYYY-MM-DD sem quebrar ---
-  const formatToYMD = (dateVal: string | undefined | null) => {
-    if (!dateVal) return '';
-    let str = String(dateVal).split('T')[0].trim(); // Remove a hora caso exista
+  // =========================================================================
+  // EXTRATOR DE DATAS BLINDADO (Ignora horas, letras e barras invertidas)
+  // =========================================================================
+  const parseAnyDate = (dateVal: any) => {
+    if (!dateVal) return null;
+    let str = String(dateVal).trim();
+    
+    // Corta qualquer horário grudado (seja com espaço " 18:00" ou com T "T18:00")
+    str = str.split('T')[0].split(' ')[0];
 
-    // Se veio como DD/MM/YYYY ou DD-MM-YYYY (Ex: 18/09/2005)
-    const brMatch = str.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
-    if (brMatch) {
-      return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+    // Trata número serial do Excel
+    if (/^\d{4,5}$/.test(str)) {
+      const d = new Date((Number(str) - 25569) * 86400 * 1000);
+      return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
     }
 
-    // Se já veio como YYYY-MM-DD ou YYYY/MM/DD
-    const isoMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
-    if (isoMatch) {
-      return `${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}`;
-    }
+    const parts = str.match(/\d+/g); // Pega apenas os blocos de números puros
+    if (parts && parts.length >= 3) {
+      let year = 0, month = 0, day = 0;
+      
+      // Avalia onde está o ano (bloco com 4 dígitos)
+      if (parts[0].length === 4 && parts[2].length !== 4) {
+         year = Number(parts[0]); month = Number(parts[1]); day = Number(parts[2]);
+      } else if (parts[2].length === 4) {
+         day = Number(parts[0]); month = Number(parts[1]); year = Number(parts[2]);
+      } else {
+         day = Number(parts[0]); month = Number(parts[1]); 
+         year = Number(parts[2]) > 50 ? 1900 + Number(parts[2]) : 2000 + Number(parts[2]);
+      }
 
-    // Se for o número serial louco do Excel (ex: 44197)
-    if (/^\d{5}$/.test(str)) {
-      const jsDate = new Date((Number(str) - 25569) * 86400 * 1000);
-      return jsDate.toISOString().split('T')[0];
-    }
+      // Previne inversões de formato americano
+      if (month > 12 && day <= 12) {
+        let tmp = month; month = day; day = tmp;
+      }
 
-    return str; // Fallback final
+      return { year, month, day };
+    }
+    return null;
   };
 
-  // --- TRADUTOR 2: Garante que a visualização na Lista seja SEMPRE DD/MM/YYYY ---
-  const formatDate = (dateVal: string | undefined | null) => {
-    if (!dateVal) return '-';
-    let str = String(dateVal).split('T')[0].trim();
-
-    // Se já estiver como DD/MM/YYYY ou DD-MM-YYYY
-    const brMatch = str.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
-    if (brMatch) {
-      return `${brMatch[1]}/${brMatch[2]}/${brMatch[3]}`;
-    }
-
-    // Se estiver como YYYY-MM-DD
-    const isoMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{2})$/);
-    if (isoMatch) {
-      return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
-    }
-
-    return str; 
+  // Converte para o INPUT (Formato que o HTML Exige: AAAA-MM-DD)
+  const formatToYMD = (dateVal: any) => {
+    const d = parseAnyDate(dateVal);
+    if (!d || isNaN(d.year)) return '';
+    const yyyy = String(d.year).padStart(4, '0');
+    const mm = String(d.month).padStart(2, '0');
+    const dd = String(d.day).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   };
+
+  // Converte para a TELA (Formato Brasil: DD/MM/AAAA)
+  const formatDate = (dateVal: any) => {
+    const d = parseAnyDate(dateVal);
+    if (!d || isNaN(d.year)) return String(dateVal) || '-';
+    const yyyy = String(d.year).padStart(4, '0');
+    const mm = String(d.month).padStart(2, '0');
+    const dd = String(d.day).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy}`;
+  };
+  // =========================================================================
 
   const handleEdit = (emp: Employee) => {
     setFormData({ 
       ...emp, 
       dailyWorkload: emp.dailyWorkload || 8.8, 
       probationType: emp.probationType || '45+45',
-      // Preenche o formulário da forma exata que o HTML exige
+      // Passa pelo extrator blindado
       birthDate: formatToYMD(emp.birthDate),
       admissionDate: formatToYMD(emp.admissionDate),
       leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn)
