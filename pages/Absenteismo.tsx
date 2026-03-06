@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock } from 'lucide-react';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download } from 'lucide-react';
+import * as XLSX from 'xlsx'; // <--- IMPORTAÇÃO DO EXCEL
 
 export const Absenteismo: React.FC = () => {
   const { user, absences = [], addAbsence, updateAbsence, removeAbsence, employees = [] } = useData();
@@ -111,6 +112,50 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
+  // --- LÓGICA DE EXPORTAÇÃO PARA EXCEL ---
+  const handleExportExcel = () => {
+    if (filteredAbsences.length === 0) {
+      alert('Não há registros para exportar no período selecionado.');
+      return;
+    }
+
+    const exportData = filteredAbsences.map(record => {
+      // Busca o colaborador no banco para pegar setor e unidade atualizados
+      const emp = employees.find(e => e.name.toLowerCase() === record.employeeName?.toLowerCase());
+      
+      const dateParts = record.absenceDate.split('-');
+      const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : record.absenceDate;
+
+      return {
+        'Data da Falta': formattedDate,
+        'Nome Colaborador': record.employeeName,
+        'Setor': emp?.sector || 'Não Cadastrado',
+        'Unidade': emp?.unit || 'Não Cadastrado',
+        'Documento': record.documentType,
+        'Motivo / CID': record.reason || '-',
+        'Tempo': record.documentDuration || '-'
+      };
+    });
+
+    // Ordenar pela Data da Falta decrescente (mais recente primeiro)
+    exportData.sort((a, b) => {
+      const [d1, m1, y1] = a['Data da Falta'].split('/');
+      const [d2, m2, y2] = b['Data da Falta'].split('/');
+      const dateA = new Date(`${y1}-${m1}-${d1}`);
+      const dateB = new Date(`${y2}-${m2}-${d2}`);
+      return dateB.getTime() - dateA.getTime();
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Absenteísmo");
+    
+    // Formata nomes para o arquivo ficar mais legível
+    const startStr = startDate.split('-').reverse().join('-');
+    const endStr = endDate.split('-').reverse().join('-');
+    XLSX.writeFile(workbook, `Absenteismo_${startStr}_a_${endStr}.xlsx`);
+  };
+
   // --- HANDLERS DO FORMULÁRIO ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -125,12 +170,10 @@ export const Absenteismo: React.FC = () => {
     setFormData(prev => ({ 
       ...prev, 
       durationUnit: newUnit, 
-      // Reseta os valores ao trocar para não causar confusão
       durationAmount: newUnit === 'Dias' ? 1 : 0 
     }));
   };
 
-  // Controles específicos para separar Horas e Minutos na tela
   const currentHours = Math.floor(formData.durationAmount || 0);
   const currentMinutes = Math.round(((formData.durationAmount || 0) - currentHours) * 60);
 
@@ -150,7 +193,6 @@ export const Absenteismo: React.FC = () => {
     const unit = formData.durationUnit || 'Dias';
     const amount = formData.durationAmount || 0;
     
-    // Cria uma string bonita para salvar e mostrar na tabela (Ex: "2h 30m" ou "2 Dias")
     let displayDuration = `${amount} ${unit}`;
     if (unit === 'Horas') {
       const h = Math.floor(amount);
@@ -185,7 +227,6 @@ export const Absenteismo: React.FC = () => {
     let amount = record.durationAmount;
     let unit = record.durationUnit;
     
-    // Lida com formatos de texto legados (antigos)
     if (!unit && record.documentDuration) {
       const hMatch = record.documentDuration.match(/(\d+)h/i);
       const mMatch = record.documentDuration.match(/(\d+)m/i);
@@ -229,13 +270,15 @@ export const Absenteismo: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center space-x-3 mb-2">
-        <div className="p-3 bg-blue-100 text-blue-700 rounded-xl">
-          <CalendarX size={24} />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Absenteísmo</h1>
-          <p className="text-slate-500 text-sm">Monitoramento de Faltas e Horas Perdidas</p>
+      <div className="flex items-center justify-between space-x-3 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-3 bg-blue-100 text-blue-700 rounded-xl">
+            <CalendarX size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-800">Absenteísmo</h1>
+            <p className="text-slate-500 text-sm">Monitoramento de Faltas e Horas Perdidas</p>
+          </div>
         </div>
       </div>
 
@@ -251,20 +294,31 @@ export const Absenteismo: React.FC = () => {
       {activeTab === 'dashboard' && (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
           
-          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center gap-4">
-            <span className="font-semibold text-slate-700 text-sm">Período de Análise:</span>
-            <div className="flex items-center gap-2">
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
-              <span className="text-slate-400">até</span>
-              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col xl:flex-row xl:items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <span className="font-semibold text-slate-700 text-sm whitespace-nowrap">Período de Análise:</span>
+              <div className="flex items-center gap-2">
+                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+                <span className="text-slate-400">até</span>
+                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border border-slate-300 p-2 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
+              </div>
             </div>
-            <div className="ml-auto flex items-center gap-4">
-              <div className="text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-lg">
+
+            <div className="xl:ml-auto flex flex-wrap items-center gap-3">
+              <div className="text-xs text-slate-500 bg-slate-100 px-3 py-2 rounded-lg">
                 <b>{filteredAbsences.length}</b> Ocorrências
               </div>
-              <div className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+              <div className="text-xs font-bold text-red-600 bg-red-50 border border-red-100 px-3 py-2 rounded-lg flex items-center gap-1.5">
                 <Clock size={14}/> Total: {formatHours(stats.totalLostHours)} Perdidas
               </div>
+              
+              {/* BOTÃO DE EXPORTAÇÃO */}
+              <button 
+                onClick={handleExportExcel}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm ml-auto sm:ml-0"
+              >
+                <Download size={16} /> Exportar Excel
+              </button>
             </div>
           </div>
 
@@ -377,7 +431,6 @@ export const Absenteismo: React.FC = () => {
                 </select>
               </label>
 
-              {/* RENDERIZAÇÃO CONDICIONAL: DIAS x HORAS/MINUTOS */}
               {formData.durationUnit === 'Dias' ? (
                 <label className="flex flex-col text-sm font-medium text-slate-700">
                   Quantidade de Dias
