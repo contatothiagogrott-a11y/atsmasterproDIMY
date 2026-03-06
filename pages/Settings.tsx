@@ -93,9 +93,8 @@ export const SettingsPage: React.FC = () => {
   // =================================================================================
 
 
-  // --- LÓGICA DE EXCEL: EXPORTAR (AGORA IGNORA INATIVOS) ---
+  // --- LÓGICA DE EXCEL: EXPORTAR (COM JORNADA) ---
   const handleExportEmployeesExcel = () => {
-    // Filtra para pegar apenas os colaboradores que NÃO estão Inativos
     const activeEmployees = employees.filter((emp: Employee) => emp.status !== 'Inativo');
 
     const dataToExport = activeEmployees.length > 0 ? activeEmployees.map((emp: Employee) => ({
@@ -106,11 +105,12 @@ export const SettingsPage: React.FC = () => {
       Telefone: emp.phone,
       Contrato: emp.contractType,
       Status: emp.status,
+      Jornada: emp.dailyWorkload || 8.8, // <--- CAMPO ADICIONADO AQUI
       Nascimento: formatToBR(emp.birthDate),
       Admissao: formatToBR(emp.admissionDate)
     })) : [{
       Nome: '', Cargo: '', Setor: '', Unidade: '',
-      Contrato: 'CLT', Status: 'Ativo', Nascimento: '01/01/1990', Admissao: '01/01/2024'
+      Contrato: 'CLT', Status: 'Ativo', Jornada: 8.8, Nascimento: '01/01/1990', Admissao: '01/01/2024'
     }];
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -167,8 +167,16 @@ export const SettingsPage: React.FC = () => {
 
             const rawAdmission = normalizedRow['admissao'] || normalizedRow['data de admissao'];
             const rawBirth = normalizedRow['nascimento'] || normalizedRow['data de nascimento'];
+            
+            // Lógica para capturar a Jornada (aceita vírgula ou ponto)
+            const rawJornada = normalizedRow['jornada'] || normalizedRow['jornada (h)'] || normalizedRow['horas'];
+            let parsedJornada: number | undefined = undefined;
+            if (rawJornada !== undefined && rawJornada !== '') {
+               const num = Number(String(rawJornada).replace(',', '.'));
+               if (!isNaN(num)) parsedJornada = num;
+            }
 
-            const existingEmp = employees.find(emp => emp.name.trim().toLowerCase() === String(rawName).trim().toLowerCase());
+            const existingEmp = employees.find((emp: Employee) => emp.name.trim().toLowerCase() === String(rawName).trim().toLowerCase());
 
             if (existingEmp) {
               // ATUALIZA O EXISTENTE
@@ -180,7 +188,7 @@ export const SettingsPage: React.FC = () => {
                 phone: String(normalizedRow['telefone'] || existingEmp.phone),
                 contractType: (normalizedRow['contrato'] as ContractType) || existingEmp.contractType,
                 status: (normalizedRow['status'] as EmployeeStatus) || existingEmp.status,
-                // Aqui usamos o Tradutor Seguro YYYY-MM-DD
+                dailyWorkload: parsedJornada !== undefined ? parsedJornada : (existingEmp.dailyWorkload || 8.8), // <--- SALVA A JORNADA
                 birthDate: formatToYMD(rawBirth) || existingEmp.birthDate,
                 admissionDate: formatToYMD(rawAdmission) || existingEmp.admissionDate,
                 hasPendingInfo: isPending,
@@ -208,7 +216,7 @@ export const SettingsPage: React.FC = () => {
                 phone: String(normalizedRow['telefone'] || ''),
                 contractType: (normalizedRow['contrato'] as ContractType) || 'CLT',
                 status: (normalizedRow['status'] as EmployeeStatus) || 'Ativo',
-                // Aqui usamos o Tradutor Seguro YYYY-MM-DD
+                dailyWorkload: parsedJornada !== undefined ? parsedJornada : 8.8, // <--- SALVA A JORNADA NOVA
                 birthDate: formatToYMD(rawBirth),
                 admissionDate: formatToYMD(rawAdmission) || new Date().toISOString().split('T')[0],
                 hasPendingInfo: isPending, 
@@ -416,11 +424,11 @@ export const SettingsPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <input required type="password" placeholder="Senha" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                   <select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}>
-                  <option value="RECRUITER">Recrutador</option>
-               <option value="MASTER">Master Admin</option>
-               <option value="AUXILIAR_RH">Auxiliar de RH</option>
-               <option value="RECEPCAO">Recepção</option> {/* <--- OPÇÃO NOVA AQUI */}
-              </select>
+                    <option value="RECRUITER">Recrutador</option>
+                    <option value="MASTER">Master Admin</option>
+                    <option value="AUXILIAR_RH">Auxiliar de RH</option>
+                    <option value="RECEPCAO">Recepção</option>
+                  </select>
                 </div>
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-lg">Criar Usuário</button>
               </form>
