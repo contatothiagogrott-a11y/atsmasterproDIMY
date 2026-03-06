@@ -32,18 +32,25 @@ const ProtectedRoute = () => {
   const role = user.role?.toUpperCase();
   const isMaster = role === 'MASTER';
   const isAuxiliar = role === 'AUXILIAR_RH';
+  const isRecepcao = role === 'RECEPCAO';
 
   // --- LÓGICA DE ACESSO ---
 
-  // 1. Se for Auxiliar, restringir às rotas específicas dele
-  const allowedAuxiliarRoutes = ['/absenteismo', '/settings', '/colaboradores'];
-  if (isAuxiliar && !allowedAuxiliarRoutes.includes(location.pathname)) {
-    return <Navigate to="/absenteismo" replace />;
+  // 1. RECEPÇÃO: Acesso estritamente restrito
+  const allowedRecepcaoRoutes = ['/', '/aniversariantes'];
+  if (isRecepcao && !allowedRecepcaoRoutes.includes(location.pathname)) {
+    return <Navigate to="/" replace />;
   }
 
-  // 2. Se for Recrutador (nem Master, nem Auxiliar), bloquear páginas de Gestão
-  const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores'];
-  if (!isMaster && !isAuxiliar && forbiddenRecruiterRoutes.includes(location.pathname)) {
+  // 2. AUXILIAR DE RH: Liberado para Dashboard, Gestão e Configurações
+  const allowedAuxiliarRoutes = ['/', '/absenteismo', '/colaboradores', '/reunioes', '/aniversariantes', '/settings'];
+  if (isAuxiliar && !allowedAuxiliarRoutes.includes(location.pathname)) {
+    return <Navigate to="/" replace />;
+  }
+
+  // 3. RECRUTADOR: Bloqueado APENAS nas páginas profundas de DP/Gestão
+  const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores', '/experiencia'];
+  if (!isMaster && !isAuxiliar && !isRecepcao && forbiddenRecruiterRoutes.includes(location.pathname)) {
     return <Navigate to="/" replace />;
   }
 
