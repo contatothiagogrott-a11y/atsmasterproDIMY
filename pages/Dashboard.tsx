@@ -18,6 +18,8 @@ export const Dashboard: React.FC = () => {
   const [showConfidential, setShowConfidential] = useState(false);
   const [drillDownType, setDrillDownType] = useState<DrillDownType>(null);
 
+  const isRecepcao = user?.role === 'RECEPCAO'; // <--- IDENTIFICA SE É A RECEPÇÃO
+
   const todayStr = new Date().toISOString().split('T')[0];
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -209,7 +211,7 @@ export const Dashboard: React.FC = () => {
             </div>
           );
       }
-      if (drillDownType === 'PENDING_CANDIDATES') {
+      if (drillDownType === 'PENDING_CANDIDATES' && !isRecepcao) {
           return (
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs min-w-[600px]">
@@ -244,7 +246,7 @@ export const Dashboard: React.FC = () => {
             </div>
           );
       }
-      if (drillDownType === 'OLD_JOBS') {
+      if (drillDownType === 'OLD_JOBS' && !isRecepcao) {
           return (
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs min-w-[600px]">
@@ -277,7 +279,7 @@ export const Dashboard: React.FC = () => {
             </div>
           );
       }
-      if (drillDownType === 'UPCOMING_ONBOARDINGS') {
+      if (drillDownType === 'UPCOMING_ONBOARDINGS' && !isRecepcao) {
           return (
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs min-w-[600px]">
@@ -318,7 +320,6 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-8 animate-fadeIn pb-12">
-      {/* --- HEADER --- */}
       <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
         <div>
             <h2 className="text-lg font-bold text-indigo-600 mb-1">
@@ -327,21 +328,22 @@ export const Dashboard: React.FC = () => {
             <h1 className="text-3xl font-black text-slate-800 tracking-tight">Painel de Ações</h1>
         </div>
         
-        <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
-            {hasConfidentialAccess && (
-              <button onClick={() => setShowConfidential(!showConfidential)} className={`p-2 rounded-xl transition-all border flex items-center gap-2 text-sm font-bold ${showConfidential ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>
-                {showConfidential ? <Unlock size={18} /> : <Lock size={18} />} <span className="hidden sm:inline">{showConfidential ? "Sigilo Aberto" : "Ativar Sigilo"}</span>
-              </button>
-            )}
-            <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
-            <select className="bg-slate-50 border-none rounded-xl text-sm p-2 font-bold outline-none cursor-pointer" value={sectorFilter} onChange={e => setSectorFilter(e.target.value)}>
-                <option value="">Todos os Setores</option>
-                {settings.filter((s: any) => s.type === 'SECTOR').map((s: any) => <option key={s.id} value={s.name}>{s.name}</option>)}
-            </select>
-        </div>
+        {!isRecepcao && (
+          <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
+              {hasConfidentialAccess && (
+                <button onClick={() => setShowConfidential(!showConfidential)} className={`p-2 rounded-xl transition-all border flex items-center gap-2 text-sm font-bold ${showConfidential ? 'bg-amber-100 border-amber-300 text-amber-700' : 'bg-white border-slate-200 text-slate-400'}`}>
+                  {showConfidential ? <Unlock size={18} /> : <Lock size={18} />} <span className="hidden sm:inline">{showConfidential ? "Sigilo Aberto" : "Ativar Sigilo"}</span>
+                </button>
+              )}
+              <div className="w-px h-6 bg-slate-200 mx-1 hidden sm:block"></div>
+              <select className="bg-slate-50 border-none rounded-xl text-sm p-2 font-bold outline-none cursor-pointer" value={sectorFilter} onChange={e => setSectorFilter(e.target.value)}>
+                  <option value="">Todos os Setores</option>
+                  {settings.filter((s: any) => s.type === 'SECTOR').map((s: any) => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+          </div>
+        )}
       </div>
 
-      {/* --- AVISO DE ANIVERSARIANTES DE HOJE --- */}
       {todaysNames && (
         <div onClick={() => navigate('/aniversariantes')} className="cursor-pointer bg-pink-50 border-l-[6px] border-pink-500 p-5 rounded-2xl shadow-sm hover:shadow-md transition-all animate-in slide-in-from-top-2 flex items-center gap-4">
           <div className="p-3 bg-pink-200 text-pink-600 rounded-full shrink-0">
@@ -356,21 +358,13 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* --- ALERTA DE REUNIÕES (HOJE / AMANHÃ) --- */}
-      {urgentMeetings.length > 0 && (
+      {/* SÓ MOSTRA REUNIÕES SE NÃO FOR RECEPÇÃO */}
+      {!isRecepcao && urgentMeetings.length > 0 && (
         <div className="space-y-3">
           {urgentMeetings.map((m: any) => {
             const isToday = m.date === todayStr;
             return (
-              <div 
-                key={m.id} 
-                onClick={() => navigate('/reunioes')}
-                className={`cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-2xl border-l-[6px] shadow-sm hover:shadow-md transition-all animate-in fade-in slide-in-from-top-2 ${
-                  isToday 
-                    ? 'bg-orange-50 border-orange-500 hover:bg-orange-100' 
-                    : 'bg-blue-50 border-blue-500 hover:bg-blue-100'
-                }`}
-              >
+              <div key={m.id} onClick={() => navigate('/reunioes')} className={`cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-2xl border-l-[6px] shadow-sm hover:shadow-md transition-all animate-in fade-in slide-in-from-top-2 ${isToday ? 'bg-orange-50 border-orange-500 hover:bg-orange-100' : 'bg-blue-50 border-blue-500 hover:bg-blue-100'}`}>
                 <div className="flex items-start sm:items-center gap-4">
                   <div className={`p-3 rounded-full shrink-0 ${isToday ? 'bg-orange-200 text-orange-600' : 'bg-blue-200 text-blue-600'}`}>
                     <Coffee size={24} className={isToday ? 'animate-bounce' : ''} />
@@ -380,59 +374,55 @@ export const Dashboard: React.FC = () => {
                       {isToday ? 'HOJE:' : 'AMANHÃ:'} {m.title}
                     </h4>
                     <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-sm font-bold ${isToday ? 'text-orange-700' : 'text-blue-700'}`}>
-                      <span className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-md">
-                        <Clock size={14}/> {m.time} {m.endTime ? `às ${m.endTime}` : ''}
-                      </span>
+                      <span className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-md"><Clock size={14}/> {m.time} {m.endTime ? `às ${m.endTime}` : ''}</span>
                       <span className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-md"><MapPin size={14}/> {m.location}</span>
                       <span className="flex items-center gap-1.5 bg-white/50 px-2 py-0.5 rounded-md"><Users size={14}/> {m.participantCount} pessoas</span>
                     </div>
                   </div>
                 </div>
-                {m.requirements && (
-                  <div className={`mt-4 sm:mt-0 sm:ml-6 sm:w-1/3 text-xs font-medium italic border-t sm:border-t-0 sm:border-l pt-3 sm:pt-0 sm:pl-4 ${isToday ? 'border-orange-200 text-orange-800' : 'border-blue-200 text-blue-800'}`}>
-                    " {m.requirements} "
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
       )}
 
-      {/* --- BLOCO DE GESTÃO DE PESSOAS --- */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6 hover:shadow-md transition-shadow">
-              <div className="p-4 bg-red-50 text-red-600 rounded-2xl"><CalendarX size={32} /></div>
-              <div>
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Faltas no Mês</p>
-                  <p className="text-3xl font-black text-slate-800">{peopleStats.monthlyAbsences}</p>
+      {/* SÓ MOSTRA GESTÃO DE PESSOAS SE NÃO FOR RECEPÇÃO */}
+      {!isRecepcao && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6 hover:shadow-md transition-shadow">
+                  <div className="p-4 bg-red-50 text-red-600 rounded-2xl"><CalendarX size={32} /></div>
+                  <div>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Faltas no Mês</p>
+                      <p className="text-3xl font-black text-slate-800">{peopleStats.monthlyAbsences}</p>
+                  </div>
               </div>
-          </div>
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6 hover:shadow-md transition-shadow">
-              <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl"><Users size={32} /></div>
-              <div>
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Colaboradores Ativos</p>
-                  <div className="flex flex-col">
-                    <p className="text-3xl font-black text-slate-800">{peopleStats.totalAtivos}</p>
-                    <p className="text-[10px] font-bold text-slate-500 leading-tight mt-1">
-                        {peopleStats.ativosCLT} CLT | {peopleStats.ativosPJ} PJ | {peopleStats.ativosEstagio} Est. | {peopleStats.ativosJA} JA
-                    </p>
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6 hover:shadow-md transition-shadow">
+                  <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl"><Users size={32} /></div>
+                  <div>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Colaboradores Ativos</p>
+                      <div className="flex flex-col">
+                        <p className="text-3xl font-black text-slate-800">{peopleStats.totalAtivos}</p>
+                        <p className="text-[10px] font-bold text-slate-500 leading-tight mt-1">
+                            {peopleStats.ativosCLT} CLT | {peopleStats.ativosPJ} PJ | {peopleStats.ativosEstagio} Est. | {peopleStats.ativosJA} JA
+                        </p>
+                      </div>
+                  </div>
+              </div>
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6 hover:shadow-md transition-shadow">
+                  <div className="p-4 bg-amber-50 text-amber-600 rounded-2xl"><UserMinus size={32} /></div>
+                  <div>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Afastados</p>
+                      <p className="text-3xl font-black text-slate-800">{peopleStats.afastados}</p>
                   </div>
               </div>
           </div>
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-6 hover:shadow-md transition-shadow">
-              <div className="p-4 bg-amber-50 text-amber-600 rounded-2xl"><UserMinus size={32} /></div>
-              <div>
-                  <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Afastados</p>
-                  <p className="text-3xl font-black text-slate-800">{peopleStats.afastados}</p>
-              </div>
-          </div>
-      </div>
+          <div className="w-full h-px bg-slate-200 my-4"></div>
+        </>
+      )}
 
-      <div className="w-full h-px bg-slate-200 my-4"></div>
-
-      {/* --- CARDS INFERIORES AGORA COM 4 COLUNAS PARA CABER OS ANIVERSARIANTES --- */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pt-2">
+      {/* CARDS INFERIORES */}
+      <div className={`grid gap-6 pt-2 ${isRecepcao ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
           
           <div onClick={() => setDrillDownType(drillDownType === 'BIRTHDAYS' ? null : 'BIRTHDAYS')} className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'BIRTHDAYS' ? 'border-pink-500 shadow-md ring-4 ring-pink-50' : 'border-pink-200'}`}>
               <div className="absolute -top-4 -right-4 bg-pink-50 p-8 rounded-full z-0 group-hover:bg-pink-100 transition-colors"></div>
@@ -443,53 +433,38 @@ export const Dashboard: React.FC = () => {
               </div>
           </div>
 
-          {/* 1. Candidatos Pendentes */}
-          <div 
-             onClick={() => setDrillDownType(drillDownType === 'PENDING_CANDIDATES' ? null : 'PENDING_CANDIDATES')} 
-             className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'PENDING_CANDIDATES' ? 'border-amber-500 shadow-md ring-4 ring-amber-50' : 'border-amber-200'}`}
-          >
-              <div className="absolute -top-4 -right-4 bg-amber-50 p-8 rounded-full z-0 group-hover:bg-amber-100 transition-colors"></div>
-              <div className="bg-amber-500 p-4 rounded-2xl text-white shadow-lg shadow-amber-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300">
-                  <UserCheck size={32}/>
+          {!isRecepcao && (
+            <>
+              <div onClick={() => setDrillDownType(drillDownType === 'PENDING_CANDIDATES' ? null : 'PENDING_CANDIDATES')} className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'PENDING_CANDIDATES' ? 'border-amber-500 shadow-md ring-4 ring-amber-50' : 'border-amber-200'}`}>
+                  <div className="absolute -top-4 -right-4 bg-amber-50 p-8 rounded-full z-0 group-hover:bg-amber-100 transition-colors"></div>
+                  <div className="bg-amber-500 p-4 rounded-2xl text-white shadow-lg shadow-amber-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300"><UserCheck size={32}/></div>
+                  <div className="text-center z-10">
+                      <h4 className="font-black text-amber-900 uppercase tracking-widest text-[10px] mb-1">Candidatos Pendentes</h4>
+                      <div className="text-5xl font-black text-amber-600 mb-1">{pendingCandidates.length}</div>
+                  </div>
               </div>
-              <div className="text-center z-10">
-                  <h4 className="font-black text-amber-900 uppercase tracking-widest text-[10px] mb-1">Candidatos Pendentes</h4>
-                  <div className="text-5xl font-black text-amber-600 mb-1">{pendingCandidates.length}</div>
-              </div>
-          </div>
 
-          {/* 2. Vagas Antigas */}
-          <div 
-             onClick={() => setDrillDownType(drillDownType === 'OLD_JOBS' ? null : 'OLD_JOBS')} 
-             className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'OLD_JOBS' ? 'border-red-500 shadow-md ring-4 ring-red-50' : 'border-red-200'}`}
-          >
-              <div className="absolute -top-4 -right-4 bg-red-50 p-8 rounded-full z-0 group-hover:bg-red-100 transition-colors"></div>
-              <div className="bg-red-500 p-4 rounded-2xl text-white shadow-lg shadow-red-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300">
-                  <AlertCircle size={32}/>
+              <div onClick={() => setDrillDownType(drillDownType === 'OLD_JOBS' ? null : 'OLD_JOBS')} className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'OLD_JOBS' ? 'border-red-500 shadow-md ring-4 ring-red-50' : 'border-red-200'}`}>
+                  <div className="absolute -top-4 -right-4 bg-red-50 p-8 rounded-full z-0 group-hover:bg-red-100 transition-colors"></div>
+                  <div className="bg-red-500 p-4 rounded-2xl text-white shadow-lg shadow-red-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300"><AlertCircle size={32}/></div>
+                  <div className="text-center z-10">
+                      <h4 className="font-black text-red-900 uppercase tracking-widest text-[10px] mb-1">Vagas em Atraso</h4>
+                      <div className="text-5xl font-black text-red-600 mb-1">{oldOpenJobs.length}</div>
+                  </div>
               </div>
-              <div className="text-center z-10">
-                  <h4 className="font-black text-red-900 uppercase tracking-widest text-[10px] mb-1">Vagas em Atraso</h4>
-                  <div className="text-5xl font-black text-red-600 mb-1">{oldOpenJobs.length}</div>
-              </div>
-          </div>
 
-          {/* 3. Integrações */}
-          <div 
-             onClick={() => setDrillDownType(drillDownType === 'UPCOMING_ONBOARDINGS' ? null : 'UPCOMING_ONBOARDINGS')} 
-             className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'UPCOMING_ONBOARDINGS' ? 'border-emerald-500 shadow-md ring-4 ring-emerald-50' : 'border-emerald-200'}`}
-          >
-              <div className="absolute -top-4 -right-4 bg-emerald-50 p-8 rounded-full z-0 group-hover:bg-emerald-100 transition-colors"></div>
-              <div className="bg-emerald-500 p-4 rounded-2xl text-white shadow-lg shadow-emerald-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300">
-                  <CalendarDays size={32}/>
+              <div onClick={() => setDrillDownType(drillDownType === 'UPCOMING_ONBOARDINGS' ? null : 'UPCOMING_ONBOARDINGS')} className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'UPCOMING_ONBOARDINGS' ? 'border-emerald-500 shadow-md ring-4 ring-emerald-50' : 'border-emerald-200'}`}>
+                  <div className="absolute -top-4 -right-4 bg-emerald-50 p-8 rounded-full z-0 group-hover:bg-emerald-100 transition-colors"></div>
+                  <div className="bg-emerald-500 p-4 rounded-2xl text-white shadow-lg shadow-emerald-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300"><CalendarDays size={32}/></div>
+                  <div className="text-center z-10">
+                      <h4 className="font-black text-emerald-900 uppercase tracking-widest text-[10px] mb-1">Próximas Integrações</h4>
+                      <div className="text-5xl font-black text-emerald-600 mb-1">{upcomingOnboardings.length}</div>
+                  </div>
               </div>
-              <div className="text-center z-10">
-                  <h4 className="font-black text-emerald-900 uppercase tracking-widest text-[10px] mb-1">Próximas Integrações</h4>
-                  <div className="text-5xl font-black text-emerald-600 mb-1">{upcomingOnboardings.length}</div>
-              </div>
-          </div>
+            </>
+          )}
       </div>
 
-      {/* --- ÁREA INLINE DE VISUALIZAÇÃO DE DADOS --- */}
       {drillDownType && (
           <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-fadeIn mt-8">
               <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">

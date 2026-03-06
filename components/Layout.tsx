@@ -17,7 +17,7 @@ import {
   Contact,
   CalendarClock,
   Coffee,
-  Gift // <--- Ícone Novo Importado
+  Gift
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -25,7 +25,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Estados para os menus sanfona
   const [isRecrutamentoOpen, setIsRecrutamentoOpen] = useState(true);
   const [isGestaoOpen, setIsGestaoOpen] = useState(true);
 
@@ -36,15 +35,25 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  // Lógica de permissões
+  // --- REGRAS DE PERMISSÃO ---
   const isMaster = user?.role === 'MASTER';
   const isAuxiliar = user?.role === 'AUXILIAR_RH';
+  const isRecruiter = user?.role === 'RECRUITER';
+  const isRecepcao = user?.role === 'RECEPCAO'; // <--- NOVA CONTA
   
+  const canViewRecrutamento = isMaster || isRecruiter; // Esconde recrutamento da Recepção e Auxiliar
   const canViewAbsenteismo = isMaster || isAuxiliar;
   const canViewColaboradores = isMaster; 
   const canViewExperiencia = isMaster; 
-  const canViewReunioes = isMaster || isAuxiliar;
-  const canViewAniversariantes = isMaster || isAuxiliar; // <--- Define quem pode ver Aniversariantes
+  
+  // Reuniões: Todas as contas MENOS a Recepção
+  const canViewReunioes = !isRecepcao; 
+  
+  // Aniversariantes: TODAS as contas (inclusive Recepção)
+  const canViewAniversariantes = true; 
+
+  // Configurações: Todas MENOS a Recepção
+  const canViewSettings = !isRecepcao;
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -68,7 +77,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </Link>
 
           {/* === MENU EXPANSÍVEL: RECRUTAMENTO E SELEÇÃO === */}
-          {!isAuxiliar && (
+          {canViewRecrutamento && (
             <div className="pt-2 pb-1">
               <button 
                 onClick={() => setIsRecrutamentoOpen(!isRecrutamentoOpen)}
@@ -130,9 +139,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     </Link>
                   )}
 
-                  {/* --- NOVO LINK: ANIVERSARIANTES --- */}
                   {canViewAniversariantes && (
-                    <Link to="/aniversariantes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/aniversariantes') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                    <Link to="/aniversariantes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/aniversariantes') ? 'bg-pink-50 text-pink-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-pink-600 text-sm'}`}>
                       <Gift size={18} />
                       <span>Aniversariantes</span>
                     </Link>
@@ -153,7 +161,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   )}
 
                   {canViewReunioes && (
-                    <Link to="/reunioes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/reunioes') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                    <Link to="/reunioes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/reunioes') ? 'bg-orange-50 text-orange-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-orange-600 text-sm'}`}>
                       <Coffee size={18} />
                       <span>Cafés e Reuniões</span>
                     </Link>
@@ -164,14 +172,18 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
           )}
 
-          <div className="pt-4 pb-1">
-            <span className="px-4 text-xs font-bold uppercase tracking-wider text-slate-400">Sistema</span>
-          </div>
-
-          <Link to="/settings" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/settings') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
-            <Settings size={20} />
-            <span className="font-semibold">Configurações</span>
-          </Link>
+          {/* SÓ MOSTRA CONFIGURAÇÕES SE NÃO FOR RECEPÇÃO */}
+          {canViewSettings && (
+            <>
+              <div className="pt-4 pb-1">
+                <span className="px-4 text-xs font-bold uppercase tracking-wider text-slate-400">Sistema</span>
+              </div>
+              <Link to="/settings" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/settings') ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
+                <Settings size={20} />
+                <span className="font-semibold">Configurações</span>
+              </Link>
+            </>
+          )}
         </nav>
 
         <div className="p-6 border-t border-slate-200/50 bg-white/30 backdrop-blur-sm">
@@ -180,7 +192,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <div className="overflow-hidden">
               <p className="text-sm font-bold text-slate-800 truncate">{user?.name}</p>
               <p className="text-xs text-slate-500 capitalize font-medium truncate">
-                {user?.role === 'MASTER' ? 'Administrador' : user?.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : 'Recrutador'}
+                {user?.role === 'MASTER' ? 'Administrador' : user?.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : user?.role === 'RECEPCAO' ? 'Recepção' : 'Recrutador'}
               </p>
             </div>
           </div>

@@ -416,10 +416,11 @@ export const SettingsPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <input required type="password" placeholder="Senha" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                   <select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}>
-                    <option value="RECRUITER">Recrutador</option>
-                    <option value="MASTER">Master Admin</option>
-                    <option value="AUXILIAR_RH">Auxiliar de RH</option>
-                  </select>
+                  <option value="RECRUITER">Recrutador</option>
+               <option value="MASTER">Master Admin</option>
+               <option value="AUXILIAR_RH">Auxiliar de RH</option>
+               <option value="RECEPCAO">Recepção</option> {/* <--- OPÇÃO NOVA AQUI */}
+              </select>
                 </div>
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-lg">Criar Usuário</button>
               </form>
@@ -431,7 +432,7 @@ export const SettingsPage: React.FC = () => {
                   <div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600">
                     <div>
                       <div className="font-bold text-slate-200">{u.name}</div>
-                      <div className="text-xs text-slate-400">@{u.username} • {u.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : u.role}</div>
+                      <div className="text-xs text-slate-400">@{u.username} • {u.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : u.role === 'RECEPCAO' ? 'Recepção' : u.role}</div>
                     </div>
                     <button onClick={() => openResetModal(u)} className="text-xs bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-white">Resetar</button>
                   </div>
