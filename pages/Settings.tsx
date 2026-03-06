@@ -31,9 +31,6 @@ export const SettingsPage: React.FC = () => {
   const isMaster = currentUser?.role?.toUpperCase() === 'MASTER';
   const isAuxiliar = currentUser?.role === 'AUXILIAR_RH';
 
-  // =================================================================================
-  // TRADUTOR E CORRETOR BLINDADO DE DATAS PARA EXCEL
-  // =================================================================================
   const formatToYMD = (dateVal: any) => {
     if (!dateVal) return '';
     let str = String(dateVal).trim();
@@ -57,27 +54,20 @@ export const SettingsPage: React.FC = () => {
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
         let p0 = parts[0], p1 = parts[1], p2 = parts[2];
-        
-        if (p0.length === 4) { 
-            return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
-        } else if (p2.length === 4) { 
+        if (p0.length === 4) return `${p0}-${p1.padStart(2, '0')}-${p2.padStart(2, '0')}`;
+        else if (p2.length === 4) { 
             let m = Number(p1);
-            if (m > 12) { 
-                return `${p2}-${p0.padStart(2, '0')}-${p1.padStart(2, '0')}`;
-            } else { 
-                return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
-            }
+            if (m > 12) return `${p2}-${p0.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+            else return `${p2}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
         } else if (p2.length === 2) { 
             let y = Number(p2) > 50 ? 1900 + Number(p2) : 2000 + Number(p2);
             return `${y}-${p1.padStart(2, '0')}-${p0.padStart(2, '0')}`;
         }
     }
-
     try {
         const d = new Date(str);
         if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
     } catch(e) {}
-
     return '';
   };
 
@@ -85,15 +75,11 @@ export const SettingsPage: React.FC = () => {
     const ymd = formatToYMD(dateVal); 
     if (!ymd) return '';
     const parts = ymd.split('-');
-    if (parts.length === 3) {
-        return `${parts[2]}/${parts[1]}/${parts[0]}`; 
-    }
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`; 
     return String(dateVal);
   };
-  // =================================================================================
 
-
-  // --- LÓGICA DE EXCEL: EXPORTAR (COM JORNADA) ---
+  // --- LÓGICA DE EXCEL: EXPORTAR (COM JORNADA E HORÁRIO) ---
   const handleExportEmployeesExcel = () => {
     const activeEmployees = employees.filter((emp: Employee) => emp.status !== 'Inativo');
 
@@ -105,12 +91,13 @@ export const SettingsPage: React.FC = () => {
       Telefone: emp.phone,
       Contrato: emp.contractType,
       Status: emp.status,
-      Jornada: emp.dailyWorkload || 8.8, // <--- CAMPO ADICIONADO AQUI
+      Horário: (emp as any).workSchedule || '', // <--- COLUNA NOVA DE HORÁRIO
+      Jornada: emp.dailyWorkload || 8.8, // <--- COLUNA NOVA DE HORAS
       Nascimento: formatToBR(emp.birthDate),
       Admissao: formatToBR(emp.admissionDate)
     })) : [{
       Nome: '', Cargo: '', Setor: '', Unidade: '',
-      Contrato: 'CLT', Status: 'Ativo', Jornada: 8.8, Nascimento: '01/01/1990', Admissao: '01/01/2024'
+      Contrato: 'CLT', Status: 'Ativo', Horário: 'Comercial Adm (08h às 18h)', Jornada: 8.8, Nascimento: '01/01/1990', Admissao: '01/01/2024'
     }];
 
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
@@ -168,7 +155,8 @@ export const SettingsPage: React.FC = () => {
             const rawAdmission = normalizedRow['admissao'] || normalizedRow['data de admissao'];
             const rawBirth = normalizedRow['nascimento'] || normalizedRow['data de nascimento'];
             
-            // Lógica para capturar a Jornada (aceita vírgula ou ponto)
+            // --- NOVA LÓGICA DE JORNADA E HORÁRIO ---
+            const rawHorario = normalizedRow['horario'] || normalizedRow['turno'] || '';
             const rawJornada = normalizedRow['jornada'] || normalizedRow['jornada (h)'] || normalizedRow['horas'];
             let parsedJornada: number | undefined = undefined;
             if (rawJornada !== undefined && rawJornada !== '') {
@@ -179,7 +167,6 @@ export const SettingsPage: React.FC = () => {
             const existingEmp = employees.find((emp: Employee) => emp.name.trim().toLowerCase() === String(rawName).trim().toLowerCase());
 
             if (existingEmp) {
-              // ATUALIZA O EXISTENTE
               const updatedEmp: Employee = {
                 ...existingEmp,
                 role: normalizedRow['cargo'] || existingEmp.role,
@@ -188,7 +175,8 @@ export const SettingsPage: React.FC = () => {
                 phone: String(normalizedRow['telefone'] || existingEmp.phone),
                 contractType: (normalizedRow['contrato'] as ContractType) || existingEmp.contractType,
                 status: (normalizedRow['status'] as EmployeeStatus) || existingEmp.status,
-                dailyWorkload: parsedJornada !== undefined ? parsedJornada : (existingEmp.dailyWorkload || 8.8), // <--- SALVA A JORNADA
+                dailyWorkload: parsedJornada !== undefined ? parsedJornada : (existingEmp.dailyWorkload || 8.8), 
+                workSchedule: String(rawHorario) || (existingEmp as any).workSchedule || '', // <--- SALVA O HORARIO
                 birthDate: formatToYMD(rawBirth) || existingEmp.birthDate,
                 admissionDate: formatToYMD(rawAdmission) || existingEmp.admissionDate,
                 hasPendingInfo: isPending,
@@ -206,7 +194,6 @@ export const SettingsPage: React.FC = () => {
               await updateEmployee(updatedEmp);
               updatedCount++;
             } else {
-              // CRIA UM NOVO
               const newEmp: Employee = {
                 id: crypto.randomUUID(),
                 name: rawName,
@@ -216,7 +203,8 @@ export const SettingsPage: React.FC = () => {
                 phone: String(normalizedRow['telefone'] || ''),
                 contractType: (normalizedRow['contrato'] as ContractType) || 'CLT',
                 status: (normalizedRow['status'] as EmployeeStatus) || 'Ativo',
-                dailyWorkload: parsedJornada !== undefined ? parsedJornada : 8.8, // <--- SALVA A JORNADA NOVA
+                dailyWorkload: parsedJornada !== undefined ? parsedJornada : 8.8, 
+                workSchedule: String(rawHorario) || '', // <--- SALVA O HORARIO
                 birthDate: formatToYMD(rawBirth),
                 admissionDate: formatToYMD(rawAdmission) || new Date().toISOString().split('T')[0],
                 hasPendingInfo: isPending, 
@@ -248,7 +236,6 @@ export const SettingsPage: React.FC = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  // --- HELPERS DA LIXEIRA ---
   const getTrashLabel = (item: any) => {
     if (item.title) return item.title;
     if (item.name) return item.name;
@@ -269,15 +256,11 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleRestore = async (id: string) => {
-    if(confirm("Deseja restaurar este item? Ele voltará para a lista original.")) {
-      await restoreItem(id);
-    }
+    if(confirm("Deseja restaurar este item? Ele voltará para a lista original.")) await restoreItem(id);
   };
 
   const handlePermanentDelete = async (id: string) => {
-    if(confirm("TEM CERTEZA? Essa ação é irreversível e apagará o item para sempre.")) {
-      await permanentlyDeleteItem(id);
-    }
+    if(confirm("TEM CERTEZA? Essa ação é irreversível e apagará o item para sempre.")) await permanentlyDeleteItem(id);
   };
 
   const startEditing = (item: SettingItem) => { setEditingId(item.id); setEditingName(item.name); };

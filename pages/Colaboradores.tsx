@@ -4,8 +4,16 @@ import { Employee, EmployeeStatus, EmployeeHistoryRecord, ContractType, Employee
 import { 
   Contact, Plus, Search, Filter, Edit2, Trash2, 
   History, Calendar, Phone, Briefcase, MapPin, 
-  ChevronRight, ArrowLeft, Save, AlertCircle, XCircle
+  ChevronRight, ArrowLeft, Save, AlertCircle, XCircle, Clock
 } from 'lucide-react';
+
+const SCHEDULE_OPTIONS = [
+  'Estudante (07h às 12h e 13h às 16h48)',
+  '1º Turno (05h às 09h e 09h30 às 14h18)',
+  'Comercial Produção (07h às 11h43 e 13h às 17h05)',
+  'Comercial Adm (08h às 18h / Sex até 17h)',
+  'Outro'
+];
 
 export const Colaboradores: React.FC = () => {
   const { employees = [], addEmployee, updateEmployee, removeEmployee, settings = [], absences = [], user } = useData();
@@ -18,13 +26,14 @@ export const Colaboradores: React.FC = () => {
   const [sectorFilter, setSectorFilter] = useState('Todos');
   const [unitFilter, setUnitFilter] = useState('Todas');
   const [contractFilter, setContractFilter] = useState<ContractType | 'Todos'>('Todos');
+  const [scheduleFilter, setScheduleFilter] = useState('Todos'); // <--- NOVO FILTRO
 
-  // Adicionado any para permitir campos adicionais como terminationDate sem quebrar o typescript
   const [formData, setFormData] = useState<Partial<Employee> & any>({
     status: 'Ativo',
     contractType: 'CLT',
     dailyWorkload: 8.8,
     probationType: '45+45',
+    workSchedule: '', // <--- NOVO CAMPO
     history: []
   });
 
@@ -48,10 +57,11 @@ export const Colaboradores: React.FC = () => {
       const matchesSector = sectorFilter === 'Todos' || emp.sector === sectorFilter;
       const matchesUnit = unitFilter === 'Todas' || emp.unit === unitFilter;
       const matchesContract = contractFilter === 'Todos' || emp.contractType === contractFilter; 
+      const matchesSchedule = scheduleFilter === 'Todos' || (emp as any).workSchedule === scheduleFilter;
 
-      return matchesSearch && matchesStatus && matchesSector && matchesUnit && matchesContract;
+      return matchesSearch && matchesStatus && matchesSector && matchesUnit && matchesContract && matchesSchedule;
     });
-  }, [employees, searchTerm, statusFilter, sectorFilter, unitFilter, contractFilter]);
+  }, [employees, searchTerm, statusFilter, sectorFilter, unitFilter, contractFilter, scheduleFilter]);
 
   const unifiedHistory = useMemo(() => {
     if (!selectedEmployee) return [];
@@ -89,7 +99,7 @@ export const Colaboradores: React.FC = () => {
       await addEmployee(employeeData);
     }
     setView('list');
-    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] });
+    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', history: [] });
   };
 
   const formatToYMD = (dateVal: any) => {
@@ -148,10 +158,11 @@ export const Colaboradores: React.FC = () => {
       ...emp, 
       dailyWorkload: emp.dailyWorkload || 8.8, 
       probationType: emp.probationType || '45+45',
+      workSchedule: (emp as any).workSchedule || '',
       birthDate: formatToYMD(emp.birthDate),
       admissionDate: formatToYMD(emp.admissionDate),
       leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn),
-      terminationDate: formatToYMD((emp as any).terminationDate) // Captura a data de saída caso exista
+      terminationDate: formatToYMD((emp as any).terminationDate) 
     });
     setView('form');
   };
@@ -194,7 +205,6 @@ export const Colaboradores: React.FC = () => {
     }
   };
 
-  // Lógica de opções de Desligamento
   const standardTerminations = ['Pedido de Demissão (Voluntário)', 'Demissão sem justa causa (Involuntário)', 'Demissão por justa causa', 'Término de Contrato', 'Acordo Mútuo'];
   const currentReason = formData.terminationReason || '';
   const isCustomTermination = currentReason !== '' && !standardTerminations.includes(currentReason);
@@ -215,7 +225,7 @@ export const Colaboradores: React.FC = () => {
         
         {view === 'list' && (
           <button 
-            onClick={() => { setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', history: [] }); setView('form'); }}
+            onClick={() => { setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', history: [] }); setView('form'); }}
             className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg"
           >
             <Plus size={20} />
@@ -239,6 +249,19 @@ export const Colaboradores: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-3">
+              {/* FILTRO DE HORÁRIO */}
+              <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200 hidden xl:flex">
+                <Clock size={16} className="text-slate-400" />
+                <select 
+                  className="bg-transparent py-2 text-sm outline-none cursor-pointer max-w-[150px] truncate"
+                  value={scheduleFilter}
+                  onChange={e => setScheduleFilter(e.target.value)}
+                >
+                  <option value="Todos">Todos os Turnos</option>
+                  {SCHEDULE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </select>
+              </div>
+
               <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
                 <Briefcase size={16} className="text-slate-400" />
                 <select 
@@ -246,7 +269,7 @@ export const Colaboradores: React.FC = () => {
                   value={contractFilter}
                   onChange={e => setContractFilter(e.target.value as any)}
                 >
-                  <option value="Todos">Todos os Contratos</option>
+                  <option value="Todos">Todos Contratos</option>
                   <option value="CLT">CLT</option>
                   <option value="PJ">PJ</option>
                   <option value="Estagiário">Estagiário</option>
@@ -261,20 +284,8 @@ export const Colaboradores: React.FC = () => {
                   value={sectorFilter}
                   onChange={e => setSectorFilter(e.target.value)}
                 >
-                  <option value="Todos">Todos os Setores</option>
+                  <option value="Todos">Todos Setores</option>
                   {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200">
-                <MapPin size={16} className="text-slate-400" />
-                <select 
-                  className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]"
-                  value={unitFilter}
-                  onChange={e => setUnitFilter(e.target.value)}
-                >
-                  <option value="Todas">Todas as Unidades</option>
-                  {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                 </select>
               </div>
               
@@ -287,7 +298,7 @@ export const Colaboradores: React.FC = () => {
                 <option value="Ativo">Ativos</option>
                 <option value="Afastado">Afastados</option>
                 <option value="Inativo">Inativos</option>
-                <option value="Pendentes" className="text-orange-600 font-bold">⚠️ Com Pendências</option>
+                <option value="Pendentes" className="text-orange-600 font-bold">⚠️ Pendências</option>
               </select>
             </div>
           </div>
@@ -321,23 +332,23 @@ export const Colaboradores: React.FC = () => {
                     </div>
                   </div>
                   
-                  <h3 className="font-bold text-slate-800 text-lg mb-1">{emp.name}</h3>
-                  <p className="text-slate-500 text-sm flex items-center flex-wrap gap-1.5 mb-4">
+                  <h3 className="font-bold text-slate-800 text-lg mb-1 truncate">{emp.name}</h3>
+                  <p className="text-slate-500 text-sm flex items-center flex-wrap gap-1.5 mb-2 truncate">
                     <Briefcase size={14} className="text-slate-400" /> 
                     <span>{emp.role}</span>
                     <span className="text-slate-300">•</span>
                     <span>{emp.sector}</span>
-                    {emp.unit && (
-                      <>
-                        <span className="text-slate-300">•</span>
-                        <span>{emp.unit}</span>
-                      </>
-                    )}
+                  </p>
+
+                  {/* HORÁRIO NO CARD */}
+                  <p className="text-slate-500 text-xs flex items-center flex-wrap gap-1.5 mb-4 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                    <Clock size={14} className="text-blue-400" /> 
+                    <span className="font-medium truncate">{(emp as any).workSchedule || 'Horário não definido'}</span>
                   </p>
 
                   {emp.hasPendingInfo && (
                     <div className="flex items-center gap-2 text-orange-600 mb-4 bg-orange-100 p-2 rounded-lg border border-orange-200">
-                       <AlertCircle size={14} className="animate-pulse" />
+                       <AlertCircle size={14} className="animate-pulse shrink-0" />
                        <span className="text-[10px] font-black uppercase tracking-wider">Verifique o Setor Importado</span>
                     </div>
                   )}
@@ -474,7 +485,7 @@ export const Colaboradores: React.FC = () => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-bold text-slate-700 flex justify-between">
-                      <span>Jornada (Horas)</span>
+                      <span>Jornada (H/Dia)</span>
                     </label>
                     <input 
                       type="number" 
@@ -486,7 +497,7 @@ export const Colaboradores: React.FC = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700">Contrato de Exp.</label>
+                    <label className="text-sm font-bold text-slate-700">Contrato Exp.</label>
                     <select 
                       required 
                       className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
@@ -498,6 +509,21 @@ export const Colaboradores: React.FC = () => {
                       <option value="Nenhum">Sem Experiência</option>
                     </select>
                   </div>
+                  
+                  {/* NOVO CAMPO: TURNO / HORÁRIO */}
+                  <div className="space-y-2 md:col-span-4 mt-2">
+                    <label className="text-sm font-bold text-slate-700">Turno / Horário de Trabalho</label>
+                    <select 
+                      required 
+                      className="w-full border border-slate-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white" 
+                      value={formData.workSchedule || ''} 
+                      onChange={e => setFormData({...formData, workSchedule: e.target.value})}
+                    >
+                      <option value="">Selecione o Horário...</option>
+                      {SCHEDULE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                  </div>
+
                 </div>
               </div>
 
@@ -514,7 +540,6 @@ export const Colaboradores: React.FC = () => {
                 </div>
               )}
 
-              {/* --- NOVO BLOCO PARA INATIVOS (DESLIGAMENTO) --- */}
               {formData.status === 'Inativo' && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
@@ -605,7 +630,6 @@ export const Colaboradores: React.FC = () => {
                 <div className="flex justify-between"><span className="text-slate-400">Nascimento:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.birthDate)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Admissão:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.admissionDate)}</span></div>
                 
-                {/* MOSTRA DADOS DE DESLIGAMENTO CASO INATIVO */}
                 {selectedEmployee.status === 'Inativo' && (
                   <>
                     <div className="flex justify-between border-t border-red-100 pt-3"><span className="text-red-400">Desligamento:</span> <span className="font-bold text-red-600">{formatDate((selectedEmployee as any).terminationDate)}</span></div>
@@ -614,6 +638,12 @@ export const Colaboradores: React.FC = () => {
                 )}
 
                 <div className="flex justify-between border-t border-slate-100 pt-3"><span className="text-slate-400">Jornada (h/dia):</span> <span className="font-bold text-slate-700">{selectedEmployee.dailyWorkload || 8.8}</span></div>
+                
+                {/* MOSTRA HORÁRIO NA FICHA */}
+                <div className="flex flex-col gap-1 border-t border-slate-100 pt-3">
+                  <span className="text-slate-400 text-xs">Turno de Trabalho:</span> 
+                  <span className="font-bold text-slate-700 text-right">{(selectedEmployee as any).workSchedule || 'Não definido'}</span>
+                </div>
               </div>
             </div>
             
