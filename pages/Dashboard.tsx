@@ -18,7 +18,9 @@ export const Dashboard: React.FC = () => {
   const [showConfidential, setShowConfidential] = useState(false);
   const [drillDownType, setDrillDownType] = useState<DrillDownType>(null);
 
-  const isRecepcao = user?.role === 'RECEPCAO'; // <--- IDENTIFICA SE É A RECEPÇÃO
+  const isRecepcao = user?.role === 'RECEPCAO';
+  const isAuxiliar = user?.role === 'AUXILIAR_RH';
+  const isMasterOrRecruiter = user?.role === 'MASTER' || user?.role === 'RECRUITER';
 
   const todayStr = new Date().toISOString().split('T')[0];
   const tomorrow = new Date();
@@ -211,7 +213,7 @@ export const Dashboard: React.FC = () => {
             </div>
           );
       }
-      if (drillDownType === 'PENDING_CANDIDATES' && !isRecepcao) {
+      if (drillDownType === 'PENDING_CANDIDATES' && isMasterOrRecruiter) {
           return (
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs min-w-[600px]">
@@ -246,7 +248,7 @@ export const Dashboard: React.FC = () => {
             </div>
           );
       }
-      if (drillDownType === 'OLD_JOBS' && !isRecepcao) {
+      if (drillDownType === 'OLD_JOBS' && isMasterOrRecruiter) {
           return (
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs min-w-[600px]">
@@ -279,7 +281,7 @@ export const Dashboard: React.FC = () => {
             </div>
           );
       }
-      if (drillDownType === 'UPCOMING_ONBOARDINGS' && !isRecepcao) {
+      if (drillDownType === 'UPCOMING_ONBOARDINGS' && isMasterOrRecruiter) {
           return (
             <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left text-xs min-w-[600px]">
@@ -328,6 +330,7 @@ export const Dashboard: React.FC = () => {
             <h1 className="text-3xl font-black text-slate-800 tracking-tight">Painel de Ações</h1>
         </div>
         
+        {/* Filtros ocultos para a Recepção */}
         {!isRecepcao && (
           <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-200">
               {hasConfidentialAccess && (
@@ -422,7 +425,7 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* CARDS INFERIORES */}
-      <div className={`grid gap-6 pt-2 ${isRecepcao ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
+      <div className={`grid gap-6 pt-2 ${isRecepcao ? 'grid-cols-1 max-w-sm' : isAuxiliar ? 'grid-cols-1 md:grid-cols-2 max-w-2xl' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
           
           <div onClick={() => setDrillDownType(drillDownType === 'BIRTHDAYS' ? null : 'BIRTHDAYS')} className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'BIRTHDAYS' ? 'border-pink-500 shadow-md ring-4 ring-pink-50' : 'border-pink-200'}`}>
               <div className="absolute -top-4 -right-4 bg-pink-50 p-8 rounded-full z-0 group-hover:bg-pink-100 transition-colors"></div>
@@ -433,7 +436,8 @@ export const Dashboard: React.FC = () => {
               </div>
           </div>
 
-          {!isRecepcao && (
+          {/* SÓ MOSTRA CARDS DE RECRUTAMENTO SE FOR MASTER OU RECRUTADOR */}
+          {isMasterOrRecruiter && (
             <>
               <div onClick={() => setDrillDownType(drillDownType === 'PENDING_CANDIDATES' ? null : 'PENDING_CANDIDATES')} className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'PENDING_CANDIDATES' ? 'border-amber-500 shadow-md ring-4 ring-amber-50' : 'border-amber-200'}`}>
                   <div className="absolute -top-4 -right-4 bg-amber-50 p-8 rounded-full z-0 group-hover:bg-amber-100 transition-colors"></div>
