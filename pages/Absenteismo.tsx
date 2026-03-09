@@ -163,7 +163,7 @@ export const Absenteismo: React.FC = () => {
         else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
         else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = '🤰 Maternidade e Pré-Natal';
         else if (/(coluna|pescoço|muscular|mialgia|ortop|tendinite|torcicolo|lombar|costas|ciático|lesão|fratura)/i.test(reason)) matchedCategory = '🦴 Ortopedia e Dores Musculares';
-        else if (/(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar)/i.test(reason)) matchedCategory = '🫁 Respiratório (Gripes, Covid, Asma)';
+        else if (/(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar)/i.test(reason)) matchedCategory = '😷 Respiratório (Gripes, Covid, Asma)';
         else if (/(diarreia|virose|estômago|gastrite|vômito|enjoo|intoxicação|intestinal|cólic)/i.test(reason)) matchedCategory = '🤢 Gastrointestinal e Viroses';
         else if (/(cirurgi|operat|pós-op|pos op)/i.test(reason)) matchedCategory = '🏥 Procedimentos Cirúrgicos';
         else if (/(ansiedade|depressão|estresse|burnout|psiqui|psicoló|pânico)/i.test(reason)) matchedCategory = '🧠 Saúde Mental e Emocional';
