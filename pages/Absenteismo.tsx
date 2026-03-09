@@ -4,7 +4,7 @@ import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord, Employee } from '../types';
 import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X, Info } from 'lucide-react';
 import ExcelJS from 'exceljs';
-import * as XLSX from 'xlsx'; 
+import * as XLSX from 'xlsx';
 
 export const Absenteismo: React.FC = () => {
   const { user, absences = [], addAbsence, updateAbsence, removeAbsence, employees = [], settings = [], addSetting, updateSetting, removeSetting } = useData() as any;
@@ -49,7 +49,7 @@ export const Absenteismo: React.FC = () => {
     return Array.from(new Set(absences.map((a: AbsenceRecord) => a.reason))).filter(Boolean).sort();
   }, [absences]);
 
-  // --- EXTRATOR DE DATAS SEGURO (Ignora fuso horário e foca no formato YYYY-MM-DD) ---
+  // --- EXTRATOR DE DATAS SEGURO ---
   const formatToYMD = (dateVal: any) => {
     if (!dateVal) return '';
     let str = String(dateVal).trim();
@@ -57,7 +57,7 @@ export const Absenteismo: React.FC = () => {
       const jsDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
       return jsDate.toISOString().split('T')[0];
     }
-    str = str.split('T')[0].split(' ')[0]; // Corta qualquer hora extra que possa causar bug de fuso
+    str = str.split('T')[0].split(' ')[0];
     const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
     if (corruptMatch) return `${corruptMatch[3]}-${corruptMatch[2]}-${corruptMatch[1].substring(2)}`;
     
@@ -73,7 +73,7 @@ export const Absenteismo: React.FC = () => {
             return `${y}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
         }
     }
-    return str; // Se for YYYY-MM-DD padrão já passa limpo
+    return str; 
   };
 
   const formatDateToBR = (dateStr: string) => {
@@ -190,7 +190,6 @@ export const Absenteismo: React.FC = () => {
 
   // --- IA DE AGRUPAMENTO (DICIONÁRIO MÉDICO AVANÇADO C/ CID) ---
   const aiResults = useMemo(() => {
-    // Regras de Classificação com Regex poderosa (Identifica CIDs e sinónimos)
     const categoryRules = [
       { name: '👨‍👩‍👧 Acompanhamento Familiar', regex: /(filh[oa]|mãe|pai|espos[oa]|marido|dependente|acompanhante|z76|z763)/i },
       { name: '🤰 Maternidade e Saúde da Mulher', regex: /(gravidez|gesta|pr[eé][\s\-]natal|maternidade|parto|mama|menopausa|aborto|z36|z34)/i },
@@ -198,7 +197,7 @@ export const Absenteismo: React.FC = () => {
       { name: '🫁 Respiratório e Otorrino', regex: /(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar|j03|amigdalite|otorrino)/i },
       { name: '🤢 Gastrointestinal e Viroses', regex: /(diarreia|virose|estômago|estomago|gastrit|gástric|v[oô]mito|enjoo|intoxicação|intestinal|cólic[oa]|a09|r11|n[aá]usea|vesícula|visicula|apendicite)/i },
       { name: '👁️ Oftalmologia', regex: /(olho|visão|visao|vista|catarata|conjuntivite|h10|h26|oftalm|optometria)/i },
-      { name: '🏥 Procedimentos e Cirurgias', regex: /(cirurgi|operat|pós[\s\-]op|pos[\s\-]op|cateterismo|internação|repouso)/i }, // Entra aqui apenas se não foi Oftalmo antes
+      { name: '🏥 Procedimentos e Cirurgias', regex: /(cirurgi|operat|pós[\s\-]op|pos[\s\-]op|cateterismo|internação|repouso)/i },
       { name: '🧠 Saúde Mental e Neurológica', regex: /(ansiedade|depressão|depressivo|estresse|burnout|psiqui|psicol|pânico|tontura|instabilidade|r42|r51|cefal[eé]ia|cabeça|neuro|f32)/i },
       { name: '🦷 Odontologia', regex: /(dente|dentista|odontol|siso|canal)/i },
       { name: '❤️ Cardiovascular', regex: /(press[aã]o|hipertens[aã]o|coraç[aã]o|infarto|i10|sopro)/i },
@@ -211,11 +210,11 @@ export const Absenteismo: React.FC = () => {
 
     const categories: Record<string, { hours: number, reasons: Set<string> }> = {};
     
-    // Inicializa o objeto com todas as chaves
     categoryRules.forEach(rule => { categories[rule.name] = { hours: 0, reasons: new Set() }; });
     categories['🚫 Falta Injustificada'] = { hours: 0, reasons: new Set() };
     categories['❓ Outros Motivos / Diversos'] = { hours: 0, reasons: new Set() };
 
+    // AQUI ESTAVA O ERRO! A IA TEM QUE LER DO filteredAbsences E NÃO DE absences
     filteredAbsences.forEach((record: AbsenceRecord) => {
         const reason = (record.reason || '').toLowerCase();
         const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
@@ -239,7 +238,6 @@ export const Absenteismo: React.FC = () => {
         } else if (record.documentType === 'Acompanhante de Dependente') {
            matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
         } else {
-           // Procura no Dicionário pela primeira regra que der "Match"
            for (const rule of categoryRules) {
              if (rule.regex.test(reason)) {
                matchedCategory = rule.name;
@@ -259,7 +257,7 @@ export const Absenteismo: React.FC = () => {
         hours: data.hours,
         reasons: Array.from(data.reasons)
       }))
-      .sort((a, b) => b.hours - a.hours); // Ordena das categorias com mais horas para as com menos
+      .sort((a, b) => b.hours - a.hours);
   }, [filteredAbsences, employees]);
 
   // --- LÓGICA DO MODELO EXCEL ---
@@ -428,7 +426,6 @@ export const Absenteismo: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // TRAVA DE SEGURANÇA INTELIGENTE PARA DATAS DE DIGITAÇÃO
     if (formData.absenceDate) {
       const safeDate = formatToYMD(formData.absenceDate);
       const selectedYear = safeDate ? parseInt(safeDate.split('-')[0], 10) : new Date().getFullYear();
@@ -491,7 +488,6 @@ export const Absenteismo: React.FC = () => {
       }
     }
     
-    // Assegura que a data ao editar venha no formato correto para o input type="date"
     const editSafeDate = formatToYMD(record.absenceDate) || record.absenceDate;
     
     setFormData({ 
@@ -582,7 +578,6 @@ export const Absenteismo: React.FC = () => {
             </div>
           </div>
 
-          {/* PAINEL EXPANSÍVEL DA IA */}
           {showAiPanel && (
             <div className="bg-white rounded-3xl shadow-sm border border-purple-200 overflow-hidden animate-in fade-in slide-in-from-top-4">
               <div className="p-6 border-b border-purple-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-purple-50">
@@ -783,7 +778,6 @@ export const Absenteismo: React.FC = () => {
                 </div>
               )}
 
-              {/* AVISO DO LIMITE DE 16H ANUAIS P/ ACOMPANHANTE */}
               {formData.documentType === 'Acompanhante de Dependente' && formData.employeeName && formData.absenceDate && (
                 <div className={`p-4 rounded-xl border mt-4 ${totalCompanionHours > 16 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
                   <div className="flex items-start gap-3">
