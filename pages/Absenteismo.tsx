@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord, Employee } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database } from 'lucide-react';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx'; 
 
@@ -29,6 +29,11 @@ export const Absenteismo: React.FC = () => {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ESTADOS DA ANÁLISE IA
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiResults, setAiResults] = useState<{category: string, hours: number, reasons: string[]}[]>([]);
 
   if (user?.role !== 'MASTER' && user?.role !== 'AUXILIAR_RH') {
     return <Navigate to="/" replace />;
@@ -125,6 +130,75 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
+  // --- IA DE AGRUPAMENTO CLÍNICO (Local NLP) ---
+  const generateAiSummary = () => {
+    setIsAiModalOpen(true);
+    setIsAnalyzing(true);
+
+    // Simulador de processamento para UX
+    setTimeout(() => {
+      const categories: Record<string, { hours: number, reasons: Set<string> }> = {
+        '🤰 Maternidade e Pré-Natal': { hours: 0, reasons: new Set() },
+        '🦴 Ortopedia e Dores Musculares': { hours: 0, reasons: new Set() },
+        '🫁 Respiratório (Gripes, Covid, Asma)': { hours: 0, reasons: new Set() },
+        '🤢 Gastrointestinal e Viroses': { hours: 0, reasons: new Set() },
+        '🏥 Procedimentos Cirúrgicos': { hours: 0, reasons: new Set() },
+        '🧠 Saúde Mental e Emocional': { hours: 0, reasons: new Set() },
+        '🦷 Tratamento Odontológico': { hours: 0, reasons: new Set() },
+        '🩸 Exames de Rotina / Sangue': { hours: 0, reasons: new Set() },
+        '👨‍👩‍👧 Acompanhamento Familiar': { hours: 0, reasons: new Set() },
+        '🚫 Falta Injustificada': { hours: 0, reasons: new Set() },
+        '❓ Outros Motivos / Diversos': { hours: 0, reasons: new Set() },
+      };
+
+      filteredAbsences.forEach((record: AbsenceRecord) => {
+          const reason = (record.reason || '').toLowerCase();
+          const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
+          const workload = emp?.dailyWorkload || 8.8;
+          
+          let amount = record.durationAmount || 0;
+          let unit = record.durationUnit;
+          if (!unit && record.documentDuration) {
+            const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
+            if (match) {
+              amount = parseFloat(match[1]);
+              unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
+            } else { unit = 'Dias'; amount = 1; }
+          }
+          let hours = (unit === 'Dias') ? amount * workload : amount;
+
+          let matchedCategory = '❓ Outros Motivos / Diversos';
+          
+          // Motor de Classificação (Regex Keywords)
+          if (record.documentType === 'Falta Injustificada') matchedCategory = '🚫 Falta Injustificada';
+          else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
+          else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = '🤰 Maternidade e Pré-Natal';
+          else if (/(coluna|pescoço|muscular|mialgia|ortop|tendinite|torcicolo|lombar|costas|ciático|lesão|fratura)/i.test(reason)) matchedCategory = '🦴 Ortopedia e Dores Musculares';
+          else if (/(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar)/i.test(reason)) matchedCategory = '🫁 Respiratório (Gripes, Covid, Asma)';
+          else if (/(diarreia|virose|estômago|gastrite|vômito|enjoo|intoxicação|intestinal|cólic)/i.test(reason)) matchedCategory = '🤢 Gastrointestinal e Viroses';
+          else if (/(cirurgi|operat|pós-op|pos op)/i.test(reason)) matchedCategory = '🏥 Procedimentos Cirúrgicos';
+          else if (/(ansiedade|depressão|estresse|burnout|psiqui|psicoló|pânico)/i.test(reason)) matchedCategory = '🧠 Saúde Mental e Emocional';
+          else if (/(dente|dentista|odontoló|siso|canal)/i.test(reason)) matchedCategory = '🦷 Tratamento Odontológico';
+          else if (/(exame|sangue|rotina|check-up|laboratório|ultrassom|raio-x)/i.test(reason)) matchedCategory = '🩸 Exames de Rotina / Sangue';
+
+          categories[matchedCategory].hours += hours;
+          categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
+      });
+
+      const finalResults = Object.entries(categories)
+        .filter(([_, data]) => data.hours > 0)
+        .map(([category, data]) => ({
+          category,
+          hours: data.hours,
+          reasons: Array.from(data.reasons)
+        }))
+        .sort((a, b) => b.hours - a.hours);
+
+      setAiResults(finalResults);
+      setIsAnalyzing(false);
+    }, 1500); // 1.5s delay
+  };
+
   // --- LÓGICA DO MODELO EXCEL ---
   const handleTemplateClick = async () => {
     if (hasTemplate) {
@@ -208,7 +282,6 @@ export const Absenteismo: React.FC = () => {
       }).sort((a, b) => {
         const [d1, m1, y1] = a.date.split('/');
         const [d2, m2, y2] = b.date.split('/');
-        // Ordenação mais antiga para mais recente
         return new Date(`${y1}-${m1}-${d1}`).getTime() - new Date(`${y2}-${m2}-${d2}`).getTime();
       });
 
@@ -385,11 +458,11 @@ export const Absenteismo: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-12">
       {/* Campo oculto para upload de template */}
       <input type="file" accept=".xlsx" className="hidden" ref={fileInputRef} onChange={handleTemplateUpload} />
 
-      <div className="flex items-center justify-between space-x-3 mb-2">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-2">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-blue-100 text-blue-700 rounded-xl">
             <CalendarX size={24} />
@@ -399,6 +472,15 @@ export const Absenteismo: React.FC = () => {
             <p className="text-slate-500 text-sm">Monitoramento de Faltas e Horas Perdidas</p>
           </div>
         </div>
+
+        {/* BOTÃO DE INTELIGÊNCIA ARTIFICIAL */}
+        <button 
+          onClick={generateAiSummary}
+          className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-purple-200 transition-all active:scale-95"
+        >
+          <Sparkles size={18} />
+          Análise Inteligente (IA)
+        </button>
       </div>
 
       <div className="flex space-x-2 border-b border-slate-200">
@@ -431,7 +513,6 @@ export const Absenteismo: React.FC = () => {
                 <Clock size={14}/> Total: {formatHours(stats.totalLostHours)} Perdidas
               </div>
               
-              {/* BOTÕES DE EXPORTAÇÃO E MODELO */}
               <div className="flex flex-wrap gap-2 ml-auto sm:ml-0 w-full sm:w-auto">
                 <button 
                   onClick={handleExportGeneral}
@@ -500,7 +581,7 @@ export const Absenteismo: React.FC = () => {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Principais Motivos (Por Horas)</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Principais Motivos Originais</h3>
               {stats.topReasons.length === 0 ? (
                 <p className="text-sm text-slate-500 py-4 text-center">Nenhum dado registrado neste período.</p>
               ) : (
@@ -516,7 +597,7 @@ export const Absenteismo: React.FC = () => {
             </div>
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Colaboradores com mais Ausências (Horas)</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Colaboradores com mais Ausências</h3>
               {stats.topNames.length === 0 ? (
                 <p className="text-sm text-slate-500 py-4 text-center">Nenhum dado registrado neste período.</p>
               ) : (
@@ -684,6 +765,67 @@ export const Absenteismo: React.FC = () => {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL DA IA --- */}
+      {isAiModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95">
+            <div className="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 flex justify-between items-center text-white">
+              <div className="flex items-center gap-3">
+                <Sparkles size={28} className="text-purple-200" />
+                <div>
+                  <h2 className="text-xl font-bold">Análise Inteligente de Absenteísmo</h2>
+                  <p className="text-indigo-100 text-sm">Agrupamento semântico de motivos clínicos</p>
+                </div>
+              </div>
+              <button onClick={() => setIsAiModalOpen(false)} className="text-indigo-100 hover:text-white transition-colors bg-white/10 p-2 rounded-full">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 bg-slate-50 min-h-[300px] max-h-[60vh] overflow-y-auto">
+              {isAnalyzing ? (
+                <div className="flex flex-col items-center justify-center h-64 text-purple-600 space-y-4">
+                  <Sparkles size={48} className="animate-pulse" />
+                  <p className="font-bold text-lg animate-pulse">Lendo históricos e agrupando motivos...</p>
+                  <p className="text-sm text-slate-400">Essa operação pode levar alguns segundos.</p>
+                </div>
+              ) : aiResults.length === 0 ? (
+                <div className="text-center py-12 text-slate-500">
+                  Não há dados suficientes no período para realizar a análise.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-6 text-indigo-800 text-sm">
+                    A Inteligência Artificial filtrou <b>{filteredAbsences.length} registros</b> do período e os agrupou em Categorias Clínicas. O cálculo considera a jornada de cada funcionário.
+                  </div>
+
+                  {aiResults.map((result, i) => (
+                    <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-purple-300 transition-colors">
+                      <div className="flex-1">
+                        <h4 className="font-bold text-lg text-slate-800 mb-1">{result.category}</h4>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          <b>Termos originais encontrados:</b> {result.reasons.join(', ')}.
+                        </p>
+                      </div>
+                      <div className="shrink-0 bg-purple-50 text-purple-700 px-4 py-2 rounded-xl border border-purple-100 text-center">
+                        <span className="block text-[10px] font-bold uppercase tracking-widest text-purple-400 mb-0.5">Tempo Perdido</span>
+                        <span className="font-black text-xl">{formatHours(result.hours)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-white border-t border-slate-100 text-right">
+              <button onClick={() => setIsAiModalOpen(false)} className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
+                Fechar Análise
+              </button>
             </div>
           </div>
         </div>
