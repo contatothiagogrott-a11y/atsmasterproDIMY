@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { DocumentType, AbsenceRecord } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download } from 'lucide-react';
-import * as XLSX from 'xlsx'; // <--- IMPORTAÇÃO DO EXCEL
+import { DocumentType, AbsenceRecord, Employee } from '../types';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database } from 'lucide-react';
+import ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx'; 
 
 export const Absenteismo: React.FC = () => {
-  const { user, absences = [], addAbsence, updateAbsence, removeAbsence, employees = [] } = useData();
+  const { user, absences = [], addAbsence, updateAbsence, removeAbsence, employees = [], settings = [], addSetting, updateSetting, removeSetting } = useData() as any;
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'cadastro'>('dashboard');
   const [isEditing, setIsEditing] = useState(false);
@@ -27,23 +28,29 @@ export const Absenteismo: React.FC = () => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
   });
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   if (user?.role !== 'MASTER' && user?.role !== 'AUXILIAR_RH') {
     return <Navigate to="/" replace />;
   }
 
+  // --- LÓGICA DE REDE DO MODELO DE ABSENTEÍSMO ---
+  const templateSetting = settings.find((s: any) => s.type === 'SYSTEM_TEMPLATE' && s.name === 'TEMPLATE_ABSENTEISMO');
+  const hasTemplate = !!templateSetting?.value;
+
   // --- MEMÓRIA AUTOCOMPLETE ---
   const uniqueNames = useMemo(() => {
-    const namesFromEmployees = employees.map(emp => emp.name);
-    const namesFromAbsences = absences.map(a => a.employeeName);
+    const namesFromEmployees = employees.map((emp: Employee) => emp.name);
+    const namesFromAbsences = absences.map((a: AbsenceRecord) => a.employeeName);
     return Array.from(new Set([...namesFromEmployees, ...namesFromAbsences])).filter(Boolean).sort();
   }, [employees, absences]);
 
   const uniqueReasons = useMemo(() => {
-    return Array.from(new Set(absences.map(a => a.reason))).filter(Boolean).sort();
+    return Array.from(new Set(absences.map((a: AbsenceRecord) => a.reason))).filter(Boolean).sort();
   }, [absences]);
 
   const filteredAbsences = useMemo(() => {
-    return absences.filter(record => {
+    return absences.filter((record: AbsenceRecord) => {
       if (!record.absenceDate) return false;
       return record.absenceDate >= startDate && record.absenceDate <= endDate;
     });
@@ -58,6 +65,12 @@ export const Absenteismo: React.FC = () => {
     return `${h}h ${m}m`;
   };
 
+  const formatDateToBR = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  };
+
   // --- LÓGICA DO DASHBOARD (CONVERSÃO PARA HORAS) ---
   const stats = useMemo(() => {
     let atestados = 0; let atestadosHours = 0;
@@ -69,8 +82,8 @@ export const Absenteismo: React.FC = () => {
     const reasonCounts: Record<string, number> = {};
     const nameCounts: Record<string, number> = {};
 
-    filteredAbsences.forEach(record => {
-      const emp = employees.find(e => e.name.toLowerCase() === record.employeeName?.toLowerCase());
+    filteredAbsences.forEach((record: AbsenceRecord) => {
+      const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
       const workload = emp?.dailyWorkload || 8.8;
 
       let amount = record.durationAmount || 0;
@@ -98,7 +111,7 @@ export const Absenteismo: React.FC = () => {
       if (record.documentType === 'Acompanhante de Dependente') { acompanhamentos++; acompanhamentosHours += hours; }
 
       if (record.reason) reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + hours;
-      if (record.employeeName) nameCounts[record.employeeName] = (nameCounts[record.employeeName] || 0) + hours;
+      if (record.employeeName) nameCounts[record.employeeName!] = (nameCounts[record.employeeName!] || 0) + hours;
     });
 
     return {
@@ -112,22 +125,137 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
-  // --- LÓGICA DE EXPORTAÇÃO PARA EXCEL ---
-  const handleExportExcel = () => {
+  // --- LÓGICA DO MODELO EXCEL ---
+  const handleTemplateClick = async () => {
+    if (hasTemplate) {
+      if (window.confirm("Você já possui um modelo Excel salvo na rede. Deseja substituí-lo para todos?\n\n(Clique em Cancelar caso queira apenas excluir o atual)")) {
+        fileInputRef.current?.click();
+      } else {
+        if (window.confirm("Deseja EXCLUIR o modelo atual para todos os usuários do sistema?")) {
+          await removeSetting(templateSetting.id);
+          alert("Modelo removido do sistema com sucesso.");
+        }
+      }
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleTemplateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64 = event.target?.result?.toString().split(',')[1];
+      if (base64) {
+        if (templateSetting) {
+          await updateSetting({ ...templateSetting, value: base64 });
+        } else {
+          await addSetting({ 
+            id: crypto.randomUUID(), 
+            type: 'SYSTEM_TEMPLATE', 
+            name: 'TEMPLATE_ABSENTEISMO', 
+            value: base64 
+          });
+        }
+        alert('Modelo de Absenteísmo salvo na rede com sucesso!');
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; 
+  };
+
+  // --- EXPORTAR USANDO O MODELO (EXCELJS) ---
+  const handleExportWithTemplate = async () => {
+    if (!hasTemplate || !templateSetting?.value) {
+      alert("Nenhum modelo foi configurado no sistema. Por favor, suba o seu modelo Excel primeiro clicando em 'Subir Modelo'!");
+      return;
+    }
+
+    if (filteredAbsences.length === 0) {
+      alert("Não há registros neste período para exportar.");
+      return;
+    }
+
+    try {
+      const templateBase64 = templateSetting.value;
+      const byteString = atob(templateBase64);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(ab);
+      const sheet = workbook.worksheets[0];
+
+      // Preenche C5 com o texto do período (conforme a sua planilha)
+      const c5 = sheet.getCell('C5'); 
+      if (c5) c5.value = `${formatDateToBR(startDate)} até ${formatDateToBR(endDate)}`;
+
+      // Prepara e ordena os dados
+      const exportData = filteredAbsences.map((record: AbsenceRecord) => {
+        const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
+        return {
+          date: formatDateToBR(record.absenceDate),
+          name: record.employeeName || '',
+          sector: emp?.sector || '-',
+          unit: emp?.unit || '-',
+          doc: record.documentType || '',
+          reason: record.reason || '-',
+          duration: record.documentDuration || '-'
+        };
+      }).sort((a, b) => {
+        const [d1, m1, y1] = a.date.split('/');
+        const [d2, m2, y2] = b.date.split('/');
+        // Ordenação mais antiga para mais recente
+        return new Date(`${y1}-${m1}-${d1}`).getTime() - new Date(`${y2}-${m2}-${d2}`).getTime();
+      });
+
+      // Injeta os dados a partir da linha 8 seguindo as colunas do seu modelo
+      let startRow = 8;
+      exportData.forEach((rowObj, index) => {
+        const row = sheet.getRow(startRow + index);
+        row.getCell(1).value = rowObj.date;       // A: DATA
+        row.getCell(2).value = rowObj.name;       // B: NOME DO COLABORADOR
+        // Coluna 3 (C) ignorada, pois no modelo fica vazia para abrir espaço para o nome longo
+        row.getCell(4).value = rowObj.reason;     // D: MOTIVO
+        row.getCell(5).value = rowObj.doc;        // E: DOC.
+        row.getCell(6).value = rowObj.sector;     // F: SETOR
+        row.getCell(7).value = rowObj.unit;       // G: UND
+        row.getCell(8).value = rowObj.duration;   // H: TEMPO
+        row.commit();
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const startStr = startDate.split('-').reverse().join('-');
+      const endStr = endDate.split('-').reverse().join('-');
+      a.download = `Absenteismo_${startStr}_a_${endStr}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+    } catch (err) {
+      console.error(err);
+      alert("Ocorreu um erro ao gerar a planilha. Verifique se o modelo salvo é válido.");
+    }
+  };
+
+  // --- EXPORTAR GERAL SIMPLES (XLSX) ---
+  const handleExportGeneral = () => {
     if (filteredAbsences.length === 0) {
       alert('Não há registros para exportar no período selecionado.');
       return;
     }
 
-    const exportData = filteredAbsences.map(record => {
-      // Busca o colaborador no banco para pegar setor e unidade atualizados
-      const emp = employees.find(e => e.name.toLowerCase() === record.employeeName?.toLowerCase());
-      
-      const dateParts = record.absenceDate.split('-');
-      const formattedDate = dateParts.length === 3 ? `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}` : record.absenceDate;
-
+    const exportData = filteredAbsences.map((record: AbsenceRecord) => {
+      const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
       return {
-        'Data da Falta': formattedDate,
+        'Data da Falta': formatDateToBR(record.absenceDate),
         'Nome Colaborador': record.employeeName,
         'Setor': emp?.sector || 'Não Cadastrado',
         'Unidade': emp?.unit || 'Não Cadastrado',
@@ -135,25 +263,19 @@ export const Absenteismo: React.FC = () => {
         'Motivo / CID': record.reason || '-',
         'Tempo': record.documentDuration || '-'
       };
-    });
-
-    // Ordenar pela Data da Falta decrescente (mais recente primeiro)
-    exportData.sort((a, b) => {
+    }).sort((a, b) => {
       const [d1, m1, y1] = a['Data da Falta'].split('/');
       const [d2, m2, y2] = b['Data da Falta'].split('/');
-      const dateA = new Date(`${y1}-${m1}-${d1}`);
-      const dateB = new Date(`${y2}-${m2}-${d2}`);
-      return dateB.getTime() - dateA.getTime();
+      return new Date(`${y2}-${m2}-${d2}`).getTime() - new Date(`${y1}-${m1}-${d1}`).getTime();
     });
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Absenteísmo");
     
-    // Formata nomes para o arquivo ficar mais legível
     const startStr = startDate.split('-').reverse().join('-');
     const endStr = endDate.split('-').reverse().join('-');
-    XLSX.writeFile(workbook, `Absenteismo_${startStr}_a_${endStr}.xlsx`);
+    XLSX.writeFile(workbook, `Absenteismo_Geral_${startStr}_a_${endStr}.xlsx`);
   };
 
   // --- HANDLERS DO FORMULÁRIO ---
@@ -262,14 +384,11 @@ export const Absenteismo: React.FC = () => {
     }
   };
 
-  const formatDateToBR = (dateStr: string) => {
-    if (!dateStr) return '';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
-  };
-
   return (
     <div className="space-y-6">
+      {/* Campo oculto para upload de template */}
+      <input type="file" accept=".xlsx" className="hidden" ref={fileInputRef} onChange={handleTemplateUpload} />
+
       <div className="flex items-center justify-between space-x-3 mb-2">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-blue-100 text-blue-700 rounded-xl">
@@ -312,13 +431,32 @@ export const Absenteismo: React.FC = () => {
                 <Clock size={14}/> Total: {formatHours(stats.totalLostHours)} Perdidas
               </div>
               
-              {/* BOTÃO DE EXPORTAÇÃO */}
-              <button 
-                onClick={handleExportExcel}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm ml-auto sm:ml-0"
-              >
-                <Download size={16} /> Exportar Excel
-              </button>
+              {/* BOTÕES DE EXPORTAÇÃO E MODELO */}
+              <div className="flex flex-wrap gap-2 ml-auto sm:ml-0 w-full sm:w-auto">
+                <button 
+                  onClick={handleExportGeneral}
+                  className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-bold text-sm transition-colors"
+                  title="Exporta uma planilha simples"
+                >
+                  <Database size={16} /> Exportar Geral
+                </button>
+
+                <button 
+                  onClick={handleTemplateClick}
+                  className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${hasTemplate ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                >
+                  <FileSpreadsheet size={16} />
+                  {hasTemplate ? 'Modelo Configurado' : 'Subir Modelo'}
+                </button>
+
+                <button 
+                  onClick={handleExportWithTemplate}
+                  className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm"
+                >
+                  <Download size={16} /> Exportar no Modelo
+                </button>
+              </div>
+
             </div>
           </div>
 
@@ -511,7 +649,7 @@ export const Absenteismo: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {absences.slice().reverse().map((record) => (
+                    {absences.slice().reverse().map((record: AbsenceRecord) => (
                       <tr key={record.id} className="hover:bg-slate-50/50 transition-colors text-sm text-slate-700">
                         <td className="py-3">
                           <p className="font-bold text-slate-800">{record.employeeName}</p>

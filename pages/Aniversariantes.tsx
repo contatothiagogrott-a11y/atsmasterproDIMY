@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useData } from '../context/DataContext';
 import { Employee } from '../types';
 import { Gift, Calendar, FileSpreadsheet, Download, Search, Users } from 'lucide-react';
@@ -6,18 +6,17 @@ import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx'; 
 
 export const Aniversariantes: React.FC = () => {
-  const { employees = [] } = useData() as any;
+  // Trazemos as funções globais de configurações (settings)
+  const { employees = [], settings = [], addSetting, updateSetting, removeSetting } = useData() as any;
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [searchTerm, setSearchTerm] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [hasTemplate, setHasTemplate] = useState(false);
 
-  useEffect(() => {
-    if (localStorage.getItem('ats_excel_template_aniversariantes')) {
-      setHasTemplate(true);
-    }
-  }, []);
+  // --- LÓGICA DE REDE (BANCO DE DADOS) ---
+  // Busca o modelo de Excel salvo globalmente para todos os utilizadores
+  const templateSetting = settings.find((s: any) => s.type === 'SYSTEM_TEMPLATE' && s.name === 'TEMPLATE_ANIVERSARIANTES');
+  const hasTemplate = !!templateSetting?.value;
 
   const months = [
     { value: 1, label: 'Janeiro' }, { value: 2, label: 'Fevereiro' },
@@ -33,19 +32,17 @@ export const Aniversariantes: React.FC = () => {
     if (!dateStr) return null;
     let str = String(dateStr).trim().split('T')[0].split(' ')[0];
     
-    // Corrige instantaneamente as datas com o bug do ano trocado (Ex: 2028-03-1970)
     const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
     if (corruptMatch) {
         const wrongYear = corruptMatch[1]; 
         const month = Number(corruptMatch[2]); 
-        const actualDay = Number(wrongYear.substring(2)); // Pega os últimos 2 dígitos do falso ano
+        const actualDay = Number(wrongYear.substring(2)); 
         return { m: month, d: actualDay };
     }
 
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
         let p0 = parts[0], p1 = parts[1], p2 = parts[2];
-        
         if (p0.length === 4) return { m: Number(p1), d: Number(p2) }; 
         if (p2.length === 4) { 
             let m = Number(p1);
@@ -80,15 +77,15 @@ export const Aniversariantes: React.FC = () => {
       });
   }, [activeEmployees, selectedMonth, searchTerm]);
 
-  // --- LÓGICA DO MODELO EXCEL ---
-  const handleTemplateClick = () => {
+  // --- LÓGICA DO MODELO EXCEL NA REDE ---
+  const handleTemplateClick = async () => {
     if (hasTemplate) {
-      if (window.confirm("Você já possui um modelo Excel salvo. Deseja substituí-lo?\n\n(Clique em Cancelar caso queira excluir o atual)")) {
+      if (window.confirm("Você já possui um modelo Excel salvo na rede. Deseja substituí-lo para todos?\n\n(Clique em Cancelar caso queira apenas excluir o atual)")) {
         fileInputRef.current?.click();
       } else {
-        if (window.confirm("Deseja EXCLUIR o modelo atual?")) {
-          localStorage.removeItem('ats_excel_template_aniversariantes');
-          setHasTemplate(false);
+        if (window.confirm("Deseja EXCLUIR o modelo atual para todos os usuários do sistema?")) {
+          await removeSetting(templateSetting.id);
+          alert("Modelo removido do sistema com sucesso.");
         }
       }
     } else {
@@ -101,24 +98,30 @@ export const Aniversariantes: React.FC = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const base64 = event.target?.result?.toString().split(',')[1];
       if (base64) {
-        localStorage.setItem('ats_excel_template_aniversariantes', base64);
-        setHasTemplate(true);
-        alert('Modelo de Aniversariantes salvo com sucesso!');
+        if (templateSetting) {
+          await updateSetting({ ...templateSetting, value: base64 });
+        } else {
+          await addSetting({ 
+            id: crypto.randomUUID(), 
+            type: 'SYSTEM_TEMPLATE', 
+            name: 'TEMPLATE_ANIVERSARIANTES', 
+            value: base64 
+          });
+        }
+        alert('Modelo de Aniversariantes salvo na rede com sucesso! Todos os usuários já podem utilizá-lo.');
       }
     };
     reader.readAsDataURL(file);
     e.target.value = ''; 
   };
 
-  // EXPORTAÇÃO DO MÊS (Usa o modelo do Excel que o usuário subiu)
+  // EXPORTAÇÃO DO MÊS (Usa o modelo do Excel que está no BD)
   const handleExportList = async () => {
-    const templateBase64 = localStorage.getItem('ats_excel_template_aniversariantes');
-
-    if (!templateBase64) {
-      alert("Por favor, suba o seu arquivo 'Modelo Lista de Aniversariantes.xlsx' clicando no botão branco antes de exportar!");
+    if (!hasTemplate || !templateSetting?.value) {
+      alert("Nenhum modelo foi configurado no sistema. Por favor, suba o arquivo 'Modelo Lista de Aniversariantes.xlsx' primeiro!");
       return;
     }
 
@@ -128,6 +131,7 @@ export const Aniversariantes: React.FC = () => {
     }
 
     try {
+      const templateBase64 = templateSetting.value;
       const byteString = atob(templateBase64);
       const ab = new ArrayBuffer(byteString.length);
       const ia = new Uint8Array(ab);
@@ -165,7 +169,7 @@ export const Aniversariantes: React.FC = () => {
 
     } catch (err) {
       console.error(err);
-      alert("Ocorreu um erro ao gerar a planilha. Verifique se o arquivo modelo está correto.");
+      alert("Ocorreu um erro ao gerar a planilha. Verifique se o arquivo modelo salvo é válido.");
     }
   };
 
@@ -176,27 +180,18 @@ export const Aniversariantes: React.FC = () => {
       return;
     }
 
-    // 1. Ordenar por Mês -> Dia -> Nome
     const sortedEmployees = [...activeEmployees].sort((a: Employee, b: Employee) => {
       const bdA = extractMonthDay(a.birthDate);
       const bdB = extractMonthDay(b.birthDate);
 
-      // Se alguém não tiver data, joga pro final
       if (!bdA && !bdB) return a.name.localeCompare(b.name);
       if (!bdA) return 1;
       if (!bdB) return -1;
-
-      // Ordena por Mês
       if (bdA.m !== bdB.m) return bdA.m - bdB.m;
-      
-      // Ordena por Dia (se o mês for igual)
       if (bdA.d !== bdB.d) return bdA.d - bdB.d;
-
-      // Desempata por Nome (se mês e dia forem iguais)
       return a.name.localeCompare(b.name);
     });
 
-    // 2. Mapear para o formato da planilha
     const dataToExport = sortedEmployees.map((emp: Employee) => {
       const bd = extractMonthDay(emp.birthDate);
       const dateStr = bd ? `${String(bd.d).padStart(2, '0')}/${String(bd.m).padStart(2, '0')}` : '-';
@@ -245,7 +240,7 @@ export const Aniversariantes: React.FC = () => {
             className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all border ${hasTemplate ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
           >
             <FileSpreadsheet size={18} />
-            {hasTemplate ? 'Modelo Configurado' : 'Subir Modelo Excel'}
+            {hasTemplate ? 'Modelo Configurado na Rede' : 'Subir Modelo Excel'}
           </button>
 
           <button 
