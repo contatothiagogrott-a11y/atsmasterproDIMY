@@ -30,20 +30,16 @@ export const Absenteismo: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ESTADOS DA ANÁLISE IA
-  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiResults, setAiResults] = useState<{category: string, hours: number, reasons: string[]}[]>([]);
+  // --- CONTROLE DA JANELA IA ---
+  const [showAiPanel, setShowAiPanel] = useState(false);
 
   if (user?.role !== 'MASTER' && user?.role !== 'AUXILIAR_RH') {
     return <Navigate to="/" replace />;
   }
 
-  // --- LÓGICA DE REDE DO MODELO DE ABSENTEÍSMO ---
   const templateSetting = settings.find((s: any) => s.type === 'SYSTEM_TEMPLATE' && s.name === 'TEMPLATE_ABSENTEISMO');
   const hasTemplate = !!templateSetting?.value;
 
-  // --- MEMÓRIA AUTOCOMPLETE ---
   const uniqueNames = useMemo(() => {
     const namesFromEmployees = employees.map((emp: Employee) => emp.name);
     const namesFromAbsences = absences.map((a: AbsenceRecord) => a.employeeName);
@@ -61,7 +57,6 @@ export const Absenteismo: React.FC = () => {
     });
   }, [absences, startDate, endDate]);
 
-  // --- HELPER: FORMATAÇÃO DE HORAS (Ex: 8.8 -> 8h 48m) ---
   const formatHours = (decimalHours: number) => {
     const h = Math.floor(decimalHours);
     const m = Math.round((decimalHours - h) * 60);
@@ -76,7 +71,6 @@ export const Absenteismo: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
-  // --- LÓGICA DO DASHBOARD (CONVERSÃO PARA HORAS) ---
   const stats = useMemo(() => {
     let atestados = 0; let atestadosHours = 0;
     let declaracoes = 0; let declaracoesHours = 0;
@@ -130,76 +124,66 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
-  // --- IA DE AGRUPAMENTO CLÍNICO (Local NLP) ---
-  const generateAiSummary = () => {
-    setIsAiModalOpen(true);
-    setIsAnalyzing(true);
+  // --- IA DE AGRUPAMENTO (Embutida e reativa às datas do filtro) ---
+  const aiResults = useMemo(() => {
+    const categories: Record<string, { hours: number, reasons: Set<string> }> = {
+      '🤰 Maternidade e Pré-Natal': { hours: 0, reasons: new Set() },
+      '🦴 Ortopedia e Dores Musculares': { hours: 0, reasons: new Set() },
+      '🫁 Respiratório (Gripes, Covid, Asma)': { hours: 0, reasons: new Set() },
+      '🤢 Gastrointestinal e Viroses': { hours: 0, reasons: new Set() },
+      '🏥 Procedimentos Cirúrgicos': { hours: 0, reasons: new Set() },
+      '🧠 Saúde Mental e Emocional': { hours: 0, reasons: new Set() },
+      '🦷 Tratamento Odontológico': { hours: 0, reasons: new Set() },
+      '🩸 Exames de Rotina / Sangue': { hours: 0, reasons: new Set() },
+      '👨‍👩‍👧 Acompanhamento Familiar': { hours: 0, reasons: new Set() },
+      '🚫 Falta Injustificada': { hours: 0, reasons: new Set() },
+      '❓ Outros Motivos / Diversos': { hours: 0, reasons: new Set() },
+    };
 
-    // Simulador de processamento para UX
-    setTimeout(() => {
-      const categories: Record<string, { hours: number, reasons: Set<string> }> = {
-        '🤰 Maternidade e Pré-Natal': { hours: 0, reasons: new Set() },
-        '🦴 Ortopedia e Dores Musculares': { hours: 0, reasons: new Set() },
-        '🫁 Respiratório (Gripes, Covid, Asma)': { hours: 0, reasons: new Set() },
-        '🤢 Gastrointestinal e Viroses': { hours: 0, reasons: new Set() },
-        '🏥 Procedimentos Cirúrgicos': { hours: 0, reasons: new Set() },
-        '🧠 Saúde Mental e Emocional': { hours: 0, reasons: new Set() },
-        '🦷 Tratamento Odontológico': { hours: 0, reasons: new Set() },
-        '🩸 Exames de Rotina / Sangue': { hours: 0, reasons: new Set() },
-        '👨‍👩‍👧 Acompanhamento Familiar': { hours: 0, reasons: new Set() },
-        '🚫 Falta Injustificada': { hours: 0, reasons: new Set() },
-        '❓ Outros Motivos / Diversos': { hours: 0, reasons: new Set() },
-      };
+    filteredAbsences.forEach((record: AbsenceRecord) => {
+        const reason = (record.reason || '').toLowerCase();
+        const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
+        const workload = emp?.dailyWorkload || 8.8;
+        
+        let amount = record.durationAmount || 0;
+        let unit = record.durationUnit;
+        if (!unit && record.documentDuration) {
+          const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
+          if (match) {
+            amount = parseFloat(match[1]);
+            unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
+          } else { unit = 'Dias'; amount = 1; }
+        }
+        let hours = (unit === 'Dias') ? amount * workload : amount;
 
-      filteredAbsences.forEach((record: AbsenceRecord) => {
-          const reason = (record.reason || '').toLowerCase();
-          const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
-          const workload = emp?.dailyWorkload || 8.8;
-          
-          let amount = record.durationAmount || 0;
-          let unit = record.durationUnit;
-          if (!unit && record.documentDuration) {
-            const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
-            if (match) {
-              amount = parseFloat(match[1]);
-              unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
-            } else { unit = 'Dias'; amount = 1; }
-          }
-          let hours = (unit === 'Dias') ? amount * workload : amount;
+        let matchedCategory = '❓ Outros Motivos / Diversos';
+        
+        // Motor de Classificação NLP simplificado
+        if (record.documentType === 'Falta Injustificada') matchedCategory = '🚫 Falta Injustificada';
+        else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
+        else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = '🤰 Maternidade e Pré-Natal';
+        else if (/(coluna|pescoço|muscular|mialgia|ortop|tendinite|torcicolo|lombar|costas|ciático|lesão|fratura)/i.test(reason)) matchedCategory = '🦴 Ortopedia e Dores Musculares';
+        else if (/(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar)/i.test(reason)) matchedCategory = '🫁 Respiratório (Gripes, Covid, Asma)';
+        else if (/(diarreia|virose|estômago|gastrite|vômito|enjoo|intoxicação|intestinal|cólic)/i.test(reason)) matchedCategory = '🤢 Gastrointestinal e Viroses';
+        else if (/(cirurgi|operat|pós-op|pos op)/i.test(reason)) matchedCategory = '🏥 Procedimentos Cirúrgicos';
+        else if (/(ansiedade|depressão|estresse|burnout|psiqui|psicoló|pânico)/i.test(reason)) matchedCategory = '🧠 Saúde Mental e Emocional';
+        else if (/(dente|dentista|odontoló|siso|canal)/i.test(reason)) matchedCategory = '🦷 Tratamento Odontológico';
+        else if (/(exame|sangue|rotina|check-up|laboratório|ultrassom|raio-x)/i.test(reason)) matchedCategory = '🩸 Exames de Rotina / Sangue';
 
-          let matchedCategory = '❓ Outros Motivos / Diversos';
-          
-          // Motor de Classificação (Regex Keywords)
-          if (record.documentType === 'Falta Injustificada') matchedCategory = '🚫 Falta Injustificada';
-          else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
-          else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = '🤰 Maternidade e Pré-Natal';
-          else if (/(coluna|pescoço|muscular|mialgia|ortop|tendinite|torcicolo|lombar|costas|ciático|lesão|fratura)/i.test(reason)) matchedCategory = '🦴 Ortopedia e Dores Musculares';
-          else if (/(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar)/i.test(reason)) matchedCategory = '🫁 Respiratório (Gripes, Covid, Asma)';
-          else if (/(diarreia|virose|estômago|gastrite|vômito|enjoo|intoxicação|intestinal|cólic)/i.test(reason)) matchedCategory = '🤢 Gastrointestinal e Viroses';
-          else if (/(cirurgi|operat|pós-op|pos op)/i.test(reason)) matchedCategory = '🏥 Procedimentos Cirúrgicos';
-          else if (/(ansiedade|depressão|estresse|burnout|psiqui|psicoló|pânico)/i.test(reason)) matchedCategory = '🧠 Saúde Mental e Emocional';
-          else if (/(dente|dentista|odontoló|siso|canal)/i.test(reason)) matchedCategory = '🦷 Tratamento Odontológico';
-          else if (/(exame|sangue|rotina|check-up|laboratório|ultrassom|raio-x)/i.test(reason)) matchedCategory = '🩸 Exames de Rotina / Sangue';
+        categories[matchedCategory].hours += hours;
+        categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
+    });
 
-          categories[matchedCategory].hours += hours;
-          categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
-      });
+    return Object.entries(categories)
+      .filter(([_, data]) => data.hours > 0)
+      .map(([category, data]) => ({
+        category,
+        hours: data.hours,
+        reasons: Array.from(data.reasons)
+      }))
+      .sort((a, b) => b.hours - a.hours);
+  }, [filteredAbsences, employees]);
 
-      const finalResults = Object.entries(categories)
-        .filter(([_, data]) => data.hours > 0)
-        .map(([category, data]) => ({
-          category,
-          hours: data.hours,
-          reasons: Array.from(data.reasons)
-        }))
-        .sort((a, b) => b.hours - a.hours);
-
-      setAiResults(finalResults);
-      setIsAnalyzing(false);
-    }, 1500); // 1.5s delay
-  };
-
-  // --- LÓGICA DO MODELO EXCEL ---
   const handleTemplateClick = async () => {
     if (hasTemplate) {
       if (window.confirm("Você já possui um modelo Excel salvo na rede. Deseja substituí-lo para todos?\n\n(Clique em Cancelar caso queira apenas excluir o atual)")) {
@@ -226,12 +210,7 @@ export const Absenteismo: React.FC = () => {
         if (templateSetting) {
           await updateSetting({ ...templateSetting, value: base64 });
         } else {
-          await addSetting({ 
-            id: crypto.randomUUID(), 
-            type: 'SYSTEM_TEMPLATE', 
-            name: 'TEMPLATE_ABSENTEISMO', 
-            value: base64 
-          });
+          await addSetting({ id: crypto.randomUUID(), type: 'SYSTEM_TEMPLATE', name: 'TEMPLATE_ABSENTEISMO', value: base64 });
         }
         alert('Modelo de Absenteísmo salvo na rede com sucesso!');
       }
@@ -240,18 +219,15 @@ export const Absenteismo: React.FC = () => {
     e.target.value = ''; 
   };
 
-  // --- EXPORTAR USANDO O MODELO (EXCELJS) ---
   const handleExportWithTemplate = async () => {
     if (!hasTemplate || !templateSetting?.value) {
       alert("Nenhum modelo foi configurado no sistema. Por favor, suba o seu modelo Excel primeiro clicando em 'Subir Modelo'!");
       return;
     }
-
     if (filteredAbsences.length === 0) {
       alert("Não há registros neste período para exportar.");
       return;
     }
-
     try {
       const templateBase64 = templateSetting.value;
       const byteString = atob(templateBase64);
@@ -263,11 +239,9 @@ export const Absenteismo: React.FC = () => {
       await workbook.xlsx.load(ab);
       const sheet = workbook.worksheets[0];
 
-      // Preenche C5 com o texto do período (conforme a sua planilha)
       const c5 = sheet.getCell('C5'); 
       if (c5) c5.value = `${formatDateToBR(startDate)} até ${formatDateToBR(endDate)}`;
 
-      // Prepara e ordena os dados
       const exportData = filteredAbsences.map((record: AbsenceRecord) => {
         const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
         return {
@@ -285,18 +259,16 @@ export const Absenteismo: React.FC = () => {
         return new Date(`${y1}-${m1}-${d1}`).getTime() - new Date(`${y2}-${m2}-${d2}`).getTime();
       });
 
-      // Injeta os dados a partir da linha 8 seguindo as colunas do seu modelo
       let startRow = 8;
       exportData.forEach((rowObj, index) => {
         const row = sheet.getRow(startRow + index);
-        row.getCell(1).value = rowObj.date;       // A: DATA
-        row.getCell(2).value = rowObj.name;       // B: NOME DO COLABORADOR
-        // Coluna 3 (C) ignorada, pois no modelo fica vazia para abrir espaço para o nome longo
-        row.getCell(4).value = rowObj.reason;     // D: MOTIVO
-        row.getCell(5).value = rowObj.doc;        // E: DOC.
-        row.getCell(6).value = rowObj.sector;     // F: SETOR
-        row.getCell(7).value = rowObj.unit;       // G: UND
-        row.getCell(8).value = rowObj.duration;   // H: TEMPO
+        row.getCell(1).value = rowObj.date;       
+        row.getCell(2).value = rowObj.name;       
+        row.getCell(4).value = rowObj.reason;     
+        row.getCell(5).value = rowObj.doc;        
+        row.getCell(6).value = rowObj.sector;     
+        row.getCell(7).value = rowObj.unit;       
+        row.getCell(8).value = rowObj.duration;   
         row.commit();
       });
 
@@ -311,20 +283,17 @@ export const Absenteismo: React.FC = () => {
       a.download = `Absenteismo_${startStr}_a_${endStr}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
-
     } catch (err) {
       console.error(err);
       alert("Ocorreu um erro ao gerar a planilha. Verifique se o modelo salvo é válido.");
     }
   };
 
-  // --- EXPORTAR GERAL SIMPLES (XLSX) ---
   const handleExportGeneral = () => {
     if (filteredAbsences.length === 0) {
       alert('Não há registros para exportar no período selecionado.');
       return;
     }
-
     const exportData = filteredAbsences.map((record: AbsenceRecord) => {
       const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
       return {
@@ -351,22 +320,14 @@ export const Absenteismo: React.FC = () => {
     XLSX.writeFile(workbook, `Absenteismo_Geral_${startStr}_a_${endStr}.xlsx`);
   };
 
-  // --- HANDLERS DO FORMULÁRIO ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ 
-      ...prev, 
-      [name]: name === 'durationAmount' ? Number(value) : value 
-    }));
+    setFormData((prev) => ({ ...prev, [name]: name === 'durationAmount' ? Number(value) : value }));
   };
 
   const handleUnitChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newUnit = e.target.value as 'Dias' | 'Horas';
-    setFormData(prev => ({ 
-      ...prev, 
-      durationUnit: newUnit, 
-      durationAmount: newUnit === 'Dias' ? 1 : 0 
-    }));
+    setFormData(prev => ({ ...prev, durationUnit: newUnit, durationAmount: newUnit === 'Dias' ? 1 : 0 }));
   };
 
   const currentHours = Math.floor(formData.durationAmount || 0);
@@ -384,7 +345,6 @@ export const Absenteismo: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     const unit = formData.durationUnit || 'Dias';
     const amount = formData.durationAmount || 0;
     
@@ -408,11 +368,8 @@ export const Absenteismo: React.FC = () => {
       createdAt: isEditing && formData.createdAt ? formData.createdAt : new Date().toISOString()
     };
 
-    if (isEditing && formData.id) {
-      await updateAbsence(newAbsence);
-    } else {
-      await addAbsence(newAbsence);
-    }
+    if (isEditing && formData.id) { await updateAbsence(newAbsence); } 
+    else { await addAbsence(newAbsence); }
     
     setFormData({ documentType: 'Atestado', reason: '', durationUnit: 'Dias', durationAmount: 1 });
     setIsEditing(false);
@@ -421,11 +378,9 @@ export const Absenteismo: React.FC = () => {
   const handleEdit = (record: AbsenceRecord) => {
     let amount = record.durationAmount;
     let unit = record.durationUnit;
-    
     if (!unit && record.documentDuration) {
       const hMatch = record.documentDuration.match(/(\d+)h/i);
       const mMatch = record.documentDuration.match(/(\d+)m/i);
-      
       if (hMatch || mMatch) {
           const h = hMatch ? parseInt(hMatch[1]) : 0;
           const m = mMatch ? parseInt(mMatch[1]) : 0;
@@ -441,12 +396,7 @@ export const Absenteismo: React.FC = () => {
           }
       }
     }
-
-    setFormData({
-      ...record,
-      durationAmount: amount,
-      durationUnit: unit || 'Dias'
-    });
+    setFormData({ ...record, durationAmount: amount, durationUnit: unit || 'Dias' });
     setIsEditing(true);
     setActiveTab('cadastro');
   };
@@ -459,7 +409,6 @@ export const Absenteismo: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Campo oculto para upload de template */}
       <input type="file" accept=".xlsx" className="hidden" ref={fileInputRef} onChange={handleTemplateUpload} />
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-2">
@@ -473,13 +422,17 @@ export const Absenteismo: React.FC = () => {
           </div>
         </div>
 
-        {/* BOTÃO DE INTELIGÊNCIA ARTIFICIAL */}
+        {/* BOTÃO DA IA AGORA CONTROLA A JANELA INLINE */}
         <button 
-          onClick={generateAiSummary}
-          className="flex items-center gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-5 py-2.5 rounded-xl font-bold shadow-lg shadow-purple-200 transition-all active:scale-95"
+          onClick={() => setShowAiPanel(!showAiPanel)}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all active:scale-95 ${
+            showAiPanel 
+              ? 'bg-purple-100 text-purple-700 border border-purple-200' 
+              : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-lg shadow-purple-200'
+          }`}
         >
           <Sparkles size={18} />
-          Análise Inteligente (IA)
+          {showAiPanel ? 'Fechar Análise IA' : 'Análise Inteligente (IA)'}
         </button>
       </div>
 
@@ -514,30 +467,16 @@ export const Absenteismo: React.FC = () => {
               </div>
               
               <div className="flex flex-wrap gap-2 ml-auto sm:ml-0 w-full sm:w-auto">
-                <button 
-                  onClick={handleExportGeneral}
-                  className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-bold text-sm transition-colors"
-                  title="Exporta uma planilha simples"
-                >
+                <button onClick={handleExportGeneral} className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-bold text-sm transition-colors" title="Exporta uma planilha simples">
                   <Database size={16} /> Exportar Geral
                 </button>
-
-                <button 
-                  onClick={handleTemplateClick}
-                  className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${hasTemplate ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                >
-                  <FileSpreadsheet size={16} />
-                  {hasTemplate ? 'Modelo Configurado' : 'Subir Modelo'}
+                <button onClick={handleTemplateClick} className={`flex flex-1 sm:flex-none items-center justify-center gap-2 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${hasTemplate ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                  <FileSpreadsheet size={16} /> {hasTemplate ? 'Modelo Configurado' : 'Subir Modelo'}
                 </button>
-
-                <button 
-                  onClick={handleExportWithTemplate}
-                  className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm"
-                >
+                <button onClick={handleExportWithTemplate} className="flex flex-1 sm:flex-none items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition-colors shadow-sm">
                   <Download size={16} /> Exportar no Modelo
                 </button>
               </div>
-
             </div>
           </div>
 
@@ -578,6 +517,52 @@ export const Absenteismo: React.FC = () => {
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full"><Users size={24} /></div>
             </div>
           </div>
+
+          {/* --- PAINEL EXPANSÍVEL DA IA --- */}
+          {showAiPanel && (
+            <div className="bg-white rounded-3xl shadow-sm border border-purple-200 overflow-hidden animate-in fade-in slide-in-from-top-4">
+              <div className="p-6 border-b border-purple-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-purple-50">
+                  <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md">
+                          <Sparkles size={24} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-indigo-900 uppercase tracking-tighter">
+                            Análise Inteligente de Saúde
+                        </h2>
+                        <p className="text-sm text-indigo-700">As informações abaixo são baseadas <b>exclusivamente no período selecionado no filtro</b> acima.</p>
+                      </div>
+                  </div>
+                  <button onClick={() => setShowAiPanel(false)} className="p-2 hover:bg-white rounded-full text-indigo-400 hover:text-purple-600 transition-all">
+                      <X size={24} />
+                  </button>
+              </div>
+              <div className="p-6 bg-slate-50/50">
+                  {aiResults.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 font-medium">
+                      Não há dados registrados neste período para gerar a análise.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {aiResults.map((result, i) => (
+                        <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors flex flex-col">
+                          <div className="flex-1">
+                            <h4 className="font-bold text-slate-800 mb-3">{result.category}</h4>
+                            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                              <b className="text-slate-600">Termos encontrados no período:</b> {result.reasons.join(', ')}.
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-auto">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tempo Perdido</span>
+                            <span className="font-black text-xl text-purple-700">{formatHours(result.hours)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -765,67 +750,6 @@ export const Absenteismo: React.FC = () => {
                   </tbody>
                 </table>
               )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL DA IA --- */}
-      {isAiModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl overflow-hidden animate-in zoom-in-95">
-            <div className="p-6 bg-gradient-to-r from-indigo-600 to-purple-600 flex justify-between items-center text-white">
-              <div className="flex items-center gap-3">
-                <Sparkles size={28} className="text-purple-200" />
-                <div>
-                  <h2 className="text-xl font-bold">Análise Inteligente de Absenteísmo</h2>
-                  <p className="text-indigo-100 text-sm">Agrupamento semântico de motivos clínicos</p>
-                </div>
-              </div>
-              <button onClick={() => setIsAiModalOpen(false)} className="text-indigo-100 hover:text-white transition-colors bg-white/10 p-2 rounded-full">
-                <X size={24} />
-              </button>
-            </div>
-
-            <div className="p-6 bg-slate-50 min-h-[300px] max-h-[60vh] overflow-y-auto">
-              {isAnalyzing ? (
-                <div className="flex flex-col items-center justify-center h-64 text-purple-600 space-y-4">
-                  <Sparkles size={48} className="animate-pulse" />
-                  <p className="font-bold text-lg animate-pulse">Lendo históricos e agrupando motivos...</p>
-                  <p className="text-sm text-slate-400">Essa operação pode levar alguns segundos.</p>
-                </div>
-              ) : aiResults.length === 0 ? (
-                <div className="text-center py-12 text-slate-500">
-                  Não há dados suficientes no período para realizar a análise.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-6 text-indigo-800 text-sm">
-                    A Inteligência Artificial filtrou <b>{filteredAbsences.length} registros</b> do período e os agrupou em Categorias Clínicas. O cálculo considera a jornada de cada funcionário.
-                  </div>
-
-                  {aiResults.map((result, i) => (
-                    <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-purple-300 transition-colors">
-                      <div className="flex-1">
-                        <h4 className="font-bold text-lg text-slate-800 mb-1">{result.category}</h4>
-                        <p className="text-xs text-slate-400 leading-relaxed">
-                          <b>Termos originais encontrados:</b> {result.reasons.join(', ')}.
-                        </p>
-                      </div>
-                      <div className="shrink-0 bg-purple-50 text-purple-700 px-4 py-2 rounded-xl border border-purple-100 text-center">
-                        <span className="block text-[10px] font-bold uppercase tracking-widest text-purple-400 mb-0.5">Tempo Perdido</span>
-                        <span className="font-black text-xl">{formatHours(result.hours)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 bg-white border-t border-slate-100 text-right">
-              <button onClick={() => setIsAiModalOpen(false)} className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors">
-                Fechar Análise
-              </button>
             </div>
           </div>
         </div>
