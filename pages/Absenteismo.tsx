@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord, Employee } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X, Info } from 'lucide-react';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 
@@ -31,6 +31,10 @@ export const Absenteismo: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
+
+  // --- ESTADOS DE PAGINAÇÃO (Aba Cadastros) ---
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   if (user?.role !== 'MASTER' && user?.role !== 'AUXILIAR_RH') {
     return <Navigate to="/" replace />;
@@ -83,7 +87,7 @@ export const Absenteismo: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
-  // --- FILTRO DE DATAS BLINDADO ---
+  // --- FILTRO DE DATAS (Apenas para o Dashboard e IA) ---
   const filteredAbsences = useMemo(() => {
     return absences.filter((record: AbsenceRecord) => {
       const safeDate = formatToYMD(record.absenceDate);
@@ -91,6 +95,26 @@ export const Absenteismo: React.FC = () => {
       return safeDate >= startDate && safeDate <= endDate;
     });
   }, [absences, startDate, endDate]);
+
+  // --- HISTÓRICO GERAL (Para a aba de Cadastros com Ordenação e Paginação) ---
+  const sortedAllAbsences = useMemo(() => {
+    return [...absences].sort((a, b) => {
+      const dateA = formatToYMD(a.absenceDate);
+      const dateB = formatToYMD(b.absenceDate);
+      if (dateA !== dateB) {
+        // Ordena pela data (Mais recente primeiro)
+        return dateB.localeCompare(dateA);
+      }
+      // Critério de desempate: Ordem de criação
+      return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    });
+  }, [absences]);
+
+  const totalPages = Math.ceil(sortedAllAbsences.length / itemsPerPage);
+  const paginatedAbsences = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    return sortedAllAbsences.slice(startIndex, startIndex + itemsPerPage);
+  }, [sortedAllAbsences, currentPage, itemsPerPage]);
 
   const formatHours = (decimalHours: number) => {
     const h = Math.floor(decimalHours);
@@ -214,7 +238,6 @@ export const Absenteismo: React.FC = () => {
     categories['🚫 Falta Injustificada'] = { hours: 0, reasons: new Set() };
     categories['❓ Outros Motivos / Diversos'] = { hours: 0, reasons: new Set() };
 
-    // AQUI ESTAVA O ERRO! A IA TEM QUE LER DO filteredAbsences E NÃO DE absences
     filteredAbsences.forEach((record: AbsenceRecord) => {
         const reason = (record.reason || '').toLowerCase();
         const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
@@ -260,7 +283,6 @@ export const Absenteismo: React.FC = () => {
       .sort((a, b) => b.hours - a.hours);
   }, [filteredAbsences, employees]);
 
-  // --- LÓGICA DO MODELO EXCEL ---
   const handleTemplateClick = async () => {
     if (hasTemplate) {
       if (window.confirm("Você já possui um modelo Excel salvo na rede. Deseja substituí-lo para todos?\n\n(Clique em Cancelar caso queira apenas excluir o atual)")) {
@@ -503,6 +525,12 @@ export const Absenteismo: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm('Tem certeza que deseja excluir este registro?')) {
       await removeAbsence(id);
+      
+      // Ajuste para não deixar o usuário preso numa página vazia se excluir o último item da página atual
+      const isLastItemOnPage = paginatedAbsences.length === 1;
+      if (isLastItemOnPage && currentPage > 1) {
+        setCurrentPage(prev => prev - 1);
+      }
     }
   };
 
@@ -578,6 +606,7 @@ export const Absenteismo: React.FC = () => {
             </div>
           </div>
 
+          {/* PAINEL EXPANSÍVEL DA IA */}
           {showAiPanel && (
             <div className="bg-white rounded-3xl shadow-sm border border-purple-200 overflow-hidden animate-in fade-in slide-in-from-top-4">
               <div className="p-6 border-b border-purple-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-purple-50">
@@ -778,6 +807,7 @@ export const Absenteismo: React.FC = () => {
                 </div>
               )}
 
+              {/* AVISO DO LIMITE DE 16H ANUAIS P/ ACOMPANHANTE */}
               {formData.documentType === 'Acompanhante de Dependente' && formData.employeeName && formData.absenceDate && (
                 <div className={`p-4 rounded-xl border mt-4 ${totalCompanionHours > 16 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
                   <div className="flex items-start gap-3">
@@ -815,40 +845,41 @@ export const Absenteismo: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 overflow-hidden flex flex-col h-full">
-            <div className="p-4 border-b border-slate-200 bg-slate-50/50">
-              <h2 className="text-lg font-bold text-slate-800">Histórico do Período</h2>
+            <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-800">Histórico Geral de Registros</h2>
             </div>
-            <div className="overflow-x-auto flex-1 p-4">
-              {filteredAbsences.length === 0 ? (
+            
+            <div className="overflow-x-auto flex-1">
+              {sortedAllAbsences.length === 0 ? (
                 <div className="flex flex-col items-center justify-center text-slate-400 py-10">
                   <CalendarX size={48} className="mb-3 opacity-20" />
-                  <p>Nenhum registro encontrado no período selecionado.</p>
+                  <p>Nenhum registro no banco de dados.</p>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200">
-                      <th className="pb-3 font-semibold">Colaborador / Motivo</th>
-                      <th className="pb-3 font-semibold">Data e Duração</th>
-                      <th className="pb-3 font-semibold">Tipo</th>
-                      <th className="pb-3 font-semibold text-right">Ações</th>
+                    <tr className="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200 bg-white">
+                      <th className="py-3 px-4 font-semibold">Colaborador / Motivo</th>
+                      <th className="py-3 px-4 font-semibold">Data e Duração</th>
+                      <th className="py-3 px-4 font-semibold">Tipo</th>
+                      <th className="py-3 px-4 font-semibold text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredAbsences.slice().reverse().map((record: AbsenceRecord) => (
+                    {paginatedAbsences.map((record: AbsenceRecord) => (
                       <tr key={record.id} className="hover:bg-slate-50/50 transition-colors text-sm text-slate-700">
-                        <td className="py-3">
+                        <td className="py-3 px-4">
                           <p className="font-bold text-slate-800">{record.employeeName}</p>
                           <p className="text-xs text-slate-500 truncate max-w-[200px]" title={record.reason}>{record.reason}</p>
                         </td>
-                        <td className="py-3">
+                        <td className="py-3 px-4">
                           <p className="font-medium">{formatDateToBR(record.absenceDate)}</p>
                           <p className="text-xs font-bold text-slate-400">
                             {record.documentDuration}
                           </p>
                         </td>
-                        <td className="py-3">
-                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${
+                        <td className="py-3 px-4">
+                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider inline-block ${
                             record.documentType === 'Atestado' ? 'bg-blue-100 text-blue-700' : 
                             record.documentType === 'Declaração' ? 'bg-amber-100 text-amber-700' : 
                             record.documentType === 'Falta Injustificada' ? 'bg-red-100 text-red-700' :
@@ -857,7 +888,7 @@ export const Absenteismo: React.FC = () => {
                             {record.documentType}
                           </span>
                         </td>
-                        <td className="py-3 text-right">
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
                           <button onClick={() => handleEdit(record)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded mr-1" title="Editar">
                             <Edit2 size={16} />
                           </button>
@@ -871,6 +902,52 @@ export const Absenteismo: React.FC = () => {
                 </table>
               )}
             </div>
+
+            {/* --- CONTROLES DE PAGINAÇÃO --- */}
+            {sortedAllAbsences.length > 0 && (
+              <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm">
+                <div className="flex items-center gap-2 text-slate-500 font-medium">
+                  <span>Mostrar</span>
+                  <select 
+                    className="border border-slate-300 rounded-lg p-1.5 outline-none bg-white font-bold text-slate-700 cursor-pointer"
+                    value={itemsPerPage}
+                    onChange={(e) => {
+                      setItemsPerPage(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                  </select>
+                  <span>por página</span>
+                </div>
+                
+                <div className="flex items-center gap-4">
+                  <span className="text-slate-500 font-medium">
+                    Página <b className="text-slate-700">{currentPage}</b> de <b className="text-slate-700">{totalPages || 1}</b> ({sortedAllAbsences.length} registros)
+                  </span>
+                  <div className="flex gap-1">
+                    <button 
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      className="p-1.5 bg-white border border-slate-300 rounded-lg text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 hover:text-blue-600 transition-colors"
+                      title="Página Anterior"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <button 
+                      disabled={currentPage === totalPages || totalPages === 0}
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      className="p-1.5 bg-white border border-slate-300 rounded-lg text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 hover:text-blue-600 transition-colors"
+                      title="Próxima Página"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
