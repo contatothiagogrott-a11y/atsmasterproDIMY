@@ -16,7 +16,7 @@ export const Absenteismo: React.FC = () => {
     reason: '',
     durationUnit: 'Dias',
     durationAmount: 1,
-    absenceDate: new Date().toISOString().split('T')[0] // Começa com o dia de hoje
+    absenceDate: new Date().toISOString().split('T')[0]
   });
 
   const [startDate, setStartDate] = useState(() => {
@@ -86,7 +86,7 @@ export const Absenteismo: React.FC = () => {
     const workload = emp?.dailyWorkload || 8.8;
 
     return absences.filter((a: AbsenceRecord) => {
-      if (isEditing && a.id === formData.id) return false; // Ignora o registo que estamos a editar
+      if (isEditing && a.id === formData.id) return false; 
       if (a.employeeName?.toLowerCase() !== formData.employeeName?.toLowerCase()) return false;
       if (a.documentType !== 'Acompanhante de Dependente') return false;
       if (!a.absenceDate) return false;
@@ -155,19 +155,21 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
+  // --- IA DE AGRUPAMENTO COM BLINDAGEM ANTI-CRASH ---
   const aiResults = useMemo(() => {
+    // 1. Chaves simples (sem emojis) para evitar erro de encoding no JavaScript
     const categories: Record<string, { hours: number, reasons: Set<string> }> = {
-      '🤰 Maternidade e Pré-Natal': { hours: 0, reasons: new Set() },
-      '🦴 Ortopedia e Dores Musculares': { hours: 0, reasons: new Set() },
-      '🫁 Respiratório (Gripes, Covid, Asma)': { hours: 0, reasons: new Set() },
-      '🤢 Gastrointestinal e Viroses': { hours: 0, reasons: new Set() },
-      '🏥 Procedimentos Cirúrgicos': { hours: 0, reasons: new Set() },
-      '🧠 Saúde Mental e Emocional': { hours: 0, reasons: new Set() },
-      '🦷 Tratamento Odontológico': { hours: 0, reasons: new Set() },
-      '🩸 Exames de Rotina / Sangue': { hours: 0, reasons: new Set() },
-      '👨‍👩‍👧 Acompanhamento Familiar': { hours: 0, reasons: new Set() },
-      '🚫 Falta Injustificada': { hours: 0, reasons: new Set() },
-      '❓ Outros Motivos / Diversos': { hours: 0, reasons: new Set() },
+      'Maternidade': { hours: 0, reasons: new Set() },
+      'Ortopedia': { hours: 0, reasons: new Set() },
+      'Respiratorio': { hours: 0, reasons: new Set() },
+      'Gastrointestinal': { hours: 0, reasons: new Set() },
+      'Cirurgia': { hours: 0, reasons: new Set() },
+      'SaudeMental': { hours: 0, reasons: new Set() },
+      'Odontologico': { hours: 0, reasons: new Set() },
+      'Exames': { hours: 0, reasons: new Set() },
+      'Acompanhante': { hours: 0, reasons: new Set() },
+      'Injustificada': { hours: 0, reasons: new Set() },
+      'Outros': { hours: 0, reasons: new Set() },
     };
 
     filteredAbsences.forEach((record: AbsenceRecord) => {
@@ -186,27 +188,47 @@ export const Absenteismo: React.FC = () => {
         }
         let hours = (unit === 'Dias') ? amount * workload : amount;
 
-        let matchedCategory = '❓ Outros Motivos / Diversos';
+        // 2. Motor de Classificação NLP simplificado
+        let matchedCategory = 'Outros';
         
-        if (record.documentType === 'Falta Injustificada') matchedCategory = '🚫 Falta Injustificada';
-        else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
-        else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = '🤰 Maternidade e Pré-Natal';
-        else if (/(coluna|pescoço|muscular|mialgia|ortop|tendinite|torcicolo|lombar|costas|ciático|lesão|fratura)/i.test(reason)) matchedCategory = '🦴 Ortopedia e Dores Musculares';
-        else if (/(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar)/i.test(reason)) matchedCategory = '😷 Respiratório (Gripes, Covid, Asma)';
-        else if (/(diarreia|virose|estômago|gastrite|vômito|enjoo|intoxicação|intestinal|cólic)/i.test(reason)) matchedCategory = '🤢 Gastrointestinal e Viroses';
-        else if (/(cirurgi|operat|pós-op|pos op)/i.test(reason)) matchedCategory = '🏥 Procedimentos Cirúrgicos';
-        else if (/(ansiedade|depressão|estresse|burnout|psiqui|psicoló|pânico)/i.test(reason)) matchedCategory = '🧠 Saúde Mental e Emocional';
-        else if (/(dente|dentista|odontoló|siso|canal)/i.test(reason)) matchedCategory = '🦷 Tratamento Odontológico';
-        else if (/(exame|sangue|rotina|check-up|laboratório|ultrassom|raio-x)/i.test(reason)) matchedCategory = '🩸 Exames de Rotina / Sangue';
+        if (record.documentType === 'Falta Injustificada') matchedCategory = 'Injustificada';
+        else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = 'Acompanhante';
+        else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = 'Maternidade';
+        else if (/(coluna|pescoço|muscular|mialgia|ortop|tendinite|torcicolo|lombar|costas|ciático|lesão|fratura)/i.test(reason)) matchedCategory = 'Ortopedia';
+        else if (/(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar)/i.test(reason)) matchedCategory = 'Respiratorio';
+        else if (/(diarreia|virose|estômago|gastrite|vômito|enjoo|intoxicação|intestinal|cólic)/i.test(reason)) matchedCategory = 'Gastrointestinal';
+        else if (/(cirurgi|operat|pós-op|pos op)/i.test(reason)) matchedCategory = 'Cirurgia';
+        else if (/(ansiedade|depressão|estresse|burnout|psiqui|psicoló|pânico)/i.test(reason)) matchedCategory = 'SaudeMental';
+        else if (/(dente|dentista|odontoló|siso|canal)/i.test(reason)) matchedCategory = 'Odontologico';
+        else if (/(exame|sangue|rotina|check-up|laboratório|ultrassom|raio-x)/i.test(reason)) matchedCategory = 'Exames';
+
+        if (!categories[matchedCategory]) {
+           matchedCategory = 'Outros';
+        }
 
         categories[matchedCategory].hours += hours;
         categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
     });
 
+    // 3. Mapeamento estético (Usando máscara no respiratório em vez de pulmão)
+    const displayNames: Record<string, string> = {
+      'Maternidade': '🤰 Maternidade e Pré-Natal',
+      'Ortopedia': '🦴 Ortopedia e Dores Musculares',
+      'Respiratorio': '😷 Respiratório (Gripes, Covid, Asma)', // <-- ALTERADO AQUI
+      'Gastrointestinal': '🤢 Gastrointestinal e Viroses',
+      'Cirurgia': '🏥 Procedimentos Cirúrgicos',
+      'SaudeMental': '🧠 Saúde Mental e Emocional',
+      'Odontologico': '🦷 Tratamento Odontológico',
+      'Exames': '🩸 Exames de Rotina / Sangue',
+      'Acompanhante': '👨‍👩‍👧 Acompanhamento Familiar',
+      'Injustificada': '🚫 Falta Injustificada',
+      'Outros': '❓ Outros Motivos / Diversos'
+    };
+
     return Object.entries(categories)
       .filter(([_, data]) => data.hours > 0)
-      .map(([category, data]) => ({
-        category,
+      .map(([key, data]) => ({
+        category: displayNames[key],
         hours: data.hours,
         reasons: Array.from(data.reasons)
       }))
@@ -534,7 +556,7 @@ export const Absenteismo: React.FC = () => {
                         <h2 className="text-xl font-black text-indigo-900 uppercase tracking-tighter">
                             Análise Inteligente de Saúde
                         </h2>
-                        <p className="text-sm text-indigo-700">Agrupamento semântico baseado nas <b>{filteredAbsences.length} ocorrências</b> do período atual.</p>
+                        <p className="text-sm text-indigo-700">Agrupamento semântico baseado nas <b>{filteredAbsences.length} ocorrências</b> do período selecionado.</p>
                       </div>
                   </div>
                   <button onClick={() => setShowAiPanel(false)} className="p-2 hover:bg-white rounded-full text-indigo-400 hover:text-purple-600 transition-all">
