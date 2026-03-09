@@ -49,11 +49,51 @@ export const Absenteismo: React.FC = () => {
     return Array.from(new Set(absences.map((a: AbsenceRecord) => a.reason))).filter(Boolean).sort();
   }, [absences]);
 
-  // FILTRO SEGURO DE DATAS
+  // --- EXTRATOR DE DATAS SEGURO (Impede bugs de meses misturados) ---
+  const formatToYMD = (dateVal: any) => {
+    if (!dateVal) return '';
+    let str = String(dateVal).trim();
+    if (/^\d{4,5}$/.test(str)) {
+      const jsDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
+      return jsDate.toISOString().split('T')[0];
+    }
+    str = str.split('T')[0].split(' ')[0];
+    const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
+    if (corruptMatch) {
+        return `${corruptMatch[3]}-${corruptMatch[2]}-${corruptMatch[1].substring(2)}`;
+    }
+    const parts = str.split(/[\/\-]/);
+    if (parts.length === 3) {
+        if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        else if (parts[2].length === 4) { 
+            let m = Number(parts[1]);
+            if (m > 12) return `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+            else return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        } else if (parts[2].length === 2) { 
+            let y = Number(parts[2]) > 50 ? 1900 + Number(parts[2]) : 2000 + Number(parts[2]);
+            return `${y}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+    }
+    try {
+        const d = new Date(str);
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    } catch(e) {}
+    return '';
+  };
+
+  const formatDateToBR = (dateStr: string) => {
+    const ymd = formatToYMD(dateStr);
+    if (!ymd) return '';
+    const [year, month, day] = ymd.split('-');
+    return `${day}/${month}/${year}`;
+  };
+
+  // --- FILTRO DE DATAS BLINDADO (Afeta IA e Dashboard) ---
   const filteredAbsences = useMemo(() => {
     return absences.filter((record: AbsenceRecord) => {
-      if (!record.absenceDate) return false;
-      return record.absenceDate >= startDate && record.absenceDate <= endDate;
+      const safeDate = formatToYMD(record.absenceDate);
+      if (!safeDate) return false;
+      return safeDate >= startDate && safeDate <= endDate;
     });
   }, [absences, startDate, endDate]);
 
@@ -65,13 +105,7 @@ export const Absenteismo: React.FC = () => {
     return `${h}h ${m}m`;
   };
 
-  const formatDateToBR = (dateStr: string) => {
-    if (!dateStr) return '';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
-  };
-
-  // --- LÓGICA DE CONTROLE: LIMITE 16H ACOMPANHANTE (Cálculo protegido contra fuso horário) ---
+  // --- LÓGICA DE CONTROLE: LIMITE 16H ACOMPANHANTE ---
   const currentEntryHours = useMemo(() => {
     const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
     const workload = emp?.dailyWorkload || 8.8;
@@ -81,9 +115,8 @@ export const Absenteismo: React.FC = () => {
 
   const usedCompanionHoursThisYear = useMemo(() => {
     if (!formData.employeeName || !formData.absenceDate) return 0;
-    
-    // Captura o ano direto da string (YYYY-MM-DD) para evitar bug de Timezone no Brasil
-    const targetYear = parseInt(formData.absenceDate.split('-')[0], 10);
+    const safeFormDate = formatToYMD(formData.absenceDate);
+    const targetYear = safeFormDate ? parseInt(safeFormDate.split('-')[0], 10) : new Date().getFullYear();
     
     const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
     const workload = emp?.dailyWorkload || 8.8;
@@ -92,10 +125,10 @@ export const Absenteismo: React.FC = () => {
       if (isEditing && a.id === formData.id) return false; 
       if (a.employeeName?.toLowerCase() !== formData.employeeName?.toLowerCase()) return false;
       if (a.documentType !== 'Acompanhante de Dependente') return false;
-      if (!a.absenceDate) return false;
       
-      const recordYear = parseInt(a.absenceDate.split('-')[0], 10);
-      return recordYear === targetYear;
+      const safeRecordDate = formatToYMD(a.absenceDate);
+      if (!safeRecordDate) return false;
+      return parseInt(safeRecordDate.split('-')[0], 10) === targetYear;
     }).reduce((total: number, record: AbsenceRecord) => {
       let amount = record.durationAmount || 0;
       let unit = record.durationUnit;
@@ -160,9 +193,8 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
-  // --- IA DE AGRUPAMENTO (Totalmente Blindada contra Crash de Emojis) ---
+  // --- IA DE AGRUPAMENTO (100% Segura contra Emojis e Datas Corrompidas) ---
   const aiResults = useMemo(() => {
-    // Chaves puras sem emojis para o motor de processamento (Evita undefined!)
     const categories: Record<string, { hours: number, reasons: Set<string> }> = {
       'Maternidade': { hours: 0, reasons: new Set() },
       'Ortopedia': { hours: 0, reasons: new Set() },
@@ -207,7 +239,6 @@ export const Absenteismo: React.FC = () => {
         else if (/(dente|dentista|odontoló|siso|canal)/i.test(reason)) matchedCategory = 'Odontologico';
         else if (/(exame|sangue|rotina|check-up|laboratório|ultrassom|raio-x)/i.test(reason)) matchedCategory = 'Exames';
 
-        // Trava final: Se der erro cai em "Outros"
         if (!categories[matchedCategory]) {
            matchedCategory = 'Outros';
         }
@@ -216,7 +247,6 @@ export const Absenteismo: React.FC = () => {
         categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
     });
 
-    // Mapeamento visual seguro para exibição (Injeta os Emojis no final)
     const displayNames: Record<string, string> = {
       'Maternidade': '🤰 Maternidade e Pré-Natal',
       'Ortopedia': '🦴 Ortopedia e Dores Musculares',
@@ -239,7 +269,7 @@ export const Absenteismo: React.FC = () => {
         reasons: Array.from(data.reasons)
       }))
       .sort((a, b) => b.hours - a.hours);
-  }, [filteredAbsences, employees, startDate, endDate]); // Adicionado Reatividade Rígida aqui!
+  }, [filteredAbsences, employees]);
 
   const handleTemplateClick = async () => {
     if (hasTemplate) {
@@ -408,7 +438,8 @@ export const Absenteismo: React.FC = () => {
 
     // TRAVA DE SEGURANÇA INTELIGENTE PARA DATAS DE DIGITAÇÃO
     if (formData.absenceDate) {
-      const selectedYear = parseInt(formData.absenceDate.split('-')[0], 10);
+      const safeDate = formatToYMD(formData.absenceDate);
+      const selectedYear = safeDate ? parseInt(safeDate.split('-')[0], 10) : new Date().getFullYear();
       const currentYear = new Date().getFullYear();
       if (selectedYear < currentYear - 1 || selectedYear > currentYear + 1) {
         const confirmYear = window.confirm(`⚠️ AVISO DE SEGURANÇA ⚠️\n\nVocê selecionou o ano de ${selectedYear}.\n\nIsso está fora do padrão (ano passado ou próximo ano). Deseja realmente salvar o registro com este ano?`);
@@ -789,7 +820,7 @@ export const Absenteismo: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 overflow-hidden flex flex-col h-full">
-            <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+            <div className="p-4 border-b border-slate-200 bg-slate-50/50">
               <h2 className="text-lg font-bold text-slate-800">Histórico do Período</h2>
             </div>
             <div className="overflow-x-auto flex-1 p-4">
