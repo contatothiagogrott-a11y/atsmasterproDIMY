@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord, Employee } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X } from 'lucide-react';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X, Info } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx'; 
 
@@ -15,7 +15,8 @@ export const Absenteismo: React.FC = () => {
     documentType: 'Atestado',
     reason: '',
     durationUnit: 'Dias',
-    durationAmount: 1
+    durationAmount: 1,
+    absenceDate: new Date().toISOString().split('T')[0] // Começa com o dia de hoje
   });
 
   const [startDate, setStartDate] = useState(() => {
@@ -29,8 +30,6 @@ export const Absenteismo: React.FC = () => {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // --- CONTROLE DA JANELA IA ---
   const [showAiPanel, setShowAiPanel] = useState(false);
 
   if (user?.role !== 'MASTER' && user?.role !== 'AUXILIAR_RH') {
@@ -71,6 +70,43 @@ export const Absenteismo: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
+  // --- LÓGICA DE CONTROLE: LIMITE 16H ACOMPANHANTE ---
+  const currentEntryHours = useMemo(() => {
+    const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
+    const workload = emp?.dailyWorkload || 8.8;
+    const amount = formData.durationAmount || 0;
+    return formData.durationUnit === 'Dias' ? amount * workload : amount;
+  }, [formData.employeeName, formData.durationAmount, formData.durationUnit, employees]);
+
+  const usedCompanionHoursThisYear = useMemo(() => {
+    if (!formData.employeeName || !formData.absenceDate) return 0;
+    const targetYear = new Date(formData.absenceDate).getFullYear();
+    
+    const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
+    const workload = emp?.dailyWorkload || 8.8;
+
+    return absences.filter((a: AbsenceRecord) => {
+      if (isEditing && a.id === formData.id) return false; // Ignora o registo que estamos a editar
+      if (a.employeeName?.toLowerCase() !== formData.employeeName?.toLowerCase()) return false;
+      if (a.documentType !== 'Acompanhante de Dependente') return false;
+      if (!a.absenceDate) return false;
+      return new Date(a.absenceDate).getFullYear() === targetYear;
+    }).reduce((total: number, record: AbsenceRecord) => {
+      let amount = record.durationAmount || 0;
+      let unit = record.durationUnit;
+      if (!unit && record.documentDuration) {
+        const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
+        if (match) {
+          amount = parseFloat(match[1]);
+          unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
+        } else { unit = 'Dias'; amount = 1; }
+      }
+      return unit === 'Dias' ? total + (amount * workload) : total + amount;
+    }, 0);
+  }, [formData.employeeName, formData.absenceDate, absences, employees, isEditing, formData.id]);
+
+  const totalCompanionHours = usedCompanionHoursThisYear + currentEntryHours;
+
   const stats = useMemo(() => {
     let atestados = 0; let atestadosHours = 0;
     let declaracoes = 0; let declaracoesHours = 0;
@@ -93,15 +129,10 @@ export const Absenteismo: React.FC = () => {
         if (match) {
           amount = parseFloat(match[1]);
           unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
-        } else {
-          unit = 'Dias'; amount = 1;
-        }
+        } else { unit = 'Dias'; amount = 1; }
       }
 
-      let hours = 0;
-      if (unit === 'Dias') hours = amount * workload;
-      else if (unit === 'Horas') hours = amount;
-
+      let hours = unit === 'Dias' ? amount * workload : amount;
       totalLostHours += hours;
 
       if (record.documentType === 'Atestado') { atestados++; atestadosHours += hours; }
@@ -124,7 +155,6 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
-  // --- IA DE AGRUPAMENTO (Embutida e reativa às datas do filtro) ---
   const aiResults = useMemo(() => {
     const categories: Record<string, { hours: number, reasons: Set<string> }> = {
       '🤰 Maternidade e Pré-Natal': { hours: 0, reasons: new Set() },
@@ -158,7 +188,6 @@ export const Absenteismo: React.FC = () => {
 
         let matchedCategory = '❓ Outros Motivos / Diversos';
         
-        // Motor de Classificação NLP simplificado
         if (record.documentType === 'Falta Injustificada') matchedCategory = '🚫 Falta Injustificada';
         else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
         else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = '🤰 Maternidade e Pré-Natal';
@@ -224,10 +253,12 @@ export const Absenteismo: React.FC = () => {
       alert("Nenhum modelo foi configurado no sistema. Por favor, suba o seu modelo Excel primeiro clicando em 'Subir Modelo'!");
       return;
     }
+
     if (filteredAbsences.length === 0) {
       alert("Não há registros neste período para exportar.");
       return;
     }
+
     try {
       const templateBase64 = templateSetting.value;
       const byteString = atob(templateBase64);
@@ -283,6 +314,7 @@ export const Absenteismo: React.FC = () => {
       a.download = `Absenteismo_${startStr}_a_${endStr}.xlsx`;
       a.click();
       window.URL.revokeObjectURL(url);
+
     } catch (err) {
       console.error(err);
       alert("Ocorreu um erro ao gerar a planilha. Verifique se o modelo salvo é válido.");
@@ -345,6 +377,17 @@ export const Absenteismo: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // TRAVA DE SEGURANÇA INTELIGENTE PARA DATAS
+    if (formData.absenceDate) {
+      const selectedYear = new Date(formData.absenceDate).getFullYear();
+      const currentYear = new Date().getFullYear();
+      if (selectedYear < currentYear - 1 || selectedYear > currentYear + 1) {
+        const confirmYear = window.confirm(`⚠️ AVISO DE SEGURANÇA ⚠️\n\nVocê selecionou o ano de ${selectedYear}.\n\nIsso está fora do padrão (ano passado ou próximo ano). Deseja realmente salvar com este ano?`);
+        if (!confirmYear) return;
+      }
+    }
+    
     const unit = formData.durationUnit || 'Dias';
     const amount = formData.durationAmount || 0;
     
@@ -371,7 +414,7 @@ export const Absenteismo: React.FC = () => {
     if (isEditing && formData.id) { await updateAbsence(newAbsence); } 
     else { await addAbsence(newAbsence); }
     
-    setFormData({ documentType: 'Atestado', reason: '', durationUnit: 'Dias', durationAmount: 1 });
+    setFormData({ documentType: 'Atestado', reason: '', durationUnit: 'Dias', durationAmount: 1, absenceDate: new Date().toISOString().split('T')[0] });
     setIsEditing(false);
   };
 
@@ -422,7 +465,6 @@ export const Absenteismo: React.FC = () => {
           </div>
         </div>
 
-        {/* BOTÃO DA IA AGORA CONTROLA A JANELA INLINE */}
         <button 
           onClick={() => setShowAiPanel(!showAiPanel)}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold transition-all active:scale-95 ${
@@ -480,6 +522,52 @@ export const Absenteismo: React.FC = () => {
             </div>
           </div>
 
+          {/* PAINEL EXPANSÍVEL DA IA */}
+          {showAiPanel && (
+            <div className="bg-white rounded-3xl shadow-sm border border-purple-200 overflow-hidden animate-in fade-in slide-in-from-top-4">
+              <div className="p-6 border-b border-purple-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-purple-50">
+                  <div className="flex items-center gap-4">
+                      <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md">
+                          <Sparkles size={24} />
+                      </div>
+                      <div>
+                        <h2 className="text-xl font-black text-indigo-900 uppercase tracking-tighter">
+                            Análise Inteligente de Saúde
+                        </h2>
+                        <p className="text-sm text-indigo-700">Agrupamento semântico baseado nas <b>{filteredAbsences.length} ocorrências</b> do período atual.</p>
+                      </div>
+                  </div>
+                  <button onClick={() => setShowAiPanel(false)} className="p-2 hover:bg-white rounded-full text-indigo-400 hover:text-purple-600 transition-all">
+                      <X size={24} />
+                  </button>
+              </div>
+              <div className="p-6 bg-slate-50/50">
+                  {aiResults.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 font-medium">
+                      Não há dados registrados neste período para gerar a análise.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                      {aiResults.map((result, i) => (
+                        <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors flex flex-col">
+                          <div className="flex-1">
+                            <h4 className="font-bold text-slate-800 mb-3">{result.category}</h4>
+                            <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                              <b className="text-slate-600">Termos no período:</b> {result.reasons.join(', ')}.
+                            </p>
+                          </div>
+                          <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-auto">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tempo Perdido</span>
+                            <span className="font-black text-xl text-purple-700">{formatHours(result.hours)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex items-center justify-between">
               <div>
@@ -517,52 +605,6 @@ export const Absenteismo: React.FC = () => {
               <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full"><Users size={24} /></div>
             </div>
           </div>
-
-          {/* --- PAINEL EXPANSÍVEL DA IA --- */}
-          {showAiPanel && (
-            <div className="bg-white rounded-3xl shadow-sm border border-purple-200 overflow-hidden animate-in fade-in slide-in-from-top-4">
-              <div className="p-6 border-b border-purple-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-purple-50">
-                  <div className="flex items-center gap-4">
-                      <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-md">
-                          <Sparkles size={24} />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-black text-indigo-900 uppercase tracking-tighter">
-                            Análise Inteligente de Saúde
-                        </h2>
-                        <p className="text-sm text-indigo-700">As informações abaixo são baseadas <b>exclusivamente no período selecionado no filtro</b> acima.</p>
-                      </div>
-                  </div>
-                  <button onClick={() => setShowAiPanel(false)} className="p-2 hover:bg-white rounded-full text-indigo-400 hover:text-purple-600 transition-all">
-                      <X size={24} />
-                  </button>
-              </div>
-              <div className="p-6 bg-slate-50/50">
-                  {aiResults.length === 0 ? (
-                    <div className="text-center py-12 text-slate-400 font-medium">
-                      Não há dados registrados neste período para gerar a análise.
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                      {aiResults.map((result, i) => (
-                        <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors flex flex-col">
-                          <div className="flex-1">
-                            <h4 className="font-bold text-slate-800 mb-3">{result.category}</h4>
-                            <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                              <b className="text-slate-600">Termos encontrados no período:</b> {result.reasons.join(', ')}.
-                            </p>
-                          </div>
-                          <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-auto">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tempo Perdido</span>
-                            <span className="font-black text-xl text-purple-700">{formatHours(result.hours)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-              </div>
-            </div>
-          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -681,12 +723,36 @@ export const Absenteismo: React.FC = () => {
                 </div>
               )}
 
+              {/* AVISO DO LIMITE DE 16H ANUAIS P/ ACOMPANHANTE */}
+              {formData.documentType === 'Acompanhante de Dependente' && formData.employeeName && formData.absenceDate && (
+                <div className={`p-4 rounded-xl border mt-4 ${totalCompanionHours > 16 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
+                  <div className="flex items-start gap-3">
+                    <Info className="shrink-0 mt-0.5" size={20} />
+                    <div>
+                      <p className="text-sm font-bold">Limite Legal (16h/Ano)</p>
+                      <p className="text-xs mt-1">Este colaborador já utilizou <b>{formatHours(usedCompanionHoursThisYear)}</b> neste ano.</p>
+                      
+                      {totalCompanionHours > 16 ? (
+                        <p className="text-xs mt-1 font-medium text-amber-700">
+                          Com este registro ({formatHours(currentEntryHours)}), o total passará para <b>{formatHours(totalCompanionHours)}</b>.<br/><br/>
+                          ⚠️ As <b>{formatHours(totalCompanionHours - 16)} excedentes</b> devem ser debitadas do Banco de Horas.
+                        </p>
+                      ) : (
+                        <p className="text-xs mt-1 text-blue-700">
+                          Com este registro ({formatHours(currentEntryHours)}), o total será <b>{formatHours(totalCompanionHours)}</b>. <br/>Ainda restam {formatHours(16 - totalCompanionHours)}.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-2 pt-2">
                 <button type="submit" className="flex-1 bg-blue-600 text-white font-semibold p-2.5 rounded-lg hover:bg-blue-700 transition-colors">
                   {isEditing ? 'Salvar Alterações' : 'Registrar Ausência'}
                 </button>
                 {isEditing && (
-                  <button type="button" onClick={() => { setIsEditing(false); setFormData({ documentType: 'Atestado', reason: '', durationUnit: 'Dias', durationAmount: 1 }); }} className="bg-slate-200 text-slate-700 font-semibold p-2.5 rounded-lg hover:bg-slate-300 transition-colors">
+                  <button type="button" onClick={() => { setIsEditing(false); setFormData({ documentType: 'Atestado', reason: '', durationUnit: 'Dias', durationAmount: 1, absenceDate: new Date().toISOString().split('T')[0] }); }} className="bg-slate-200 text-slate-700 font-semibold p-2.5 rounded-lg hover:bg-slate-300 transition-colors">
                     Cancelar
                   </button>
                 )}
