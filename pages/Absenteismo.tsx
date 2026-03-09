@@ -49,7 +49,7 @@ export const Absenteismo: React.FC = () => {
     return Array.from(new Set(absences.map((a: AbsenceRecord) => a.reason))).filter(Boolean).sort();
   }, [absences]);
 
-  // --- EXTRATOR DE DATAS SEGURO (Impede bugs de meses misturados) ---
+  // --- EXTRATOR DE DATAS SEGURO (Ignora fuso horário e foca no formato YYYY-MM-DD) ---
   const formatToYMD = (dateVal: any) => {
     if (!dateVal) return '';
     let str = String(dateVal).trim();
@@ -57,11 +57,10 @@ export const Absenteismo: React.FC = () => {
       const jsDate = new Date(Math.round((Number(str) - 25569) * 86400 * 1000));
       return jsDate.toISOString().split('T')[0];
     }
-    str = str.split('T')[0].split(' ')[0];
+    str = str.split('T')[0].split(' ')[0]; // Corta qualquer hora extra que possa causar bug de fuso
     const corruptMatch = str.match(/^(\d{4})[\/\-](\d{2})[\/\-](\d{4})$/);
-    if (corruptMatch) {
-        return `${corruptMatch[3]}-${corruptMatch[2]}-${corruptMatch[1].substring(2)}`;
-    }
+    if (corruptMatch) return `${corruptMatch[3]}-${corruptMatch[2]}-${corruptMatch[1].substring(2)}`;
+    
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
         if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
@@ -74,21 +73,17 @@ export const Absenteismo: React.FC = () => {
             return `${y}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
         }
     }
-    try {
-        const d = new Date(str);
-        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-    } catch(e) {}
-    return '';
+    return str; // Se for YYYY-MM-DD padrão já passa limpo
   };
 
   const formatDateToBR = (dateStr: string) => {
     const ymd = formatToYMD(dateStr);
-    if (!ymd) return '';
+    if (!ymd || ymd.length < 10) return dateStr;
     const [year, month, day] = ymd.split('-');
     return `${day}/${month}/${year}`;
   };
 
-  // --- FILTRO DE DATAS BLINDADO (Afeta IA e Dashboard) ---
+  // --- FILTRO DE DATAS BLINDADO ---
   const filteredAbsences = useMemo(() => {
     return absences.filter((record: AbsenceRecord) => {
       const safeDate = formatToYMD(record.absenceDate);
@@ -193,21 +188,33 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
-  // --- IA DE AGRUPAMENTO (100% Segura contra Emojis e Datas Corrompidas) ---
+  // --- IA DE AGRUPAMENTO (DICIONÁRIO MÉDICO AVANÇADO C/ CID) ---
   const aiResults = useMemo(() => {
-    const categories: Record<string, { hours: number, reasons: Set<string> }> = {
-      'Maternidade': { hours: 0, reasons: new Set() },
-      'Ortopedia': { hours: 0, reasons: new Set() },
-      'Respiratorio': { hours: 0, reasons: new Set() },
-      'Gastrointestinal': { hours: 0, reasons: new Set() },
-      'Cirurgia': { hours: 0, reasons: new Set() },
-      'SaudeMental': { hours: 0, reasons: new Set() },
-      'Odontologico': { hours: 0, reasons: new Set() },
-      'Exames': { hours: 0, reasons: new Set() },
-      'Acompanhante': { hours: 0, reasons: new Set() },
-      'Injustificada': { hours: 0, reasons: new Set() },
-      'Outros': { hours: 0, reasons: new Set() },
-    };
+    // Regras de Classificação com Regex poderosa (Identifica CIDs e sinónimos)
+    const categoryRules = [
+      { name: '👨‍👩‍👧 Acompanhamento Familiar', regex: /(filh[oa]|mãe|pai|espos[oa]|marido|dependente|acompanhante|z76|z763)/i },
+      { name: '🤰 Maternidade e Saúde da Mulher', regex: /(gravidez|gesta|pr[eé][\s\-]natal|maternidade|parto|mama|menopausa|aborto|z36|z34)/i },
+      { name: '🦴 Ortopedia e Traumatologia', regex: /(coluna|pescoço|cervical|muscular|mialgia|ortop|tendinite|torcicolo|lombar|costas|ciátic[oa]|lesão|lesao|fratura|osso|articula|joelho|tornozelo|pé|dedo|m25|m23|s60|s93|entorse|luxação|radiculopatia|m54)/i },
+      { name: '🫁 Respiratório e Otorrino', regex: /(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar|j03|amigdalite|otorrino)/i },
+      { name: '🤢 Gastrointestinal e Viroses', regex: /(diarreia|virose|estômago|estomago|gastrit|gástric|v[oô]mito|enjoo|intoxicação|intestinal|cólic[oa]|a09|r11|n[aá]usea|vesícula|visicula|apendicite)/i },
+      { name: '👁️ Oftalmologia', regex: /(olho|visão|visao|vista|catarata|conjuntivite|h10|h26|oftalm|optometria)/i },
+      { name: '🏥 Procedimentos e Cirurgias', regex: /(cirurgi|operat|pós[\s\-]op|pos[\s\-]op|cateterismo|internação|repouso)/i }, // Entra aqui apenas se não foi Oftalmo antes
+      { name: '🧠 Saúde Mental e Neurológica', regex: /(ansiedade|depressão|depressivo|estresse|burnout|psiqui|psicol|pânico|tontura|instabilidade|r42|r51|cefal[eé]ia|cabeça|neuro|f32)/i },
+      { name: '🦷 Odontologia', regex: /(dente|dentista|odontol|siso|canal)/i },
+      { name: '❤️ Cardiovascular', regex: /(press[aã]o|hipertens[aã]o|coraç[aã]o|infarto|i10|sopro)/i },
+      { name: '💧 Urologia e Nefrologia', regex: /(rim|rins|urin[aá]ri|n20|calculose)/i },
+      { name: '💊 Endócrino e Nutricional', regex: /(diabetes|e14|tireoide|hipotireoidismo|e03|obesidade|e66|vitamina|e53)/i },
+      { name: '🩸 Exames e Avaliações', regex: /(exame|sangue|rotina|check[\s\-]up|laborat|ultrasson|raio[\s\-]x|ressonância|ressonancia|coleta|biológico|z00|consulta de retorno|consulta para exame)/i },
+      { name: '🏢 Assuntos Pessoais (Admin)', regex: /(cnh|boletim|ocorrência|faculdade|matrícula|particular)/i },
+      { name: '⚠️ Dores Gerais e Mal Estar', regex: /(mal estar|r52|dor aguda|dor na)/i }
+    ];
+
+    const categories: Record<string, { hours: number, reasons: Set<string> }> = {};
+    
+    // Inicializa o objeto com todas as chaves
+    categoryRules.forEach(rule => { categories[rule.name] = { hours: 0, reasons: new Set() }; });
+    categories['🚫 Falta Injustificada'] = { hours: 0, reasons: new Set() };
+    categories['❓ Outros Motivos / Diversos'] = { hours: 0, reasons: new Set() };
 
     filteredAbsences.forEach((record: AbsenceRecord) => {
         const reason = (record.reason || '').toLowerCase();
@@ -225,52 +232,37 @@ export const Absenteismo: React.FC = () => {
         }
         let hours = (unit === 'Dias') ? amount * workload : amount;
 
-        let matchedCategory = 'Outros';
+        let matchedCategory = '❓ Outros Motivos / Diversos';
         
-        // Motor de Classificação NLP
-        if (record.documentType === 'Falta Injustificada') matchedCategory = 'Injustificada';
-        else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = 'Acompanhante';
-        else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = 'Maternidade';
-        else if (/(coluna|pescoço|muscular|mialgia|ortop|tendinite|torcicolo|lombar|costas|ciático|lesão|fratura)/i.test(reason)) matchedCategory = 'Ortopedia';
-        else if (/(gripe|resfriad|covid|asma|bronquite|sinusite|rinite|tosse|garganta|pneumonia|falta de ar)/i.test(reason)) matchedCategory = 'Respiratorio';
-        else if (/(diarreia|virose|estômago|gastrite|vômito|enjoo|intoxicação|intestinal|cólic)/i.test(reason)) matchedCategory = 'Gastrointestinal';
-        else if (/(cirurgi|operat|pós-op|pos op)/i.test(reason)) matchedCategory = 'Cirurgia';
-        else if (/(ansiedade|depressão|estresse|burnout|psiqui|psicoló|pânico)/i.test(reason)) matchedCategory = 'SaudeMental';
-        else if (/(dente|dentista|odontoló|siso|canal)/i.test(reason)) matchedCategory = 'Odontologico';
-        else if (/(exame|sangue|rotina|check-up|laboratório|ultrassom|raio-x)/i.test(reason)) matchedCategory = 'Exames';
-
-        if (!categories[matchedCategory]) {
-           matchedCategory = 'Outros';
+        if (record.documentType === 'Falta Injustificada') {
+           matchedCategory = '🚫 Falta Injustificada';
+        } else if (record.documentType === 'Acompanhante de Dependente') {
+           matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
+        } else {
+           // Procura no Dicionário pela primeira regra que der "Match"
+           for (const rule of categoryRules) {
+             if (rule.regex.test(reason)) {
+               matchedCategory = rule.name;
+               break;
+             }
+           }
         }
 
         categories[matchedCategory].hours += hours;
         categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
     });
 
-    const displayNames: Record<string, string> = {
-      'Maternidade': '🤰 Maternidade e Pré-Natal',
-      'Ortopedia': '🦴 Ortopedia e Dores Musculares',
-      'Respiratorio': '😷 Respiratório (Gripes, Covid, Asma)',
-      'Gastrointestinal': '🤢 Gastrointestinal e Viroses',
-      'Cirurgia': '🏥 Procedimentos Cirúrgicos',
-      'SaudeMental': '🧠 Saúde Mental e Emocional',
-      'Odontologico': '🦷 Tratamento Odontológico',
-      'Exames': '🩸 Exames de Rotina / Sangue',
-      'Acompanhante': '👨‍👩‍👧 Acompanhamento Familiar',
-      'Injustificada': '🚫 Falta Injustificada',
-      'Outros': '❓ Outros Motivos / Diversos'
-    };
-
     return Object.entries(categories)
       .filter(([_, data]) => data.hours > 0)
-      .map(([key, data]) => ({
-        category: displayNames[key],
+      .map(([category, data]) => ({
+        category,
         hours: data.hours,
         reasons: Array.from(data.reasons)
       }))
-      .sort((a, b) => b.hours - a.hours);
+      .sort((a, b) => b.hours - a.hours); // Ordena das categorias com mais horas para as com menos
   }, [filteredAbsences, employees]);
 
+  // --- LÓGICA DO MODELO EXCEL ---
   const handleTemplateClick = async () => {
     if (hasTemplate) {
       if (window.confirm("Você já possui um modelo Excel salvo na rede. Deseja substituí-lo para todos?\n\n(Clique em Cancelar caso queira apenas excluir o atual)")) {
@@ -498,7 +490,16 @@ export const Absenteismo: React.FC = () => {
           }
       }
     }
-    setFormData({ ...record, durationAmount: amount, durationUnit: unit || 'Dias' });
+    
+    // Assegura que a data ao editar venha no formato correto para o input type="date"
+    const editSafeDate = formatToYMD(record.absenceDate) || record.absenceDate;
+    
+    setFormData({ 
+      ...record, 
+      absenceDate: editSafeDate,
+      durationAmount: amount, 
+      durationUnit: unit || 'Dias' 
+    });
     setIsEditing(true);
     setActiveTab('cadastro');
   };
