@@ -49,6 +49,7 @@ export const Absenteismo: React.FC = () => {
     return Array.from(new Set(absences.map((a: AbsenceRecord) => a.reason))).filter(Boolean).sort();
   }, [absences]);
 
+  // FILTRO SEGURO DE DATAS
   const filteredAbsences = useMemo(() => {
     return absences.filter((record: AbsenceRecord) => {
       if (!record.absenceDate) return false;
@@ -70,7 +71,7 @@ export const Absenteismo: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
-  // --- LÓGICA DE CONTROLE: LIMITE 16H ACOMPANHANTE ---
+  // --- LÓGICA DE CONTROLE: LIMITE 16H ACOMPANHANTE (Cálculo protegido contra fuso horário) ---
   const currentEntryHours = useMemo(() => {
     const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
     const workload = emp?.dailyWorkload || 8.8;
@@ -80,7 +81,9 @@ export const Absenteismo: React.FC = () => {
 
   const usedCompanionHoursThisYear = useMemo(() => {
     if (!formData.employeeName || !formData.absenceDate) return 0;
-    const targetYear = new Date(formData.absenceDate).getFullYear();
+    
+    // Captura o ano direto da string (YYYY-MM-DD) para evitar bug de Timezone no Brasil
+    const targetYear = parseInt(formData.absenceDate.split('-')[0], 10);
     
     const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
     const workload = emp?.dailyWorkload || 8.8;
@@ -90,7 +93,9 @@ export const Absenteismo: React.FC = () => {
       if (a.employeeName?.toLowerCase() !== formData.employeeName?.toLowerCase()) return false;
       if (a.documentType !== 'Acompanhante de Dependente') return false;
       if (!a.absenceDate) return false;
-      return new Date(a.absenceDate).getFullYear() === targetYear;
+      
+      const recordYear = parseInt(a.absenceDate.split('-')[0], 10);
+      return recordYear === targetYear;
     }).reduce((total: number, record: AbsenceRecord) => {
       let amount = record.durationAmount || 0;
       let unit = record.durationUnit;
@@ -155,9 +160,9 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
-  // --- IA DE AGRUPAMENTO COM BLINDAGEM ANTI-CRASH ---
+  // --- IA DE AGRUPAMENTO (Totalmente Blindada contra Crash de Emojis) ---
   const aiResults = useMemo(() => {
-    // 1. Chaves simples (sem emojis) para evitar erro de encoding no JavaScript
+    // Chaves puras sem emojis para o motor de processamento (Evita undefined!)
     const categories: Record<string, { hours: number, reasons: Set<string> }> = {
       'Maternidade': { hours: 0, reasons: new Set() },
       'Ortopedia': { hours: 0, reasons: new Set() },
@@ -188,9 +193,9 @@ export const Absenteismo: React.FC = () => {
         }
         let hours = (unit === 'Dias') ? amount * workload : amount;
 
-        // 2. Motor de Classificação NLP simplificado
         let matchedCategory = 'Outros';
         
+        // Motor de Classificação NLP
         if (record.documentType === 'Falta Injustificada') matchedCategory = 'Injustificada';
         else if (record.documentType === 'Acompanhante de Dependente' || /(filho|filha|mãe|pai|esposa|marido|dependente|acompanhante)/i.test(reason)) matchedCategory = 'Acompanhante';
         else if (/(gravidez|gesta|pré-natal|pre natal|maternidade|parto)/i.test(reason)) matchedCategory = 'Maternidade';
@@ -202,6 +207,7 @@ export const Absenteismo: React.FC = () => {
         else if (/(dente|dentista|odontoló|siso|canal)/i.test(reason)) matchedCategory = 'Odontologico';
         else if (/(exame|sangue|rotina|check-up|laboratório|ultrassom|raio-x)/i.test(reason)) matchedCategory = 'Exames';
 
+        // Trava final: Se der erro cai em "Outros"
         if (!categories[matchedCategory]) {
            matchedCategory = 'Outros';
         }
@@ -210,11 +216,11 @@ export const Absenteismo: React.FC = () => {
         categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
     });
 
-    // 3. Mapeamento estético (Usando máscara no respiratório em vez de pulmão)
+    // Mapeamento visual seguro para exibição (Injeta os Emojis no final)
     const displayNames: Record<string, string> = {
       'Maternidade': '🤰 Maternidade e Pré-Natal',
       'Ortopedia': '🦴 Ortopedia e Dores Musculares',
-      'Respiratorio': '😷 Respiratório (Gripes, Covid, Asma)', // <-- ALTERADO AQUI
+      'Respiratorio': '😷 Respiratório (Gripes, Covid, Asma)',
       'Gastrointestinal': '🤢 Gastrointestinal e Viroses',
       'Cirurgia': '🏥 Procedimentos Cirúrgicos',
       'SaudeMental': '🧠 Saúde Mental e Emocional',
@@ -233,7 +239,7 @@ export const Absenteismo: React.FC = () => {
         reasons: Array.from(data.reasons)
       }))
       .sort((a, b) => b.hours - a.hours);
-  }, [filteredAbsences, employees]);
+  }, [filteredAbsences, employees, startDate, endDate]); // Adicionado Reatividade Rígida aqui!
 
   const handleTemplateClick = async () => {
     if (hasTemplate) {
@@ -400,12 +406,12 @@ export const Absenteismo: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // TRAVA DE SEGURANÇA INTELIGENTE PARA DATAS
+    // TRAVA DE SEGURANÇA INTELIGENTE PARA DATAS DE DIGITAÇÃO
     if (formData.absenceDate) {
-      const selectedYear = new Date(formData.absenceDate).getFullYear();
+      const selectedYear = parseInt(formData.absenceDate.split('-')[0], 10);
       const currentYear = new Date().getFullYear();
       if (selectedYear < currentYear - 1 || selectedYear > currentYear + 1) {
-        const confirmYear = window.confirm(`⚠️ AVISO DE SEGURANÇA ⚠️\n\nVocê selecionou o ano de ${selectedYear}.\n\nIsso está fora do padrão (ano passado ou próximo ano). Deseja realmente salvar com este ano?`);
+        const confirmYear = window.confirm(`⚠️ AVISO DE SEGURANÇA ⚠️\n\nVocê selecionou o ano de ${selectedYear}.\n\nIsso está fora do padrão (ano passado ou próximo ano). Deseja realmente salvar o registro com este ano?`);
         if (!confirmYear) return;
       }
     }
@@ -496,7 +502,7 @@ export const Absenteismo: React.FC = () => {
           }`}
         >
           <Sparkles size={18} />
-          {showAiPanel ? 'Fechar Análise IA' : 'Análise Inteligente (IA)'}
+          {showAiPanel ? 'Ocultar Análise IA' : 'Análise Inteligente (IA)'}
         </button>
       </div>
 
@@ -783,14 +789,14 @@ export const Absenteismo: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 lg:col-span-2 overflow-hidden flex flex-col h-full">
-            <div className="p-4 border-b border-slate-200 bg-slate-50/50">
-              <h2 className="text-lg font-bold text-slate-800">Histórico Completo</h2>
+            <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex justify-between items-center">
+              <h2 className="text-lg font-bold text-slate-800">Histórico do Período</h2>
             </div>
             <div className="overflow-x-auto flex-1 p-4">
-              {absences.length === 0 ? (
+              {filteredAbsences.length === 0 ? (
                 <div className="flex flex-col items-center justify-center text-slate-400 py-10">
                   <CalendarX size={48} className="mb-3 opacity-20" />
-                  <p>Nenhum registro encontrado.</p>
+                  <p>Nenhum registro encontrado no período selecionado.</p>
                 </div>
               ) : (
                 <table className="w-full text-left border-collapse">
@@ -803,7 +809,7 @@ export const Absenteismo: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {absences.slice().reverse().map((record: AbsenceRecord) => (
+                    {filteredAbsences.slice().reverse().map((record: AbsenceRecord) => (
                       <tr key={record.id} className="hover:bg-slate-50/50 transition-colors text-sm text-slate-700">
                         <td className="py-3">
                           <p className="font-bold text-slate-800">{record.employeeName}</p>
