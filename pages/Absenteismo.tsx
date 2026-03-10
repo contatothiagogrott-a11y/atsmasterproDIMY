@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord, Employee } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X, Info, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X, Info, ChevronLeft, ChevronRight, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 
@@ -30,9 +30,10 @@ export const Absenteismo: React.FC = () => {
   });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showAiPanel, setShowAiPanel] = useState(false);
   
-  // --- ESTADOS DA AUDITORIA DE ACOMPANHANTES ---
+  // --- ESTADOS DOS MODAIS E IA ---
+  const [showAiPanel, setShowAiPanel] = useState(false);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null); // Controla o clique no card da IA
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [auditYear, setAuditYear] = useState(new Date().getFullYear());
 
@@ -200,7 +201,6 @@ export const Absenteismo: React.FC = () => {
 
   const totalCompanionHours = usedCompanionHoursThisYear + currentEntryHours;
 
-  // --- ESTATÍSTICAS DO DASHBOARD ---
   const stats = useMemo(() => {
     let atestados = 0; let atestadosHours = 0;
     let declaracoes = 0; let declaracoesHours = 0;
@@ -249,7 +249,7 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
-  // --- IA DE AGRUPAMENTO (DICIONÁRIO MÉDICO) ---
+  // --- IA DE AGRUPAMENTO (COM LISTA DE REGISTROS) ---
   const aiResults = useMemo(() => {
     const categoryRules = [
       { name: '👨‍👩‍👧 Acompanhamento Familiar', regex: /(filh[oa]|mãe|pai|espos[oa]|marido|dependente|acompanhante|z76|z763)/i },
@@ -269,10 +269,11 @@ export const Absenteismo: React.FC = () => {
       { name: '⚠️ Dores Gerais e Mal Estar', regex: /(mal estar|r52|dor aguda|dor na)/i }
     ];
 
-    const categories: Record<string, { hours: number, reasons: Set<string> }> = {};
-    categoryRules.forEach(rule => { categories[rule.name] = { hours: 0, reasons: new Set() }; });
-    categories['🚫 Falta Injustificada'] = { hours: 0, reasons: new Set() };
-    categories['❓ Outros Motivos / Diversos'] = { hours: 0, reasons: new Set() };
+    const categories: Record<string, { hours: number, reasons: Set<string>, records: any[] }> = {};
+    
+    // Inicia puramente sem Emojis
+    const pureKeys = ['Acompanhante', 'Maternidade', 'Ortopedia', 'Respiratorio', 'Gastrointestinal', 'Oftalmologia', 'Cirurgia', 'SaudeMental', 'Odontologia', 'Cardiovascular', 'Urologia', 'Endocrino', 'Exames', 'AssuntosPessoais', 'DoresGerais', 'Injustificada', 'Outros'];
+    pureKeys.forEach(k => { categories[k] = { hours: 0, reasons: new Set(), records: [] }; });
 
     filteredAbsences.forEach((record: AbsenceRecord) => {
         const reason = (record.reason || '').toLowerCase();
@@ -290,31 +291,80 @@ export const Absenteismo: React.FC = () => {
         }
         let hours = (unit === 'Dias') ? amount * workload : amount;
 
-        let matchedCategory = '❓ Outros Motivos / Diversos';
+        let matchedCategory = 'Outros';
         
         if (record.documentType === 'Falta Injustificada') {
-           matchedCategory = '🚫 Falta Injustificada';
+           matchedCategory = 'Injustificada';
         } else if (record.documentType === 'Acompanhante de Dependente') {
-           matchedCategory = '👨‍👩‍👧 Acompanhamento Familiar';
+           matchedCategory = 'Acompanhante';
         } else {
            for (const rule of categoryRules) {
              if (rule.regex.test(reason)) {
-               matchedCategory = rule.name;
+               // Encontra a chave pura baseada no nome
+               if (rule.name.includes('Acompanhamento')) matchedCategory = 'Acompanhante';
+               else if (rule.name.includes('Maternidade')) matchedCategory = 'Maternidade';
+               else if (rule.name.includes('Ortopedia')) matchedCategory = 'Ortopedia';
+               else if (rule.name.includes('Respiratório')) matchedCategory = 'Respiratorio';
+               else if (rule.name.includes('Gastrointestinal')) matchedCategory = 'Gastrointestinal';
+               else if (rule.name.includes('Oftalmologia')) matchedCategory = 'Oftalmologia';
+               else if (rule.name.includes('Cirurgias')) matchedCategory = 'Cirurgia';
+               else if (rule.name.includes('Mental')) matchedCategory = 'SaudeMental';
+               else if (rule.name.includes('Odontologia')) matchedCategory = 'Odontologia';
+               else if (rule.name.includes('Cardiovascular')) matchedCategory = 'Cardiovascular';
+               else if (rule.name.includes('Urologia')) matchedCategory = 'Urologia';
+               else if (rule.name.includes('Endócrino')) matchedCategory = 'Endocrino';
+               else if (rule.name.includes('Exames')) matchedCategory = 'Exames';
+               else if (rule.name.includes('Assuntos')) matchedCategory = 'AssuntosPessoais';
+               else if (rule.name.includes('Dores')) matchedCategory = 'DoresGerais';
                break;
              }
            }
         }
 
+        if (!categories[matchedCategory]) {
+           matchedCategory = 'Outros';
+        }
+
         categories[matchedCategory].hours += hours;
         categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
+        
+        // Guarda a informação da pessoa para expandir no clique!
+        categories[matchedCategory].records.push({
+           name: record.employeeName,
+           reason: record.reason,
+           duration: record.documentDuration,
+           date: formatToYMD(record.absenceDate)
+        });
     });
+
+    const displayNames: Record<string, string> = {
+      'Maternidade': '🤰 Maternidade e Pré-Natal',
+      'Ortopedia': '🦴 Ortopedia e Dores Musculares',
+      'Respiratorio': '😷 Respiratório e Otorrino',
+      'Gastrointestinal': '🤢 Gastrointestinal e Viroses',
+      'Oftalmologia': '👁️ Oftalmologia',
+      'Cirurgia': '🏥 Procedimentos e Cirurgias',
+      'SaudeMental': '🧠 Saúde Mental e Emocional',
+      'Odontologia': '🦷 Tratamento Odontológico',
+      'Cardiovascular': '❤️ Cardiovascular',
+      'Urologia': '💧 Urologia e Nefrologia',
+      'Endocrino': '💊 Endócrino e Nutricional',
+      'Exames': '🩸 Exames de Rotina / Sangue',
+      'AssuntosPessoais': '🏢 Assuntos Pessoais (Admin)',
+      'DoresGerais': '⚠️ Dores Gerais e Mal Estar',
+      'Acompanhante': '👨‍👩‍👧 Acompanhamento Familiar',
+      'Injustificada': '🚫 Falta Injustificada',
+      'Outros': '❓ Outros Motivos / Diversos'
+    };
 
     return Object.entries(categories)
       .filter(([_, data]) => data.hours > 0)
-      .map(([category, data]) => ({
-        category,
+      .map(([key, data]) => ({
+        category: displayNames[key],
         hours: data.hours,
-        reasons: Array.from(data.reasons)
+        reasons: Array.from(data.reasons),
+        // Ordena os registros do mais recente para o mais antigo
+        records: data.records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       }))
       .sort((a, b) => b.hours - a.hours);
   }, [filteredAbsences, employees]);
@@ -585,7 +635,6 @@ export const Absenteismo: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {/* BOTÃO DA AUDITORIA DE ACOMPANHANTES */}
           <button 
             onClick={() => setShowAuditModal(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold transition-all bg-amber-100 hover:bg-amber-200 text-amber-800 shadow-sm"
@@ -663,7 +712,7 @@ export const Absenteismo: React.FC = () => {
                         <h2 className="text-xl font-black text-indigo-900 uppercase tracking-tighter">
                             Análise Inteligente de Saúde
                         </h2>
-                        <p className="text-sm text-indigo-700">Agrupamento semântico baseado nas <b>{filteredAbsences.length} ocorrências</b> do período selecionado.</p>
+                        <p className="text-sm text-indigo-700">Clique nas categorias abaixo para expandir e ver quem causou as ocorrências no período selecionado.</p>
                       </div>
                   </div>
                   <button onClick={() => setShowAiPanel(false)} className="p-2 hover:bg-white rounded-full text-indigo-400 hover:text-purple-600 transition-all">
@@ -676,19 +725,52 @@ export const Absenteismo: React.FC = () => {
                       Não há dados registrados neste período para gerar a análise.
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
                       {aiResults.map((result, i) => (
-                        <div key={i} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:border-purple-300 transition-colors flex flex-col">
-                          <div className="flex-1">
-                            <h4 className="font-bold text-slate-800 mb-3">{result.category}</h4>
-                            <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                              <b className="text-slate-600">Termos no período:</b> {result.reasons.join(', ')}.
-                            </p>
+                        <div key={i} className={`bg-white rounded-2xl border transition-colors flex flex-col overflow-hidden shadow-sm ${expandedCategory === result.category ? 'border-purple-400 ring-4 ring-purple-50' : 'border-slate-200 hover:border-purple-300'}`}>
+                          
+                          {/* CABEÇALHO DO CARD CLICÁVEL */}
+                          <div 
+                            className="p-5 cursor-pointer flex flex-col h-full select-none"
+                            onClick={() => setExpandedCategory(expandedCategory === result.category ? null : result.category)}
+                          >
+                            <div className="flex-1">
+                              <div className="flex justify-between items-start gap-2 mb-3">
+                                <h4 className="font-bold text-slate-800 leading-tight">{result.category}</h4>
+                                <div className={`p-1 rounded-full transition-colors ${expandedCategory === result.category ? 'bg-purple-100 text-purple-700' : 'bg-slate-50 text-slate-400'}`}>
+                                   {expandedCategory === result.category ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                </div>
+                              </div>
+                              <p className="text-xs text-slate-500 leading-relaxed mb-4 line-clamp-2" title={result.reasons.join(', ')}>
+                                <b className="text-slate-600">Termos lidos:</b> {result.reasons.join(', ')}.
+                              </p>
+                            </div>
+                            <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-auto">
+                              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tempo Perdido</span>
+                              <span className="font-black text-xl text-purple-700">{formatHours(result.hours)}</span>
+                            </div>
                           </div>
-                          <div className="flex items-center justify-between border-t border-slate-100 pt-3 mt-auto">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tempo Perdido</span>
-                            <span className="font-black text-xl text-purple-700">{formatHours(result.hours)}</span>
-                          </div>
+                          
+                          {/* LISTA EXPANDIDA DOS COLABORADORES DA CATEGORIA */}
+                          {expandedCategory === result.category && (
+                            <div className="bg-slate-50 border-t border-purple-100 p-4 animate-in slide-in-from-top-2">
+                               <ul className="space-y-3 max-h-[250px] overflow-y-auto custom-scrollbar pr-2">
+                                 {result.records.map((rec, idx) => (
+                                   <li key={idx} className="text-xs flex flex-col gap-1.5 pb-3 border-b border-slate-200 last:border-0 last:pb-0">
+                                      <div className="flex justify-between items-start gap-2">
+                                         <span className="font-bold text-slate-800">{rec.name}</span>
+                                         <span className="font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded shrink-0">{rec.duration}</span>
+                                      </div>
+                                      <div className="flex justify-between items-center gap-2">
+                                         <span className="text-slate-500 truncate" title={rec.reason}>{rec.reason}</span>
+                                         <span className="text-slate-400 font-medium shrink-0">{formatDateToBR(rec.date)}</span>
+                                      </div>
+                                   </li>
+                                 ))}
+                               </ul>
+                            </div>
+                          )}
+
                         </div>
                       ))}
                     </div>
@@ -852,7 +934,6 @@ export const Absenteismo: React.FC = () => {
                 </div>
               )}
 
-              {/* AVISO DO LIMITE DE 16H ANUAIS P/ ACOMPANHANTE */}
               {formData.documentType === 'Acompanhante de Dependente' && formData.employeeName && formData.absenceDate && (
                 <div className={`p-4 rounded-xl border mt-4 ${totalCompanionHours > 16 ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
                   <div className="flex items-start gap-3">
@@ -948,7 +1029,6 @@ export const Absenteismo: React.FC = () => {
               )}
             </div>
 
-            {/* --- CONTROLES DE PAGINAÇÃO --- */}
             {sortedAllAbsences.length > 0 && (
               <div className="p-4 border-t border-slate-200 bg-slate-50 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm">
                 <div className="flex items-center gap-2 text-slate-500 font-medium">
