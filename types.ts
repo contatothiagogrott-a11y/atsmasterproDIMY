@@ -9,10 +9,14 @@ export interface User {
   createdBy?: string;
 }
 
+// ADICIONADO: 'RESOURCE' para gerir os recursos de TI nas configurações
+export type SettingType = 'SECTOR' | 'UNIT' | 'SYSTEM_TEMPLATE' | 'RESOURCE';
+
 export interface SettingItem {
   id: string;
   name: string;
-  type: 'SECTOR' | 'UNIT';
+  type: SettingType; // <- Agora usa o tipo global expandido
+  value?: string; // Usado para guardar Base64 (ex: Modelos Excel)
 }
 
 export type JobStatus = 'Aberta' | 'Fechada' | 'Congelada' | 'Cancelada';
@@ -46,6 +50,10 @@ export interface Job {
   createdBy?: string; // Owner of the job
   allowedUserIds?: string[]; // ACL: List of users who can see this if confidential
   openingDetails?: OpeningDetails;
+
+  // ADICIONADO: Integração TI
+  resources?: string[]; // Ex: ['Notebook', 'E-mail corporativo']
+  accessReference?: string; // Ex: "Espelhar acessos do João"
 
   // Freezing/Cancellation Context
   freezeHistory?: FreezeEvent[]; // Track all freeze periods
@@ -99,6 +107,16 @@ export interface Candidate {
   techTestDate?: string; 
   techTestResult?: 'Aprovado' | 'Reprovado'; // New field for Tech Test Result
   createdAt: string;
+
+  // ADICIONADO: Checklist de Integração do DP / TI
+  onboarding?: {
+    docsRequested?: boolean;
+    docsDelivered?: boolean;
+    examDate?: string;
+    needsLabExam?: boolean;
+    labExamDate?: string;
+    itTicketCreated?: boolean;
+  };
 
   // SLA Metrics (New)
   firstContactAt?: string; // Date moved from 'Aguardando' to active

@@ -19,6 +19,7 @@ import { Colaboradores } from './pages/Colaboradores';
 import { Experiencia } from './pages/Experiencia';
 import { Reunioes } from './pages/Reunioes';
 import { Aniversariantes } from './pages/Aniversariantes';
+import { Integracao } from './pages/Integracao';
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
@@ -86,6 +87,7 @@ const App: React.FC = () => {
             <Route path="/strategic-report" element={<StrategicReport />} />
             
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/integracao" element={<Integracao />} />
             <Route path="/absenteismo" element={<Absenteismo />} />
             <Route path="/colaboradores" element={<Colaboradores />} />
             <Route path="/experiencia" element={<Experiencia />} />

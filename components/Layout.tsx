@@ -17,7 +17,8 @@ import {
   Contact,
   CalendarClock,
   Coffee,
-  Gift
+  Gift,
+  UserPlus
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -39,9 +40,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const isMaster = user?.role === 'MASTER';
   const isAuxiliar = user?.role === 'AUXILIAR_RH';
   const isRecruiter = user?.role === 'RECRUITER';
-  const isRecepcao = user?.role === 'RECEPCAO'; // <--- NOVA CONTA
+  const isRecepcao = user?.role === 'RECEPCAO'; 
   
-  const canViewRecrutamento = isMaster || isRecruiter; // Esconde recrutamento da Recepção e Auxiliar
+  const canViewRecrutamento = isMaster || isRecruiter; 
   const canViewAbsenteismo = isMaster || isAuxiliar;
   const canViewColaboradores = isMaster; 
   const canViewExperiencia = isMaster; 
@@ -102,6 +103,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   <Link to="/talent-pool" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/talent-pool') || isActive('/talents') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
                     <Users size={18} />
                     <span>Banco de Talentos</span>
+                  </Link>
+
+                  {/* NOVO MENU: INTEGRAÇÃO E ONBOARDING */}
+                  <Link to="/integracao" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/integracao') ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 text-sm'}`}>
+                    <UserPlus size={18} />
+                    <span>Integração (Admissão)</span>
                   </Link>
 
                   <Link to="/reports" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/reports') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>

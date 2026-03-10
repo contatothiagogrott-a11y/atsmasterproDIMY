@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { 
   AlertTriangle, CalendarDays, UserCheck, Search, X, Lock, Unlock, 
-  ExternalLink, Target, AlertCircle, CalendarX, Users, UserMinus, Coffee, Clock, MapPin, Gift
+  ExternalLink, Target, AlertCircle, CalendarX, Users, UserMinus, Coffee, Clock, MapPin, Gift, Activity
 } from 'lucide-react';
 import { parseISO, addDays, differenceInDays, isSameMonth, isSameWeek } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -35,6 +35,53 @@ export const Dashboard: React.FC = () => {
         return a.date.localeCompare(b.date);
       });
   }, [meetings, todayStr, tomorrowStr]);
+
+  // --- LÓGICA DE ALERTAS DE INTEGRAÇÃO (Dashboard) ---
+  const integrationAlerts = useMemo(() => {
+    const alerts: any[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Calcula o "próximo dia útil de trabalho"
+    const nextWorkDay = new Date(today);
+    if (today.getDay() === 5) { // Se for Sexta, o aviso do dia anterior é para Segunda (+3 dias)
+      nextWorkDay.setDate(today.getDate() + 3);
+    } else { // Caso normal, amanhã
+      nextWorkDay.setDate(today.getDate() + 1);
+    }
+
+    const formatYMD = (d: Date) => d.toISOString().split('T')[0];
+    const todayStrObj = formatYMD(today);
+    const nextStr = formatYMD(nextWorkDay);
+
+    candidates.forEach((c: any) => {
+      if (c.status !== 'Contratado') return;
+      const ob = c.onboarding || {};
+
+      // 1. Alerta de Início (Integração)
+      if (c.timeline?.startDate) {
+        const startStr = formatYMD(new Date(c.timeline.startDate));
+        if (startStr === todayStrObj) alerts.push({ type: 'START', urgent: true, msg: `HOJE: Integração de ${c.name}`, phone: c.phone });
+        else if (startStr === nextStr) alerts.push({ type: 'START', urgent: false, msg: `${today.getDay()===5 ? 'SEGUNDA' : 'AMANHÃ'}: Integração de ${c.name}`, phone: c.phone });
+      }
+
+      // 2. Alerta de Exame Clínico
+      if (ob.examDate) {
+        const examStr = formatYMD(new Date(ob.examDate));
+        if (examStr === todayStrObj) alerts.push({ type: 'EXAM', urgent: true, msg: `HOJE: Exame Clínico de ${c.name}`, phone: c.phone });
+        else if (examStr === nextStr) alerts.push({ type: 'EXAM', urgent: false, msg: `${today.getDay()===5 ? 'SEGUNDA' : 'AMANHÃ'}: Confirmar Exame de ${c.name}`, phone: c.phone });
+      }
+
+      // 3. Alerta de Exame Laboratorial
+      if (ob.needsLabExam && ob.labExamDate) {
+        const labStr = formatYMD(new Date(ob.labExamDate));
+        if (labStr === todayStrObj) alerts.push({ type: 'LAB', urgent: true, msg: `HOJE: Exame Lab. de ${c.name}`, phone: c.phone });
+        else if (labStr === nextStr) alerts.push({ type: 'LAB', urgent: false, msg: `${today.getDay()===5 ? 'SEGUNDA' : 'AMANHÃ'}: Confirmar Exame Lab. de ${c.name}`, phone: c.phone });
+      }
+    });
+
+    return alerts.sort((a, b) => (a.urgent === b.urgent ? 0 : a.urgent ? -1 : 1));
+  }, [candidates]);
 
   // --- Extrator Seguro (Resolve as datas corrompidas do BD) ---
   const extractMonthDay = (dateStr: any) => {
@@ -358,6 +405,29 @@ export const Dashboard: React.FC = () => {
               Deseje feliz aniversário para: <span className="text-pink-900">{todaysNames}</span>
             </p>
           </div>
+        </div>
+      )}
+
+      {/* ALERTAS DE INTEGRAÇÃO */}
+      {!isRecepcao && integrationAlerts.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          {integrationAlerts.map((alert, idx) => (
+            <div key={idx} className={`flex items-center justify-between p-4 rounded-2xl border-l-[6px] shadow-sm ${alert.urgent ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-400'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-full ${alert.urgent ? 'bg-emerald-200 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                  {alert.type === 'START' ? <UserCheck size={20}/> : <Activity size={20}/>}
+                </div>
+                <h4 className={`font-bold ${alert.urgent ? 'text-emerald-900' : 'text-slate-700'}`}>{alert.msg}</h4>
+              </div>
+              <a 
+                href={`https://wa.me/${alert.phone.replace(/\D/g, '')}`} 
+                target="_blank" rel="noreferrer"
+                className="text-xs font-bold bg-white border px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1 text-slate-600"
+              >
+                Cobrar WhatsApp
+              </a>
+            </div>
+          ))}
         </div>
       )}
 

@@ -16,15 +16,19 @@ export const SettingsPage: React.FC = () => {
     trash, restoreItem, permanentlyDeleteItem 
   } = useData();
   
+  // A aba RESOURCE foi adicionada para controlar os equipamentos de TI nas Vagas
+  const [activeTab, setActiveTab] = useState<'SECTOR' | 'UNIT' | 'RESOURCE'>('SECTOR');
   const [newSettingName, setNewSettingName] = useState('');
-  const [activeTab, setActiveTab] = useState<'SECTOR' | 'UNIT'>('SECTOR');
+  
   const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'RECRUITER' as UserRole });
   const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [userToReset, setUserToReset] = useState<User | null>(null);
   const [resetData, setResetData] = useState({ new: '', confirm: '' });
   const [resetMsg, setResetMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
@@ -91,8 +95,8 @@ export const SettingsPage: React.FC = () => {
       Telefone: emp.phone,
       Contrato: emp.contractType,
       Status: emp.status,
-      Horário: (emp as any).workSchedule || '', // <--- COLUNA NOVA DE HORÁRIO
-      Jornada: emp.dailyWorkload || 8.8, // <--- COLUNA NOVA DE HORAS
+      Horário: (emp as any).workSchedule || '', 
+      Jornada: emp.dailyWorkload || 8.8, 
       Nascimento: formatToBR(emp.birthDate),
       Admissao: formatToBR(emp.admissionDate)
     })) : [{
@@ -155,7 +159,6 @@ export const SettingsPage: React.FC = () => {
             const rawAdmission = normalizedRow['admissao'] || normalizedRow['data de admissao'];
             const rawBirth = normalizedRow['nascimento'] || normalizedRow['data de nascimento'];
             
-            // --- NOVA LÓGICA DE JORNADA E HORÁRIO ---
             const rawHorario = normalizedRow['horario'] || normalizedRow['turno'] || '';
             const rawJornada = normalizedRow['jornada'] || normalizedRow['jornada (h)'] || normalizedRow['horas'];
             let parsedJornada: number | undefined = undefined;
@@ -176,7 +179,7 @@ export const SettingsPage: React.FC = () => {
                 contractType: (normalizedRow['contrato'] as ContractType) || existingEmp.contractType,
                 status: (normalizedRow['status'] as EmployeeStatus) || existingEmp.status,
                 dailyWorkload: parsedJornada !== undefined ? parsedJornada : (existingEmp.dailyWorkload || 8.8), 
-                workSchedule: String(rawHorario) || (existingEmp as any).workSchedule || '', // <--- SALVA O HORARIO
+                workSchedule: String(rawHorario) || (existingEmp as any).workSchedule || '', 
                 birthDate: formatToYMD(rawBirth) || existingEmp.birthDate,
                 admissionDate: formatToYMD(rawAdmission) || existingEmp.admissionDate,
                 hasPendingInfo: isPending,
@@ -204,7 +207,7 @@ export const SettingsPage: React.FC = () => {
                 contractType: (normalizedRow['contrato'] as ContractType) || 'CLT',
                 status: (normalizedRow['status'] as EmployeeStatus) || 'Ativo',
                 dailyWorkload: parsedJornada !== undefined ? parsedJornada : 8.8, 
-                workSchedule: String(rawHorario) || '', // <--- SALVA O HORARIO
+                workSchedule: String(rawHorario) || '', 
                 birthDate: formatToYMD(rawBirth),
                 admissionDate: formatToYMD(rawAdmission) || new Date().toISOString().split('T')[0],
                 hasPendingInfo: isPending, 
@@ -266,7 +269,14 @@ export const SettingsPage: React.FC = () => {
   const startEditing = (item: SettingItem) => { setEditingId(item.id); setEditingName(item.name); };
   const cancelEditing = () => { setEditingId(null); setEditingName(''); };
   const saveEditing = (item: SettingItem) => { if (editingName.trim()) { updateSetting({ ...item, name: editingName }); setEditingId(null); setEditingName(''); } };
-  const handleAddSetting = (e: React.FormEvent) => { e.preventDefault(); if (newSettingName.trim()) { addSetting({ id: crypto.randomUUID(), name: newSettingName, type: activeTab }); setNewSettingName(''); } };
+  
+  const handleAddSetting = (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    if (newSettingName.trim()) { 
+      addSetting({ id: crypto.randomUUID(), name: newSettingName, type: activeTab }); 
+      setNewSettingName(''); 
+    } 
+  };
   
   const handlePasswordChange = async (e: React.FormEvent) => { e.preventDefault(); if (passwordData.new !== passwordData.confirm) { setPasswordMsg({ type: 'error', text: 'A confirmação de senha não coincide.' }); return; } const result = await changePassword(passwordData.current, passwordData.new); if (result.success) { setPasswordMsg({ type: 'success', text: result.message }); setPasswordData({ current: '', new: '', confirm: '' }); } else { setPasswordMsg({ type: 'error', text: result.message }); } };
   const handleAdminReset = async (e: React.FormEvent) => { e.preventDefault(); if (!userToReset) return; if (resetData.new !== resetData.confirm) { setResetMsg({ type: 'error', text: 'As senhas não coincidem.' }); return; } const result = await adminResetPassword(userToReset.id, resetData.new); if (result.success) { setResetMsg({ type: 'success', text: result.message }); setTimeout(() => { setIsResetModalOpen(false); setUserToReset(null); setResetData({ new: '', confirm: '' }); setResetMsg(null); }, 2000); } else { setResetMsg({ type: 'error', text: result.message }); } };
@@ -322,7 +332,7 @@ export const SettingsPage: React.FC = () => {
 
       <div className={`grid grid-cols-1 ${!isAuxiliar ? 'lg:grid-cols-2' : ''} gap-8`}>
         {/* Senha */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 h-fit">
            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2"><Key size={20} className="text-blue-600" /> Minha Senha</h3>
            <form onSubmit={handlePasswordChange} className="space-y-4">
               {passwordMsg && (<div className={`p-3 rounded-lg text-sm font-bold border ${passwordMsg.type === 'success' ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>{passwordMsg.text}</div>)}
@@ -335,17 +345,26 @@ export const SettingsPage: React.FC = () => {
            </form>
         </div>
 
-        {/* Setores */}
+        {/* Setores, Unidades e Recursos */}
         {!isAuxiliar && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
              <div className="flex gap-6 mb-6 border-b border-slate-100 pb-2">
                <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'SECTOR' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('SECTOR')}>Setores</button>
                <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'UNIT' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('UNIT')}>Unidades</button>
+               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'RESOURCE' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('RESOURCE')}>Recursos (TI)</button>
              </div>
+             
              <form onSubmit={handleAddSetting} className="flex gap-2 mb-4">
-               <input type="text" className="flex-1 border border-slate-300 p-3 rounded-lg" placeholder={`Novo ${activeTab === 'SECTOR' ? 'Setor' : 'Unidade'}`} value={newSettingName} onChange={e => setNewSettingName(e.target.value)} />
+               <input 
+                  type="text" 
+                  className="flex-1 border border-slate-300 p-3 rounded-lg" 
+                  placeholder={`Novo ${activeTab === 'SECTOR' ? 'Setor' : activeTab === 'UNIT' ? 'Unidade' : 'Recurso (Ex: Notebook, Acesso ERP)'}`} 
+                  value={newSettingName} 
+                  onChange={e => setNewSettingName(e.target.value)} 
+                />
                <button type="submit" className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700"><Plus size={20} /></button>
              </form>
+
              <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                {settings.filter(s => s.type === activeTab).map(item => (
                  <div key={item.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
@@ -359,6 +378,9 @@ export const SettingsPage: React.FC = () => {
                    )}
                  </div>
                ))}
+               {settings.filter(s => s.type === activeTab).length === 0 && (
+                  <p className="text-sm text-slate-400 italic py-4">Nenhum item cadastrado nesta categoria.</p>
+               )}
              </div>
           </div>
         )}
