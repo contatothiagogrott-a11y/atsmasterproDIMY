@@ -2,12 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { 
   AlertTriangle, CalendarDays, UserCheck, Search, X, Lock, Unlock, 
-  ExternalLink, Target, AlertCircle, CalendarX, Users, UserMinus, Coffee, Clock, MapPin, Gift, Activity
+  ExternalLink, Target, AlertCircle, CalendarX, Users, UserMinus, Coffee, Clock, MapPin, Gift, Activity, Award
 } from 'lucide-react';
 import { parseISO, addDays, differenceInDays, isSameMonth, isSameWeek } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 
-type DrillDownType = 'PENDING_CANDIDATES' | 'OLD_JOBS' | 'UPCOMING_ONBOARDINGS' | 'BIRTHDAYS' | null;
+type DrillDownType = 'PENDING_CANDIDATES' | 'OLD_JOBS' | 'UPCOMING_ONBOARDINGS' | 'BIRTHDAYS' | 'COMPANY_ANNIVERSARIES' | null;
 
 export const Dashboard: React.FC = () => {
   const { jobs, candidates, settings, user, absences, employees, meetings = [] } = useData() as any;
@@ -36,7 +36,6 @@ export const Dashboard: React.FC = () => {
       });
   }, [meetings, todayStr, tomorrowStr]);
 
-  // --- LÓGICA DE ALERTAS DE INTEGRAÇÃO (Dashboard) ---
   const integrationAlerts = useMemo(() => {
     const alerts: any[] = [];
     const today = new Date();
@@ -54,7 +53,6 @@ export const Dashboard: React.FC = () => {
     const nextStr = formatYMD(nextWorkDay);
 
     candidates.forEach((c: any) => {
-      // SE JÁ FOI CONCLUÍDO (completed: true), IGNORA O ALERTA
       if (c.status !== 'Contratado' || c.onboarding?.completed) return;
       const ob = c.onboarding || {};
 
@@ -80,7 +78,6 @@ export const Dashboard: React.FC = () => {
     return alerts.sort((a, b) => (a.urgent === b.urgent ? 0 : a.urgent ? -1 : 1));
   }, [candidates]);
 
-  // --- Extrator Seguro ---
   const extractMonthDay = (dateStr: any) => {
     if (!dateStr) return null;
     let str = String(dateStr).trim().split('T')[0].split(' ')[0];
@@ -90,28 +87,29 @@ export const Dashboard: React.FC = () => {
         const wrongYear = corruptMatch[1]; 
         const month = Number(corruptMatch[2]); 
         const actualDay = Number(wrongYear.substring(2)); 
-        return { m: month, d: actualDay };
+        return { m: month, d: actualDay, y: Number(corruptMatch[3]) };
     }
 
     const parts = str.split(/[\/\-]/);
     if (parts.length === 3) {
         let p0 = parts[0], p1 = parts[1], p2 = parts[2];
-        if (p0.length === 4) return { m: Number(p1), d: Number(p2) }; 
+        if (p0.length === 4) return { y: Number(p0), m: Number(p1), d: Number(p2) }; 
         if (p2.length === 4) { 
             let m = Number(p1);
-            if (m > 12) return { m: Number(p0), d: Number(p1) }; 
-            return { m: Number(p1), d: Number(p0) }; 
+            if (m > 12) return { y: Number(p2), m: Number(p0), d: Number(p1) }; 
+            return { y: Number(p2), m: Number(p1), d: Number(p0) }; 
         }
         if (p2.length === 2) {
             let m = Number(p1);
-            if (m > 12) return { m: Number(p0), d: Number(p1) }; 
-            return { m: Number(p1), d: Number(p0) }; 
+            if (m > 12) return { y: Number(p2)>50?1900+Number(p2):2000+Number(p2), m: Number(p0), d: Number(p1) }; 
+            return { y: Number(p2)>50?1900+Number(p2):2000+Number(p2), m: Number(p1), d: Number(p0) }; 
         }
     }
     return null;
   };
 
-  const { todaysBirthdays, weeksBirthdays } = useMemo(() => {
+  // --- LÓGICA UNIFICADA: ANIVERSÁRIOS DE VIDA E DE EMPRESA ---
+  const { todaysBirthdays, weeksBirthdays, weeksCompanyAnniversaries } = useMemo(() => {
     const today = new Date();
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth() + 1;
@@ -119,12 +117,13 @@ export const Dashboard: React.FC = () => {
 
     const activeEmps = (employees || []).filter((e: any) => e.status === 'Ativo');
 
-    const todays = activeEmps.filter((emp: any) => {
+    // ANIVERSÁRIOS DE VIDA
+    const todaysBdays = activeEmps.filter((emp: any) => {
       const bd = extractMonthDay(emp.birthDate);
       return bd && bd.m === currentMonth && bd.d === currentDay;
     });
 
-    const weeks = activeEmps.filter((emp: any) => {
+    const weeksBdays = activeEmps.filter((emp: any) => {
       const bd = extractMonthDay(emp.birthDate);
       if (!bd) return false;
       const thisYearBday = new Date(currentYear, bd.m - 1, bd.d);
@@ -136,7 +135,28 @@ export const Dashboard: React.FC = () => {
       return bdA.m - bdB.m;
     });
 
-    return { todaysBirthdays: todays, weeksBirthdays: weeks };
+    // ANIVERSÁRIOS DE EMPRESA
+    const weeksWorkAnniversaries = activeEmps.filter((emp: any) => {
+      const ad = extractMonthDay(emp.admissionDate);
+      if (!ad || !ad.y || ad.y === currentYear) return false; // Ignora se for o mesmo ano que entrou
+      const thisYearAday = new Date(currentYear, ad.m - 1, ad.d);
+      return isSameWeek(thisYearAday, today, { weekStartsOn: 0 }); 
+    }).map((emp: any) => {
+      const ad = extractMonthDay(emp.admissionDate)!;
+      const yearsOfService = currentYear - ad.y;
+      return { ...emp, yearsOfService };
+    }).sort((a: any, b: any) => {
+      const adA = extractMonthDay(a.admissionDate)!;
+      const adB = extractMonthDay(b.admissionDate)!;
+      if (adA.m === adB.m) return adA.d - adB.d;
+      return adA.m - adB.m;
+    });
+
+    return { 
+      todaysBirthdays: todaysBdays, 
+      weeksBirthdays: weeksBdays,
+      weeksCompanyAnniversaries: weeksWorkAnniversaries
+    };
   }, [employees]);
 
   const todaysNames = todaysBirthdays.map((e:any) => e.name.split(' ')[0]).join(', ').replace(/, ([^,]*)$/, ' e $1');
@@ -208,7 +228,6 @@ export const Dashboard: React.FC = () => {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       return candidates.filter((c: any) => {
-          // SE JÁ FOI CONCLUÍDO, SAI DESTE CARD TAMBÉM
           if (c.status !== 'Contratado' || c.onboarding?.completed || !c.timeline?.startDate) return false;
           const startDate = parseISO(c.timeline.startDate);
           return startDate >= todayStart; 
@@ -225,7 +244,6 @@ export const Dashboard: React.FC = () => {
                             <th className="p-4 pl-6 rounded-l-xl">Data</th>
                             <th className="p-4">Colaborador</th>
                             <th className="p-4 text-center">Setor</th>
-                            <th className="p-4 text-right pr-6 rounded-r-xl">Ação</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -240,17 +258,50 @@ export const Dashboard: React.FC = () => {
                                     </td>
                                     <td className="p-4 font-bold text-slate-700">{emp.name}</td>
                                     <td className="p-4 text-center text-slate-500">{emp.sector}</td>
-                                    <td className="p-4 pr-6 text-right">
-                                        <button onClick={() => navigate('/aniversariantes')} className="text-pink-600 font-bold hover:underline flex items-center justify-end gap-1 ml-auto">
-                                            <Gift size={14}/> Ver Todos
-                                        </button>
-                                    </td>
                                 </tr>
                             );
                         })}
                     </tbody>
                 </table>
                 {weeksBirthdays.length === 0 && <p className="text-center py-6 text-slate-400">Nenhum aniversariante nesta semana.</p>}
+            </div>
+          );
+      }
+      if (drillDownType === 'COMPANY_ANNIVERSARIES') {
+          return (
+            <div className="overflow-x-auto custom-scrollbar relative">
+                <table className="w-full text-left text-xs min-w-[600px]">
+                    <thead className="bg-amber-50 text-amber-700 font-black uppercase tracking-widest text-[10px]">
+                        <tr>
+                            <th className="p-4 pl-6 rounded-l-xl">Data</th>
+                            <th className="p-4">Colaborador</th>
+                            <th className="p-4 text-center">Setor</th>
+                            <th className="p-4 text-right pr-6 rounded-r-xl">Tempo de Casa</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {weeksCompanyAnniversaries.map((emp: any) => {
+                            const ad = extractMonthDay(emp.admissionDate);
+                            const isToday = ad && ad.m === (new Date().getMonth() + 1) && ad.d === new Date().getDate();
+                            return (
+                                <tr key={emp.id} className="hover:bg-slate-50 transition-colors group">
+                                    <td className="p-4 pl-6 font-black text-slate-700">
+                                      {ad ? `${String(ad.d).padStart(2, '0')}/${String(ad.m).padStart(2, '0')}` : '-'}
+                                      {isToday && <span className="ml-2 bg-amber-500 text-white text-[10px] px-2 py-0.5 rounded-full uppercase animate-pulse">Hoje!</span>}
+                                    </td>
+                                    <td className="p-4 font-bold text-slate-700">{emp.name}</td>
+                                    <td className="p-4 text-center text-slate-500">{emp.sector}</td>
+                                    <td className="p-4 pr-6 text-right">
+                                        <span className="font-black text-amber-600 bg-amber-50 px-3 py-1 rounded-lg">
+                                            {emp.yearsOfService} {emp.yearsOfService === 1 ? 'Ano' : 'Anos'}
+                                        </span>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+                {weeksCompanyAnniversaries.length === 0 && <p className="text-center py-6 text-slate-400">Ninguém completa tempo de casa nesta semana.</p>}
             </div>
           );
       }
@@ -347,7 +398,7 @@ export const Dashboard: React.FC = () => {
                                     </td>
                                     <td className="p-4 pr-6 text-right">
                                         <button onClick={() => navigate('/integracao')} className="text-indigo-600 font-bold hover:underline flex items-center justify-end gap-1 ml-auto">
-                                            <Target size={14}/> Ver Checklist
+                                            <Target size={14}/> Ficha
                                         </button>
                                     </td>
                                 </tr>
@@ -490,14 +541,23 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* CARDS INFERIORES */}
-      <div className={`grid gap-6 pt-2 ${isRecepcao ? 'grid-cols-1 max-w-sm' : isAuxiliar ? 'grid-cols-1 md:grid-cols-2 max-w-2xl' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'}`}>
+      <div className={`grid gap-6 pt-2 ${isRecepcao ? 'grid-cols-1 sm:grid-cols-2 max-w-lg' : isAuxiliar ? 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 max-w-4xl' : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5'}`}>
           
           <div onClick={() => setDrillDownType(drillDownType === 'BIRTHDAYS' ? null : 'BIRTHDAYS')} className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'BIRTHDAYS' ? 'border-pink-500 shadow-md ring-4 ring-pink-50' : 'border-pink-200'}`}>
               <div className="absolute -top-4 -right-4 bg-pink-50 p-8 rounded-full z-0 group-hover:bg-pink-100 transition-colors"></div>
               <div className="bg-pink-500 p-4 rounded-2xl text-white shadow-lg shadow-pink-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300"><Gift size={32}/></div>
               <div className="text-center z-10">
-                  <h4 className="font-black text-pink-900 uppercase tracking-widest text-[10px] mb-1">Aniversários da Semana</h4>
-                  <div className="text-5xl font-black text-pink-600 mb-1">{weeksBirthdays.length}</div>
+                  <h4 className="font-black text-pink-900 uppercase tracking-widest text-[10px] mb-1">Aniversários de Vida</h4>
+                  <div className="text-4xl font-black text-pink-600 mb-1">{weeksBirthdays.length}</div>
+              </div>
+          </div>
+
+          <div onClick={() => setDrillDownType(drillDownType === 'COMPANY_ANNIVERSARIES' ? null : 'COMPANY_ANNIVERSARIES')} className={`relative bg-white border p-6 rounded-3xl flex flex-col items-center justify-center cursor-pointer hover:shadow-xl transition-all active:scale-95 group overflow-hidden ${drillDownType === 'COMPANY_ANNIVERSARIES' ? 'border-amber-500 shadow-md ring-4 ring-amber-50' : 'border-amber-200'}`}>
+              <div className="absolute -top-4 -right-4 bg-amber-50 p-8 rounded-full z-0 group-hover:bg-amber-100 transition-colors"></div>
+              <div className="bg-amber-500 p-4 rounded-2xl text-white shadow-lg shadow-amber-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300"><Award size={32}/></div>
+              <div className="text-center z-10">
+                  <h4 className="font-black text-amber-900 uppercase tracking-widest text-[10px] mb-1">Tempo de Empresa</h4>
+                  <div className="text-4xl font-black text-amber-600 mb-1">{weeksCompanyAnniversaries.length}</div>
               </div>
           </div>
 
@@ -509,7 +569,7 @@ export const Dashboard: React.FC = () => {
                   <div className="bg-amber-500 p-4 rounded-2xl text-white shadow-lg shadow-amber-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300"><UserCheck size={32}/></div>
                   <div className="text-center z-10">
                       <h4 className="font-black text-amber-900 uppercase tracking-widest text-[10px] mb-1">Candidatos Pendentes</h4>
-                      <div className="text-5xl font-black text-amber-600 mb-1">{pendingCandidates.length}</div>
+                      <div className="text-4xl font-black text-amber-600 mb-1">{pendingCandidates.length}</div>
                   </div>
               </div>
 
@@ -518,7 +578,7 @@ export const Dashboard: React.FC = () => {
                   <div className="bg-red-500 p-4 rounded-2xl text-white shadow-lg shadow-red-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300"><AlertCircle size={32}/></div>
                   <div className="text-center z-10">
                       <h4 className="font-black text-red-900 uppercase tracking-widest text-[10px] mb-1">Vagas em Atraso</h4>
-                      <div className="text-5xl font-black text-red-600 mb-1">{oldOpenJobs.length}</div>
+                      <div className="text-4xl font-black text-red-600 mb-1">{oldOpenJobs.length}</div>
                   </div>
               </div>
 
@@ -527,7 +587,7 @@ export const Dashboard: React.FC = () => {
                   <div className="bg-emerald-500 p-4 rounded-2xl text-white shadow-lg shadow-emerald-200 mb-4 z-10 group-hover:-translate-y-2 transition-transform duration-300"><CalendarDays size={32}/></div>
                   <div className="text-center z-10">
                       <h4 className="font-black text-emerald-900 uppercase tracking-widest text-[10px] mb-1">Próximas Integrações</h4>
-                      <div className="text-5xl font-black text-emerald-600 mb-1">{upcomingOnboardings.length}</div>
+                      <div className="text-4xl font-black text-emerald-600 mb-1">{upcomingOnboardings.length}</div>
                   </div>
               </div>
             </>
@@ -540,10 +600,12 @@ export const Dashboard: React.FC = () => {
                   <div className="flex items-center gap-4">
                       <div className={`p-3 rounded-xl text-white shadow-md ${
                           drillDownType === 'BIRTHDAYS' ? 'bg-pink-500' :
+                          drillDownType === 'COMPANY_ANNIVERSARIES' ? 'bg-amber-500' :
                           drillDownType === 'PENDING_CANDIDATES' ? 'bg-amber-500' :
                           drillDownType === 'OLD_JOBS' ? 'bg-red-500' : 'bg-emerald-500'
                       }`}>
                           {drillDownType === 'BIRTHDAYS' && <Gift size={24} />}
+                          {drillDownType === 'COMPANY_ANNIVERSARIES' && <Award size={24} />}
                           {drillDownType === 'PENDING_CANDIDATES' && <UserCheck size={24} />}
                           {drillDownType === 'OLD_JOBS' && <AlertTriangle size={24} />}
                           {drillDownType === 'UPCOMING_ONBOARDINGS' && <CalendarDays size={24} />}
@@ -551,6 +613,7 @@ export const Dashboard: React.FC = () => {
                       <div>
                         <h2 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
                             {drillDownType === 'BIRTHDAYS' ? 'Aniversariantes da Semana' :
+                             drillDownType === 'COMPANY_ANNIVERSARIES' ? 'Tempo de Empresa na Semana' :
                              drillDownType === 'PENDING_CANDIDATES' ? 'Candidatos Pendentes' :
                              drillDownType === 'OLD_JOBS' ? 'Vagas Críticas' :
                              'Integrações Confirmadas'}
