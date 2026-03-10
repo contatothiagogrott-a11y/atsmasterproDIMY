@@ -42,11 +42,10 @@ export const Dashboard: React.FC = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
-    // Calcula o "próximo dia útil de trabalho"
     const nextWorkDay = new Date(today);
-    if (today.getDay() === 5) { // Se for Sexta, o aviso do dia anterior é para Segunda (+3 dias)
+    if (today.getDay() === 5) { 
       nextWorkDay.setDate(today.getDate() + 3);
-    } else { // Caso normal, amanhã
+    } else { 
       nextWorkDay.setDate(today.getDate() + 1);
     }
 
@@ -55,24 +54,22 @@ export const Dashboard: React.FC = () => {
     const nextStr = formatYMD(nextWorkDay);
 
     candidates.forEach((c: any) => {
-      if (c.status !== 'Contratado') return;
+      // SE JÁ FOI CONCLUÍDO (completed: true), IGNORA O ALERTA
+      if (c.status !== 'Contratado' || c.onboarding?.completed) return;
       const ob = c.onboarding || {};
 
-      // 1. Alerta de Início (Integração)
       if (c.timeline?.startDate) {
         const startStr = formatYMD(new Date(c.timeline.startDate));
         if (startStr === todayStrObj) alerts.push({ type: 'START', urgent: true, msg: `HOJE: Integração de ${c.name}`, phone: c.phone });
         else if (startStr === nextStr) alerts.push({ type: 'START', urgent: false, msg: `${today.getDay()===5 ? 'SEGUNDA' : 'AMANHÃ'}: Integração de ${c.name}`, phone: c.phone });
       }
 
-      // 2. Alerta de Exame Clínico
       if (ob.examDate) {
         const examStr = formatYMD(new Date(ob.examDate));
         if (examStr === todayStrObj) alerts.push({ type: 'EXAM', urgent: true, msg: `HOJE: Exame Clínico de ${c.name}`, phone: c.phone });
         else if (examStr === nextStr) alerts.push({ type: 'EXAM', urgent: false, msg: `${today.getDay()===5 ? 'SEGUNDA' : 'AMANHÃ'}: Confirmar Exame de ${c.name}`, phone: c.phone });
       }
 
-      // 3. Alerta de Exame Laboratorial
       if (ob.needsLabExam && ob.labExamDate) {
         const labStr = formatYMD(new Date(ob.labExamDate));
         if (labStr === todayStrObj) alerts.push({ type: 'LAB', urgent: true, msg: `HOJE: Exame Lab. de ${c.name}`, phone: c.phone });
@@ -83,7 +80,7 @@ export const Dashboard: React.FC = () => {
     return alerts.sort((a, b) => (a.urgent === b.urgent ? 0 : a.urgent ? -1 : 1));
   }, [candidates]);
 
-  // --- Extrator Seguro (Resolve as datas corrompidas do BD) ---
+  // --- Extrator Seguro ---
   const extractMonthDay = (dateStr: any) => {
     if (!dateStr) return null;
     let str = String(dateStr).trim().split('T')[0].split(' ')[0];
@@ -144,7 +141,6 @@ export const Dashboard: React.FC = () => {
 
   const todaysNames = todaysBirthdays.map((e:any) => e.name.split(' ')[0]).join(', ').replace(/, ([^,]*)$/, ' e $1');
 
-  // --- 1. LÓGICA DE GESTÃO DE PESSOAS ---
   const peopleStats = useMemo(() => {
     const today = new Date();
     
@@ -168,7 +164,6 @@ export const Dashboard: React.FC = () => {
     };
   }, [absences, employees]);
 
-  // --- 2. FILTRAGEM BASE DE ACESSO ---
   const hasConfidentialAccess = useMemo(() => {
     if (!user) return false;
     if (user.role === 'MASTER') return true;
@@ -197,7 +192,6 @@ export const Dashboard: React.FC = () => {
     return { fJobs: filteredJobs, fCandidates: filteredCandidates };
   }, [jobs, candidates, sectorFilter, unitFilter, showConfidential, user]);
 
-  // --- 3. LÓGicas DOS ALERTAS RECRUTAMENTO ---
   const pendingCandidates = useMemo(() => {
       return fCandidates.filter((c: any) => 
           !['Aprovado', 'Reprovado', 'Desistência', 'Contratado'].includes(c.status)
@@ -214,13 +208,13 @@ export const Dashboard: React.FC = () => {
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       return candidates.filter((c: any) => {
-          if (c.status !== 'Contratado' || !c.timeline?.startDate) return false;
+          // SE JÁ FOI CONCLUÍDO, SAI DESTE CARD TAMBÉM
+          if (c.status !== 'Contratado' || c.onboarding?.completed || !c.timeline?.startDate) return false;
           const startDate = parseISO(c.timeline.startDate);
           return startDate >= todayStart; 
       }).sort((a: any, b: any) => new Date(a.timeline!.startDate!).getTime() - new Date(b.timeline!.startDate!).getTime());
   }, [candidates]);
 
-  // --- 4. RENDERIZAÇÃO DA TABELA INLINE ---
   const getDrillDownContent = () => {
       if (drillDownType === 'BIRTHDAYS') {
           return (
@@ -352,8 +346,8 @@ export const Dashboard: React.FC = () => {
                                         </span>
                                     </td>
                                     <td className="p-4 pr-6 text-right">
-                                        <button onClick={() => navigate(c.jobId === 'general' ? '/general-interviews' : `/jobs/${c.jobId}`)} className="text-indigo-600 font-bold hover:underline flex items-center justify-end gap-1 ml-auto">
-                                            <Target size={14}/> Ficha
+                                        <button onClick={() => navigate('/integracao')} className="text-indigo-600 font-bold hover:underline flex items-center justify-end gap-1 ml-auto">
+                                            <Target size={14}/> Ver Checklist
                                         </button>
                                     </td>
                                 </tr>
@@ -361,6 +355,7 @@ export const Dashboard: React.FC = () => {
                         })}
                     </tbody>
                 </table>
+                {upcomingOnboardings.length === 0 && <p className="text-center py-6 text-slate-400">Nenhuma integração pendente.</p>}
             </div>
           );
       }
@@ -408,7 +403,7 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ALERTAS DE INTEGRAÇÃO COM 55 NO WHATSAPP E TRAVA DE SEGURANÇA */}
+      {/* ALERTAS DE INTEGRAÇÃO */}
       {!isRecepcao && integrationAlerts.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {integrationAlerts.map((alert, idx) => (

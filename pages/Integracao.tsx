@@ -3,14 +3,15 @@ import { useData } from '../context/DataContext';
 import { Candidate, Job } from '../types';
 import { 
   UserPlus, FileCheck, Stethoscope, Copy, ExternalLink, 
-  CheckCircle2, MonitorSmartphone, MessageSquare, Calendar
+  CheckCircle2, MonitorSmartphone, MessageSquare
 } from 'lucide-react';
 
 export const Integracao: React.FC = () => {
   const { candidates = [], jobs = [], updateCandidate } = useData() as any;
   const [activeTicketModal, setActiveTicketModal] = useState<string | null>(null);
 
-  const hiredCandidates = candidates.filter((c: Candidate) => c.status === 'Contratado');
+  // FILTRO ATUALIZADO: Traz os contratados, mas esconde os que já tiveram a integração concluída
+  const hiredCandidates = candidates.filter((c: Candidate) => c.status === 'Contratado' && !c.onboarding?.completed);
 
   const handleUpdateOnboarding = async (candidate: Candidate, field: string, value: any) => {
     const updatedCandidate = {
@@ -21,6 +22,12 @@ export const Integracao: React.FC = () => {
       }
     };
     await updateCandidate(updatedCandidate);
+  };
+
+  const handleCompleteIntegration = async (candidate: Candidate) => {
+    if (window.confirm(`Tem certeza que deseja concluir e arquivar a integração de ${candidate.name}?`)) {
+      await handleUpdateOnboarding(candidate, 'completed', true);
+    }
   };
 
   const getJobDetails = (jobId?: string): Job | undefined => {
@@ -79,7 +86,7 @@ export const Integracao: React.FC = () => {
             const ob = candidate.onboarding || {};
 
             return (
-              <div key={candidate.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+              <div key={candidate.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow flex flex-col">
                 {/* Header do Candidato */}
                 <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-start">
                   <div>
@@ -99,7 +106,7 @@ export const Integracao: React.FC = () => {
                   </a>
                 </div>
 
-                <div className="p-5 space-y-6">
+                <div className="p-5 space-y-6 flex-1">
                   {/* Etapa 1: Documentos */}
                   <div className="flex items-start gap-4">
                     <div className="p-2 bg-blue-50 text-blue-600 rounded-lg mt-1"><FileCheck size={20} /></div>
@@ -191,7 +198,17 @@ export const Integracao: React.FC = () => {
                       </div>
                     </div>
                   </div>
+                </div>
 
+                {/* NOVO: RODAPÉ PARA CONCLUIR E ARQUIVAR */}
+                <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                   <button 
+                      onClick={() => handleCompleteIntegration(candidate)}
+                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2.5 rounded-xl font-bold transition-all shadow-md active:scale-95"
+                   >
+                      <CheckCircle2 size={18} />
+                      Concluir Integração
+                   </button>
                 </div>
               </div>
             );
@@ -235,7 +252,7 @@ export const Integracao: React.FC = () => {
                 }} 
                 className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-md"
               >
-                Copiar e Marcar como Concluído
+                Copiar e Marcar como Feito
               </button>
             </div>
           </div>
