@@ -131,7 +131,7 @@ export const Dashboard: React.FC = () => {
       const bd = extractMonthDay(emp.birthDate);
       if (!bd) return false;
       const thisYearBday = new Date(currentYear, bd.m - 1, bd.d);
-      return isSameWeek(thisYearBday, today, { weekStartsOn: 0 }); // De Domingo a Sábado
+      return isSameWeek(thisYearBday, today, { weekStartsOn: 0 }); 
     }).sort((a: any, b: any) => {
       const bdA = extractMonthDay(a.birthDate)!;
       const bdB = extractMonthDay(b.birthDate)!;
@@ -197,7 +197,7 @@ export const Dashboard: React.FC = () => {
     return { fJobs: filteredJobs, fCandidates: filteredCandidates };
   }, [jobs, candidates, sectorFilter, unitFilter, showConfidential, user]);
 
-  // --- 3. LÓGICAS DOS ALERTAS RECRUTAMENTO ---
+  // --- 3. LÓGicas DOS ALERTAS RECRUTAMENTO ---
   const pendingCandidates = useMemo(() => {
       return fCandidates.filter((c: any) => 
           !['Aprovado', 'Reprovado', 'Desistência', 'Contratado'].includes(c.status)
@@ -408,7 +408,7 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ALERTAS DE INTEGRAÇÃO */}
+      {/* ALERTAS DE INTEGRAÇÃO COM 55 NO WHATSAPP E TRAVA DE SEGURANÇA */}
       {!isRecepcao && integrationAlerts.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {integrationAlerts.map((alert, idx) => (
@@ -420,7 +420,7 @@ export const Dashboard: React.FC = () => {
                 <h4 className={`font-bold ${alert.urgent ? 'text-emerald-900' : 'text-slate-700'}`}>{alert.msg}</h4>
               </div>
               <a 
-                href={`https://wa.me/${alert.phone.replace(/\D/g, '')}`} 
+                href={`https://wa.me/55${(alert.phone || '').replace(/\D/g, '')}`} 
                 target="_blank" rel="noreferrer"
                 className="text-xs font-bold bg-white border px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1 text-slate-600"
               >

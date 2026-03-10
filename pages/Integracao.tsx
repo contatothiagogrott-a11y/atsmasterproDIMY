@@ -10,7 +10,6 @@ export const Integracao: React.FC = () => {
   const { candidates = [], jobs = [], updateCandidate } = useData() as any;
   const [activeTicketModal, setActiveTicketModal] = useState<string | null>(null);
 
-  // Pega apenas candidatos contratados que AINDA NÃO terminaram a integração (sem data de término no histórico, ou baseado no seu critério)
   const hiredCandidates = candidates.filter((c: Candidate) => c.status === 'Contratado');
 
   const handleUpdateOnboarding = async (candidate: Candidate, field: string, value: any) => {
@@ -91,7 +90,7 @@ export const Integracao: React.FC = () => {
                     </p>
                   </div>
                   <a 
-                    href={`https://wa.me/${candidate.phone.replace(/\D/g, '')}`} 
+                    href={`https://wa.me/55${(candidate.phone || '').replace(/\D/g, '')}`} 
                     target="_blank" rel="noreferrer"
                     className="p-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors"
                     title="Falar no WhatsApp"
