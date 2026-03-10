@@ -7,7 +7,7 @@ import {
   Globe, Briefcase, 
   CheckCircle, DollarSign, Activity, Lock, Download,
   Plus, Database, MessageCircle, ExternalLink, Target, Link as LinkIcon,
-  Beaker, AlertTriangle, FileText, PauseCircle, Trash2, ShieldAlert
+  Beaker, AlertTriangle, FileText, PauseCircle, Trash2, ShieldAlert, Monitor
 } from 'lucide-react';
 import { Candidate, Job, TalentProfile, ContractType } from '../types';
 import { exportJobCandidates } from '../services/excelService';
@@ -69,7 +69,7 @@ const getSourceIcon = (origin: string) => {
 export const JobDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { jobs, candidates, updateCandidate, addCandidate, addTalent, updateJob, removeCandidate, user, verifyUserPassword } = useData();
+  const { jobs, candidates, updateCandidate, addCandidate, addTalent, updateJob, removeCandidate, user, verifyUserPassword, settings = [] } = useData() as any;
   
   const [job, setJob] = useState<Job | undefined>(undefined);
   const [jobCandidates, setJobCandidates] = useState<Candidate[]>([]);
@@ -104,44 +104,35 @@ export const JobDetails: React.FC = () => {
   const [deletePassword, setDeletePassword] = useState('');
   const [deleteError, setDeleteError] = useState('');
 
+  // --- NOVOS STATES PARA EDITAR RECURSOS DA VAGA ---
+  const [isEditJobModalOpen, setIsEditJobModalOpen] = useState(false);
+  const [jobFormData, setJobFormData] = useState<Partial<Job>>({});
+
   // Filtros
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('TODOS');
 
   useEffect(() => {
-    const foundJob = jobs.find(j => j.id === id);
+    const foundJob = jobs.find((j: Job) => j.id === id);
     setJob(foundJob);
-    if (foundJob) setJobCandidates(candidates.filter(c => c.jobId === foundJob.id));
+    if (foundJob) setJobCandidates(candidates.filter((c: Candidate) => c.jobId === foundJob.id));
   }, [jobs, candidates, id]);
 
   // --- LÓGICA DE SALVAMENTO CORRIGIDA (STRICT MODE) ---
   const handleSaveChanges = async () => {
-    // 1. Clona o objeto para manipulação segura
     const payload = { ...formData };
 
-    /**
-     * Função auxiliar para normalizar datas para persistência.
-     * GARANTIA: Nunca gera data atual automática. Se o valor for vazio, retorna undefined/null.
-     */
     const normalizeDateForPersistence = (value?: string | null) => {
         if (!value || value === '') return undefined;
-        
-        // Se já tiver "T" e "Z" (formato ISO completo vindo do banco), mantém intocado.
         if (value.includes('T') && value.includes('Z')) return value;
-        
-        // Se for apenas data (YYYY-MM-DD) digitada pelo usuário, adiciona o meio-dia UTC
         if (value.includes('T')) return value; 
         return `${value}T12:00:00.000Z`;
     };
 
-    // 2. Aplica a normalização nas datas de forma controlada
     payload.firstContactAt = normalizeDateForPersistence(payload.firstContactAt);
     payload.interviewAt = normalizeDateForPersistence(payload.interviewAt);
-    
-    // CORREÇÃO: Garante que lastInteractionAt só é salvo se houver valor real
     payload.lastInteractionAt = normalizeDateForPersistence(payload.lastInteractionAt);
 
-    // 3. Regra de Negócio: Reprovação e Desistência
     if (payload.status === 'Reprovado' || payload.status === 'Desistência') {
         if (!payload.rejectionReason) { 
             alert("Por favor, informe o motivo da perda."); 
@@ -150,8 +141,6 @@ export const JobDetails: React.FC = () => {
         
         payload.rejectedBy = user?.name || 'Sistema';
         
-        // Usa a data do último contato como data de rejeição, se disponível.
-        // Se o usuário não preencheu último contato, não força a data de hoje.
         if (payload.lastInteractionAt) {
             payload.rejectionDate = payload.lastInteractionAt;
         } else {
@@ -160,13 +149,11 @@ export const JobDetails: React.FC = () => {
             }
         }
     } else {
-        // Limpa dados de rejeição se o status mudar para algo positivo
         payload.rejectionDate = undefined;
         payload.rejectionReason = undefined;
         payload.rejectedBy = undefined;
     }
 
-    // 4. Executa a persistência
     try {
         if (selectedCandidate) {
             await updateCandidate({ ...selectedCandidate, ...payload } as Candidate);
@@ -180,12 +167,9 @@ export const JobDetails: React.FC = () => {
     }
   };
 
-  // --- HANDLERS DIVERSOS ---
-
   const handleOpenModal = (candidate?: Candidate) => {
     if (candidate) {
         setSelectedCandidate(candidate);
-        // Carrega os dados crus. O "toInputDate" no JSX cuidará da exibição visual.
         setFormData({ ...candidate });
         
         if (candidate.rejectionReason) {
@@ -199,17 +183,30 @@ export const JobDetails: React.FC = () => {
         } else { setLossReasonType(''); }
     } else {
         setSelectedCandidate(null);
-        // Novo candidato: datas indefinidas (não usa new Date())
         setFormData({ 
             jobId: job?.id, 
             status: 'Aguardando Triagem', 
             origin: 'LinkedIn', 
             contractType: 'CLT', 
-            createdAt: new Date().toISOString() // Apenas data de criação do registro é automática
+            createdAt: new Date().toISOString() 
         });
         setLossReasonType('');
     }
     setIsModalOpen(true);
+  };
+
+  const handleOpenEditJob = () => {
+    if (!job) return;
+    setJobFormData({ ...job });
+    setIsEditJobModalOpen(true);
+  };
+
+  const handleSaveJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (job) {
+       await updateJob({ ...job, ...jobFormData });
+       setIsEditJobModalOpen(false);
+    }
   };
 
   const hiredCandidate = useMemo(() => {
@@ -224,7 +221,7 @@ export const JobDetails: React.FC = () => {
 
     let totalFrozenMilliseconds = 0;
     if (job.freezeHistory) {
-        job.freezeHistory.forEach(freeze => {
+        job.freezeHistory.forEach((freeze: any) => {
             const startFreeze = new Date(freeze.startDate).getTime();
             const endFreeze = freeze.endDate ? new Date(freeze.endDate).getTime() : endDate;
             if (endFreeze > startFreeze) totalFrozenMilliseconds += (endFreeze - startFreeze);
@@ -345,7 +342,6 @@ export const JobDetails: React.FC = () => {
     if (techForm.didTest && techForm.result === 'Reprovado') {
         update.status = 'Reprovado';
         update.rejectionReason = techReasonType === 'Outros' ? techForm.rejectionDetail : techReasonType;
-        // Data da reprovação técnica também usa a data manual do teste
         update.rejectionDate = update.techTestDate;
         update.rejectedBy = user?.name || 'Sistema';
     }
@@ -380,9 +376,13 @@ export const JobDetails: React.FC = () => {
                 </div>
             </div>
         </div>
-        <div className="flex gap-2">
-            <button onClick={() => exportJobCandidates(job, jobCandidates)} className="bg-white border p-2 rounded-lg flex items-center gap-2 text-sm font-bold shadow-sm hover:bg-slate-50"><Download size={18} /> Excel</button>
-            <button onClick={() => handleOpenModal()} className="bg-blue-600 text-white p-2 px-4 rounded-lg flex items-center gap-2 text-sm font-bold shadow-md hover:bg-blue-700"><Plus size={18} /> Adicionar</button>
+        <div className="flex flex-wrap gap-2">
+            <button onClick={() => exportJobCandidates(job, jobCandidates)} className="bg-white border border-slate-200 p-2.5 rounded-xl flex items-center gap-2 text-sm font-bold text-slate-600 shadow-sm hover:bg-slate-50 transition-colors"><Download size={16} /> Excel</button>
+            
+            {/* BOTÃO PARA CONFIGURAR A TI DA VAGA */}
+            <button onClick={() => handleOpenEditJob()} className="bg-indigo-50 border border-indigo-200 p-2.5 rounded-xl flex items-center gap-2 text-sm font-bold text-indigo-700 shadow-sm hover:bg-indigo-100 transition-colors"><Monitor size={16} /> Configurar TI</button>
+            
+            <button onClick={() => handleOpenModal()} className="bg-blue-600 text-white p-2.5 px-5 rounded-xl flex items-center gap-2 text-sm font-bold shadow-md shadow-blue-200 hover:bg-blue-700 transition-colors"><Plus size={18} /> Adicionar Candidato</button>
         </div>
       </div>
 
@@ -502,6 +502,90 @@ export const JobDetails: React.FC = () => {
               </form>
            </div>
         </div>
+      )}
+
+      {/* --- MODAL DE EDIÇÃO DA VAGA E TI --- */}
+      {isEditJobModalOpen && (
+         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[200] p-4">
+            <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-fadeIn max-h-[90vh] overflow-y-auto custom-scrollbar">
+               <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                  <div>
+                    <h3 className="font-bold text-2xl text-slate-800 tracking-tight">Configurar Vaga & TI</h3>
+                    <p className="text-sm text-slate-500 mt-1">Preencha as informações técnicas para a Integração</p>
+                  </div>
+                  <button onClick={() => setIsEditJobModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><X size={24} className="text-slate-400 hover:text-slate-600"/></button>
+               </div>
+               
+               <form onSubmit={handleSaveJob} className="space-y-6">
+                  {/* Basic info */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Título da Vaga</label>
+                        <input className="w-full border border-slate-200 p-3 rounded-xl font-bold text-sm text-slate-700 focus:border-blue-500 outline-none" value={jobFormData.title || ''} onChange={e => setJobFormData({...jobFormData, title: e.target.value})} required />
+                     </div>
+                     <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Setor</label>
+                        <select className="w-full border border-slate-200 p-3 rounded-xl font-bold text-sm text-slate-700 focus:border-blue-500 outline-none" value={jobFormData.sector || ''} onChange={e => setJobFormData({...jobFormData, sector: e.target.value})}>
+                            <option value="">Selecione...</option>
+                            {settings.filter((s:any)=>s.type==='SECTOR').map((s:any)=><option key={s.id} value={s.name}>{s.name}</option>)}
+                        </select>
+                     </div>
+                     <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Unidade</label>
+                        <select className="w-full border border-slate-200 p-3 rounded-xl font-bold text-sm text-slate-700 focus:border-blue-500 outline-none" value={jobFormData.unit || ''} onChange={e => setJobFormData({...jobFormData, unit: e.target.value})}>
+                            <option value="">Selecione...</option>
+                            {settings.filter((s:any)=>s.type==='UNIT').map((s:any)=><option key={s.id} value={s.name}>{s.name}</option>)}
+                        </select>
+                     </div>
+                  </div>
+
+                  {/* IT Reqs */}
+                  <div className="bg-indigo-50/50 p-6 rounded-2xl border border-indigo-100 space-y-5">
+                      <div>
+                          <h4 className="font-black text-indigo-900 flex items-center gap-2 text-lg"><Monitor size={20} /> Solicitação de Equipamentos (GLPI)</h4>
+                          <p className="text-xs text-indigo-700 mt-1">Selecione os recursos que o candidato precisará no primeiro dia. Estes dados irão compor o chamado automático do GLPI.</p>
+                      </div>
+                      
+                      <div>
+                         <label className="block text-xs font-black text-indigo-800 mb-3 uppercase tracking-widest">Recursos Necessários</label>
+                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {settings.filter((s:any) => s.type === 'RESOURCE').map((res:any) => (
+                               <label key={res.id} className="flex items-center gap-2 text-sm font-bold text-indigo-900 cursor-pointer bg-white p-3 rounded-xl border border-indigo-100 hover:border-indigo-300 hover:shadow-sm transition-all">
+                                  <input type="checkbox" className="w-4 h-4 rounded border-indigo-300 text-indigo-600 focus:ring-indigo-500" 
+                                         checked={(jobFormData.resources || []).includes(res.name)}
+                                         onChange={() => {
+                                            const current = jobFormData.resources || [];
+                                            if(current.includes(res.name)) setJobFormData({...jobFormData, resources: current.filter(r => r !== res.name)});
+                                            else setJobFormData({...jobFormData, resources: [...current, res.name]});
+                                         }}
+                                  />
+                                  <span className="truncate" title={res.name}>{res.name}</span>
+                               </label>
+                            ))}
+                         </div>
+                         {settings.filter((s:any) => s.type === 'RESOURCE').length === 0 && (
+                             <p className="text-xs font-bold text-amber-600 bg-amber-50 p-3 rounded-lg mt-2">⚠️ Nenhum recurso cadastrado. Vá em Configurações &gt; Recursos (TI) para adicionar.</p>
+                         )}
+                      </div>
+
+                      <div>
+                         <label className="block text-xs font-black text-indigo-800 mb-2 uppercase tracking-widest">Espelhamento de Acesso / Autorização</label>
+                         <textarea 
+                            className="w-full border border-indigo-200 p-4 rounded-xl font-medium text-sm text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 min-h-[100px] shadow-inner bg-white" 
+                            placeholder="Ex: Copiar acessos do João da Silva (Vendas) e liberar acesso ao sistema TOTVS ERP." 
+                            value={jobFormData.accessReference || ''} 
+                            onChange={e => setJobFormData({...jobFormData, accessReference: e.target.value})} 
+                         />
+                      </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                      <button type="button" onClick={() => setIsEditJobModalOpen(false)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors">Cancelar</button>
+                      <button type="submit" className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95 uppercase tracking-widest text-xs">Salvar Configurações</button>
+                  </div>
+               </form>
+            </div>
+         </div>
       )}
 
       {/* --- MODAL DE EDIÇÃO DO CANDIDATO --- */}
