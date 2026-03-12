@@ -47,6 +47,9 @@ export const Desligamentos: React.FC = () => {
   });
 
   const [isOtherReason, setIsOtherReason] = useState(false);
+  
+  // Estado para Drill Down (clicar no motivo para ver quem é)
+  const [selectedReasonDrillDown, setSelectedReasonDrillDown] = useState<string | null>(null);
 
   // Formatação Segura
   const formatToYMD = (dateVal: any) => {
@@ -135,6 +138,7 @@ export const Desligamentos: React.FC = () => {
          return tDate >= filterStart && tDate <= filterEnd;
       }).length,
       reasons: sortedReasons,
+      listAnswered: answered, // Exposto para o Drill Down
       colleagues: calculateSatisfaction(answered.map((e: Employee) => e.exitInterview!.colleaguesRating)),
       leader: calculateSatisfaction(answered.map((e: Employee) => e.exitInterview!.leaderRating)),
       training: calculateSatisfaction(answered.map((e: Employee) => e.exitInterview!.trainingRating)),
@@ -341,6 +345,7 @@ export const Desligamentos: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                {/* RANKING DE MOTIVOS COM DRILL DOWN */}
                 <div className="lg:col-span-1 bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                    <div className="p-5 border-b border-slate-100 bg-slate-50">
                       <h3 className="font-black text-slate-700 uppercase tracking-tighter flex items-center gap-2"><TrendingDown size={18} className="text-rose-500"/> Principais Motivos</h3>
@@ -351,9 +356,15 @@ export const Desligamentos: React.FC = () => {
                       ) : (
                          <ul className="divide-y divide-slate-50">
                             {analytics.reasons.map(([reason, count], idx) => (
-                               <li key={idx} className="p-4 flex items-center justify-between hover:bg-rose-50/30 transition-colors">
-                                  <span className="text-xs font-bold text-slate-700 max-w-[180px] truncate" title={reason}>{reason}</span>
-                                  <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded-lg text-xs font-black">{count}</span>
+                               <li key={idx} 
+                                   onClick={() => setSelectedReasonDrillDown(reason)}
+                                   className="p-4 flex items-center justify-between hover:bg-rose-50/30 transition-colors cursor-pointer group"
+                               >
+                                  <span className="text-xs font-bold text-slate-700 max-w-[180px] truncate group-hover:text-rose-600 transition-colors" title={reason}>{reason}</span>
+                                  <div className="flex items-center gap-2">
+                                     <span className="bg-rose-100 text-rose-700 px-2 py-1 rounded-lg text-xs font-black">{count}</span>
+                                     <ChevronRight size={14} className="text-slate-300 group-hover:text-rose-500 transition-colors"/>
+                                  </div>
                                </li>
                             ))}
                          </ul>
@@ -607,6 +618,49 @@ export const Desligamentos: React.FC = () => {
 
           </div>
         </div>
+      )}
+
+      {/* ======================= MODAL DRILL DOWN DE MOTIVOS ======================= */}
+      {selectedReasonDrillDown && (
+         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[100] p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[85vh]">
+               <div className="p-6 border-b border-slate-100 bg-slate-50 rounded-t-3xl flex justify-between items-center shrink-0">
+                  <div>
+                     <h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg flex items-center gap-2">
+                        <TrendingDown className="text-rose-500"/> Pessoas que saíram por este motivo
+                     </h3>
+                     <p className="text-xs text-slate-500 font-bold mt-1">Motivo: <span className="text-rose-600">{selectedReasonDrillDown}</span></p>
+                  </div>
+                  <button onClick={() => setSelectedReasonDrillDown(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-rose-500 transition-colors"><X size={24} /></button>
+               </div>
+               <div className="p-0 overflow-y-auto custom-scrollbar">
+                  <table className="w-full text-left text-sm">
+                     <thead className="bg-white border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px] sticky top-0">
+                        <tr>
+                           <th className="p-4 pl-6">Nome / Cargo</th>
+                           <th className="p-4 text-center">Setor</th>
+                           <th className="p-4 text-center">Data Saída</th>
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-50">
+                        {analytics.listAnswered
+                           .filter(e => e.exitInterview?.reason === selectedReasonDrillDown)
+                           .map(emp => (
+                              <tr key={emp.id} className="hover:bg-slate-50 transition-colors">
+                                 <td className="p-4 pl-6">
+                                    <div className="font-bold text-slate-800">{emp.name}</div>
+                                    <div className="text-xs text-slate-500">{emp.role}</div>
+                                 </td>
+                                 <td className="p-4 text-center font-bold text-slate-600">{emp.sector}</td>
+                                 <td className="p-4 text-center text-slate-500 text-xs font-bold">{formatDateBR(emp.terminationDate)}</td>
+                              </tr>
+                           ))
+                        }
+                     </tbody>
+                  </table>
+               </div>
+            </div>
+         </div>
       )}
     </div>
   );

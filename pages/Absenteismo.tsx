@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { DocumentType, AbsenceRecord, Employee } from '../types';
-import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X, Info, ChevronLeft, ChevronRight, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
+import { CalendarX, Plus, Trash2, Edit2, LayoutDashboard, FileText, AlertTriangle, Activity, Users, Clock, Download, FileSpreadsheet, Database, Sparkles, X, Info, ChevronLeft, ChevronRight, ShieldAlert, ChevronDown, ChevronUp, Baby } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 
@@ -33,7 +33,7 @@ export const Absenteismo: React.FC = () => {
   
   // --- ESTADOS DOS MODAIS E IA ---
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [expandedCategory, setExpandedCategory] = useState<string | null>(null); // Controla o clique no card da IA
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const [showAuditModal, setShowAuditModal] = useState(false);
   const [auditYear, setAuditYear] = useState(new Date().getFullYear());
 
@@ -92,6 +92,59 @@ export const Absenteismo: React.FC = () => {
     return `${day}/${month}/${year}`;
   };
 
+  // =========================================================================
+  // NOVO MOTOR DE CÁLCULO (IGNORA FINAIS DE SEMANA)
+  // =========================================================================
+  const calculateWorkingHours = (record: Partial<AbsenceRecord>, emp: Employee | undefined) => {
+    const workload = emp?.dailyWorkload || 8.8;
+    // O padrão é 1 a 5 (Segunda a Sexta). O Domingo é 0 e Sábado é 6.
+    const workDays = (emp as any)?.workDays || [1, 2, 3, 4, 5]; 
+    
+    let amount = record.durationAmount || 0;
+    let unit = record.durationUnit;
+    
+    // Tratamento legado de string
+    if (!unit && record.documentDuration) {
+      const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
+      if (match) {
+        amount = parseFloat(match[1]);
+        unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
+      } else { unit = 'Dias'; amount = 1; }
+    }
+
+    if (unit === 'Horas') return amount; // Horas são absolutas
+
+    // Se for 'Dias', varre o calendário para descontar finais de semana
+    let workingDays = 0;
+    const safeDateStr = formatToYMD(record.absenceDate);
+    if (!safeDateStr) return amount * workload; // Fallback se der erro na data
+
+    // Seta para 12:00 para evitar que o fuso horário mude o dia acidentalmente
+    let currentDate = new Date(safeDateStr + 'T12:00:00Z');
+    let daysLeft = amount;
+
+    while(daysLeft > 0) {
+        const currentDayOfWeek = currentDate.getDay();
+        
+        if (daysLeft < 1) {
+            // Fração de dia (ex: 0.5 dia)
+            if (workDays.includes(currentDayOfWeek)) {
+                workingDays += daysLeft;
+            }
+            daysLeft = 0;
+        } else {
+            // Dia inteiro
+            if (workDays.includes(currentDayOfWeek)) {
+                workingDays += 1;
+            }
+            daysLeft -= 1;
+            currentDate.setDate(currentDate.getDate() + 1); // Avança 1 dia
+        }
+    }
+
+    return workingDays * workload;
+  };
+
   const filteredAbsences = useMemo(() => {
     return absences.filter((record: AbsenceRecord) => {
       const safeDate = formatToYMD(record.absenceDate);
@@ -138,18 +191,8 @@ export const Absenteismo: React.FC = () => {
 
       const empName = a.employeeName || 'Sem Nome';
       const emp = employees.find((e: Employee) => e.name.toLowerCase() === empName.toLowerCase());
-      const workload = emp?.dailyWorkload || 8.8;
-
-      let amount = a.durationAmount || 0;
-      let unit = a.durationUnit;
-      if (!unit && a.documentDuration) {
-        const match = a.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
-        if (match) {
-          amount = parseFloat(match[1]);
-          unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
-        } else { unit = 'Dias'; amount = 1; }
-      }
-      let hours = unit === 'Dias' ? amount * workload : amount;
+      
+      const hours = calculateWorkingHours(a, emp);
 
       if (!auditMap[empName]) {
         auditMap[empName] = { name: empName, totalHours: 0, records: [] };
@@ -164,10 +207,8 @@ export const Absenteismo: React.FC = () => {
   // --- LÓGICA DE CONTROLE INDIVIDUAL NO FORMULÁRIO ---
   const currentEntryHours = useMemo(() => {
     const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
-    const workload = emp?.dailyWorkload || 8.8;
-    const amount = formData.durationAmount || 0;
-    return formData.durationUnit === 'Dias' ? amount * workload : amount;
-  }, [formData.employeeName, formData.durationAmount, formData.durationUnit, employees]);
+    return calculateWorkingHours(formData as AbsenceRecord, emp);
+  }, [formData.employeeName, formData.durationAmount, formData.durationUnit, formData.absenceDate, employees]);
 
   const usedCompanionHoursThisYear = useMemo(() => {
     if (!formData.employeeName || !formData.absenceDate) return 0;
@@ -175,7 +216,6 @@ export const Absenteismo: React.FC = () => {
     const targetYear = safeFormDate ? parseInt(safeFormDate.split('-')[0], 10) : new Date().getFullYear();
     
     const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
-    const workload = emp?.dailyWorkload || 8.8;
 
     return absences.filter((a: AbsenceRecord) => {
       if (isEditing && a.id === formData.id) return false; 
@@ -186,16 +226,7 @@ export const Absenteismo: React.FC = () => {
       if (!safeRecordDate) return false;
       return parseInt(safeRecordDate.split('-')[0], 10) === targetYear;
     }).reduce((total: number, record: AbsenceRecord) => {
-      let amount = record.durationAmount || 0;
-      let unit = record.durationUnit;
-      if (!unit && record.documentDuration) {
-        const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
-        if (match) {
-          amount = parseFloat(match[1]);
-          unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
-        } else { unit = 'Dias'; amount = 1; }
-      }
-      return unit === 'Dias' ? total + (amount * workload) : total + amount;
+      return total + calculateWorkingHours(record, emp);
     }, 0);
   }, [formData.employeeName, formData.absenceDate, absences, employees, isEditing, formData.id]);
 
@@ -206,6 +237,8 @@ export const Absenteismo: React.FC = () => {
     let declaracoes = 0; let declaracoesHours = 0;
     let injustificadas = 0; let injustificadasHours = 0;
     let acompanhamentos = 0; let acompanhamentosHours = 0;
+    let licencas = 0; let licencasHours = 0;
+    
     let totalLostHours = 0;
 
     const reasonCounts: Record<string, number> = {};
@@ -213,29 +246,20 @@ export const Absenteismo: React.FC = () => {
 
     filteredAbsences.forEach((record: AbsenceRecord) => {
       const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
-      const workload = emp?.dailyWorkload || 8.8;
-
-      let amount = record.durationAmount || 0;
-      let unit = record.durationUnit;
-
-      if (!unit && record.documentDuration) {
-        const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
-        if (match) {
-          amount = parseFloat(match[1]);
-          unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
-        } else { unit = 'Dias'; amount = 1; }
-      }
-
-      let hours = unit === 'Dias' ? amount * workload : amount;
-      totalLostHours += hours;
+      const hours = calculateWorkingHours(record, emp);
 
       if (record.documentType === 'Atestado') { atestados++; atestadosHours += hours; }
-      if (record.documentType === 'Declaração') { declaracoes++; declaracoesHours += hours; }
-      if (record.documentType === 'Falta Injustificada') { injustificadas++; injustificadasHours += hours; }
-      if (record.documentType === 'Acompanhante de Dependente') { acompanhamentos++; acompanhamentosHours += hours; }
+      else if (record.documentType === 'Declaração') { declaracoes++; declaracoesHours += hours; }
+      else if (record.documentType === 'Falta Injustificada') { injustificadas++; injustificadasHours += hours; }
+      else if (record.documentType === 'Acompanhante de Dependente') { acompanhamentos++; acompanhamentosHours += hours; }
+      else if (record.documentType === 'Licença Prevista em Lei') { licencas++; licencasHours += hours; }
 
-      if (record.reason) reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + hours;
-      if (record.employeeName) nameCounts[record.employeeName!] = (nameCounts[record.employeeName!] || 0) + hours;
+      // Se for Licença, não soma no prejuízo (totalLostHours) nem no ranking de devedores
+      if (record.documentType !== 'Licença Prevista em Lei') {
+        totalLostHours += hours;
+        if (record.reason) reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + hours;
+        if (record.employeeName) nameCounts[record.employeeName!] = (nameCounts[record.employeeName!] || 0) + hours;
+      }
     });
 
     return {
@@ -243,6 +267,7 @@ export const Absenteismo: React.FC = () => {
       declaracoes, declaracoesHours,
       injustificadas, injustificadasHours,
       acompanhamentos, acompanhamentosHours,
+      licencas, licencasHours,
       totalLostHours,
       topReasons: Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]).slice(0, 5),
       topNames: Object.entries(nameCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
@@ -271,25 +296,16 @@ export const Absenteismo: React.FC = () => {
 
     const categories: Record<string, { hours: number, reasons: Set<string>, records: any[] }> = {};
     
-    // Inicia puramente sem Emojis
     const pureKeys = ['Acompanhante', 'Maternidade', 'Ortopedia', 'Respiratorio', 'Gastrointestinal', 'Oftalmologia', 'Cirurgia', 'SaudeMental', 'Odontologia', 'Cardiovascular', 'Urologia', 'Endocrino', 'Exames', 'AssuntosPessoais', 'DoresGerais', 'Injustificada', 'Outros'];
     pureKeys.forEach(k => { categories[k] = { hours: 0, reasons: new Set(), records: [] }; });
 
     filteredAbsences.forEach((record: AbsenceRecord) => {
+        // IGNORA LICENÇAS NA IA POIS ELAS NÃO SÃO "TEMPO PERDIDO" PROBLEMATICO
+        if (record.documentType === 'Licença Prevista em Lei') return;
+
         const reason = (record.reason || '').toLowerCase();
         const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
-        const workload = emp?.dailyWorkload || 8.8;
-        
-        let amount = record.durationAmount || 0;
-        let unit = record.durationUnit;
-        if (!unit && record.documentDuration) {
-          const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
-          if (match) {
-            amount = parseFloat(match[1]);
-            unit = match[2].toLowerCase().startsWith('dia') ? 'Dias' : 'Horas';
-          } else { unit = 'Dias'; amount = 1; }
-        }
-        let hours = (unit === 'Dias') ? amount * workload : amount;
+        const hours = calculateWorkingHours(record, emp);
 
         let matchedCategory = 'Outros';
         
@@ -300,7 +316,6 @@ export const Absenteismo: React.FC = () => {
         } else {
            for (const rule of categoryRules) {
              if (rule.regex.test(reason)) {
-               // Encontra a chave pura baseada no nome
                if (rule.name.includes('Acompanhamento')) matchedCategory = 'Acompanhante';
                else if (rule.name.includes('Maternidade')) matchedCategory = 'Maternidade';
                else if (rule.name.includes('Ortopedia')) matchedCategory = 'Ortopedia';
@@ -328,7 +343,6 @@ export const Absenteismo: React.FC = () => {
         categories[matchedCategory].hours += hours;
         categories[matchedCategory].reasons.add(record.reason || 'Sem descrição');
         
-        // Guarda a informação da pessoa para expandir no clique!
         categories[matchedCategory].records.push({
            name: record.employeeName,
            reason: record.reason,
@@ -338,7 +352,7 @@ export const Absenteismo: React.FC = () => {
     });
 
     const displayNames: Record<string, string> = {
-      'Maternidade': '🤰 Maternidade e Pré-Natal',
+      'Maternidade': '🤰 Gestação e Pré-Natal',
       'Ortopedia': '🦴 Ortopedia e Dores Musculares',
       'Respiratorio': '😷 Respiratório e Otorrino',
       'Gastrointestinal': '🤢 Gastrointestinal e Viroses',
@@ -363,7 +377,6 @@ export const Absenteismo: React.FC = () => {
         category: displayNames[key],
         hours: data.hours,
         reasons: Array.from(data.reasons),
-        // Ordena os registros do mais recente para o mais antigo
         records: data.records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       }))
       .sort((a, b) => b.hours - a.hours);
@@ -712,7 +725,7 @@ export const Absenteismo: React.FC = () => {
                         <h2 className="text-xl font-black text-indigo-900 uppercase tracking-tighter">
                             Análise Inteligente de Saúde
                         </h2>
-                        <p className="text-sm text-indigo-700">Clique nas categorias abaixo para expandir e ver quem causou as ocorrências no período selecionado.</p>
+                        <p className="text-sm text-indigo-700">Clique nas categorias abaixo para expandir e ver quem causou as ocorrências no período selecionado. (Licenças legais são omitidas aqui).</p>
                       </div>
                   </div>
                   <button onClick={() => setShowAiPanel(false)} className="p-2 hover:bg-white rounded-full text-indigo-400 hover:text-purple-600 transition-all">
@@ -779,41 +792,61 @@ export const Absenteismo: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-red-100 flex items-center justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col justify-between">
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-bold text-red-600 uppercase tracking-widest">Faltas Injustificadas</p>
+                <div className="p-2 bg-red-50 text-red-600 rounded-xl"><AlertTriangle size={20} /></div>
+              </div>
               <div>
-                <p className="text-sm font-semibold text-red-600">Faltas Injustificadas</p>
-                <p className="text-2xl font-bold text-slate-800 mt-1">{formatHours(stats.injustificadasHours)}</p>
+                <p className="text-2xl font-black text-slate-800">{formatHours(stats.injustificadasHours)}</p>
                 <p className="text-xs font-medium text-slate-400 mt-1">em {stats.injustificadas} registros</p>
               </div>
-              <div className="p-3 bg-red-50 text-red-600 rounded-full"><AlertTriangle size={24} /></div>
             </div>
             
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-blue-100 flex items-center justify-between">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-blue-100 flex flex-col justify-between">
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-bold text-blue-600 uppercase tracking-widest">Atestados (Médico)</p>
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-xl"><Activity size={20} /></div>
+              </div>
               <div>
-                <p className="text-sm font-semibold text-blue-600">Atestados (Médico)</p>
-                <p className="text-2xl font-bold text-slate-800 mt-1">{formatHours(stats.atestadosHours)}</p>
+                <p className="text-2xl font-black text-slate-800">{formatHours(stats.atestadosHours)}</p>
                 <p className="text-xs font-medium text-slate-400 mt-1">em {stats.atestados} registros</p>
               </div>
-              <div className="p-3 bg-blue-50 text-blue-600 rounded-full"><Activity size={24} /></div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-100 flex items-center justify-between">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-amber-100 flex flex-col justify-between">
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-bold text-amber-600 uppercase tracking-widest">Declarações (Horas)</p>
+                <div className="p-2 bg-amber-50 text-amber-600 rounded-xl"><FileText size={20} /></div>
+              </div>
               <div>
-                <p className="text-sm font-semibold text-amber-600">Declarações (Horas)</p>
-                <p className="text-2xl font-bold text-slate-800 mt-1">{formatHours(stats.declaracoesHours)}</p>
+                <p className="text-2xl font-black text-slate-800">{formatHours(stats.declaracoesHours)}</p>
                 <p className="text-xs font-medium text-slate-400 mt-1">em {stats.declaracoes} registros</p>
               </div>
-              <div className="p-3 bg-amber-50 text-amber-600 rounded-full"><FileText size={24} /></div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-100 flex items-center justify-between">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-indigo-100 flex flex-col justify-between">
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-bold text-indigo-600 uppercase tracking-widest">Acompanhamentos</p>
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl"><Users size={20} /></div>
+              </div>
               <div>
-                <p className="text-sm font-semibold text-indigo-600">Acompanhamentos</p>
-                <p className="text-2xl font-bold text-slate-800 mt-1">{formatHours(stats.acompanhamentosHours)}</p>
+                <p className="text-2xl font-black text-slate-800">{formatHours(stats.acompanhamentosHours)}</p>
                 <p className="text-xs font-medium text-slate-400 mt-1">em {stats.acompanhamentos} registros</p>
               </div>
-              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-full"><Users size={24} /></div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-purple-100 flex flex-col justify-between relative overflow-hidden">
+              <div className="absolute -right-4 -bottom-4 opacity-[0.03] text-purple-900 pointer-events-none"><Baby size={100}/></div>
+              <div className="flex justify-between items-start mb-2 relative z-10">
+                <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest leading-tight">Licenças Legais<br/>(Maternidade/etc)</p>
+                <div className="p-2 bg-purple-50 text-purple-600 rounded-xl shrink-0"><Baby size={20} /></div>
+              </div>
+              <div className="relative z-10">
+                <p className="text-2xl font-black text-slate-800">{formatHours(stats.licencasHours)}</p>
+                <p className="text-[10px] font-bold text-purple-400 mt-1">Não debita no absenteísmo</p>
+              </div>
             </div>
           </div>
 
@@ -883,15 +916,15 @@ export const Absenteismo: React.FC = () => {
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Unidade de Tempo
                 <select name="durationUnit" value={formData.durationUnit || 'Dias'} onChange={handleUnitChange} className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                  <option value="Dias">Dias (Jornada Integral)</option>
+                  <option value="Dias">Dias (Calcula úteis automaticamente)</option>
                   <option value="Horas">Horas Fixas</option>
                 </select>
               </label>
 
               {formData.durationUnit === 'Dias' ? (
                 <label className="flex flex-col text-sm font-medium text-slate-700">
-                  Quantidade de Dias
-                  <input type="number" step="0.5" min="0" name="durationAmount" value={formData.durationAmount || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: 2" />
+                  Total de Dias (O sistema irá descontar os Finais de Semana)
+                  <input type="number" step="0.5" min="0" name="durationAmount" value={formData.durationAmount || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: 5" />
                 </label>
               ) : (
                 <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-200">
@@ -908,11 +941,12 @@ export const Absenteismo: React.FC = () => {
 
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Tipo de Registro
-                <select name="documentType" value={formData.documentType || 'Atestado'} onChange={handleInputChange} className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white">
+                <select name="documentType" value={formData.documentType || 'Atestado'} onChange={handleInputChange} className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white font-bold">
                   <option value="Atestado">Atestado Médico</option>
                   <option value="Declaração">Declaração de Horas</option>
                   <option value="Acompanhante de Dependente">Acompanhante de Dependente</option>
                   <option value="Falta Injustificada">Falta Injustificada</option>
+                  <option value="Licença Prevista em Lei" className="text-purple-600">Licença Prevista em Lei (Ex: Maternidade)</option>
                 </select>
               </label>
               
@@ -984,11 +1018,11 @@ export const Absenteismo: React.FC = () => {
               ) : (
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200 bg-white">
-                      <th className="py-3 px-4 font-semibold">Colaborador / Motivo</th>
-                      <th className="py-3 px-4 font-semibold">Data e Duração</th>
-                      <th className="py-3 px-4 font-semibold">Tipo</th>
-                      <th className="py-3 px-4 font-semibold text-right">Ações</th>
+                    <tr className="text-[10px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-200 bg-white">
+                      <th className="py-3 px-4">Colaborador / Motivo</th>
+                      <th className="py-3 px-4 text-center">Data e Duração</th>
+                      <th className="py-3 px-4 text-center">Tipo</th>
+                      <th className="py-3 px-4 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -998,20 +1032,21 @@ export const Absenteismo: React.FC = () => {
                           <p className="font-bold text-slate-800">{record.employeeName}</p>
                           <p className="text-xs text-slate-500 truncate max-w-[200px]" title={record.reason}>{record.reason}</p>
                         </td>
-                        <td className="py-3 px-4">
-                          <p className="font-medium">{formatDateToBR(record.absenceDate)}</p>
-                          <p className="text-xs font-bold text-slate-400">
+                        <td className="py-3 px-4 text-center">
+                          <p className="font-medium text-slate-700">{formatDateToBR(record.absenceDate)}</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                             {record.documentDuration}
                           </p>
                         </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider inline-block ${
+                        <td className="py-3 px-4 text-center">
+                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider inline-block ${
                             record.documentType === 'Atestado' ? 'bg-blue-100 text-blue-700' : 
                             record.documentType === 'Declaração' ? 'bg-amber-100 text-amber-700' : 
                             record.documentType === 'Falta Injustificada' ? 'bg-red-100 text-red-700' :
+                            record.documentType === 'Licença Prevista em Lei' ? 'bg-purple-100 text-purple-700' :
                             'bg-indigo-100 text-indigo-700'
                           }`}>
-                            {record.documentType}
+                            {record.documentType === 'Licença Prevista em Lei' ? 'Licença' : record.documentType}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
