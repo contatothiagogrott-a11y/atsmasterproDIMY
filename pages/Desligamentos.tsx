@@ -4,7 +4,7 @@ import { Employee, ExitInterview } from '../types';
 import { 
   UserMinus, Calendar, Search, CheckSquare, X, 
   AlertTriangle, MessageSquare, Briefcase, ChevronRight, 
-  FileText, UserCheck, BarChart, TrendingDown, Users
+  FileText, UserCheck, BarChart, TrendingDown
 } from 'lucide-react';
 
 const EXIT_REASONS = [
@@ -101,10 +101,12 @@ export const Desligamentos: React.FC = () => {
       return tDate >= filterStart && tDate <= filterEnd;
     });
 
-    const answered = validCompleted.filter((e: Employee) => !e.exitInterview?.didNotRespond);
+    // Separamos: Quem respondeu normal / Quem recusou / Quem a empresa dispensou da entrevista
+    const answered = validCompleted.filter((e: Employee) => !e.exitInterview?.didNotRespond && e.exitInterview?.reason !== 'Não Aplicável (Dispensado/Demitido)');
     const skipped = validCompleted.filter((e: Employee) => e.exitInterview?.didNotRespond);
+    const notApplicable = validCompleted.filter((e: Employee) => e.exitInterview?.reason === 'Não Aplicável (Dispensado/Demitido)');
 
-    // 2. Extrai e conta os motivos principais
+    // 2. Extrai e conta os motivos principais (só de quem respondeu)
     const reasonsCount: Record<string, number> = {};
     answered.forEach((e: Employee) => {
       const r = e.exitInterview!.reason;
@@ -132,6 +134,7 @@ export const Desligamentos: React.FC = () => {
     return {
       totalAnswered: answered.length,
       totalSkipped: skipped.length,
+      totalNotApplicable: notApplicable.length,
       totalPendingInPeriod: inactiveEmployees.filter((e: Employee) => {
          if (e.exitInterview) return false;
          const tDate = formatToYMD(e.terminationDate);
@@ -154,7 +157,9 @@ export const Desligamentos: React.FC = () => {
     
     if (emp.exitInterview) {
       const isCustomReason = !EXIT_REASONS.includes(emp.exitInterview.reason);
-      setIsOtherReason(isCustomReason && emp.exitInterview.reason !== '' && emp.exitInterview.reason !== 'Não respondeu');
+      const isSystemReason = ['Não respondeu', 'Não Aplicável (Dispensado/Demitido)'].includes(emp.exitInterview.reason);
+      
+      setIsOtherReason(isCustomReason && !isSystemReason && emp.exitInterview.reason !== '');
       setFormData({ ...emp.exitInterview });
     } else {
       setIsOtherReason(false);
@@ -171,16 +176,16 @@ export const Desligamentos: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleSave = async (e: React.FormEvent, didNotRespond: boolean = false) => {
+  const handleSave = async (e: React.FormEvent, exceptionType: 'DID_NOT_RESPOND' | 'NOT_APPLICABLE' | 'NORMAL' = 'NORMAL') => {
     e.preventDefault();
     if (!interviewingEmp) return;
 
     let finalData: ExitInterview;
 
-    if (didNotRespond) {
+    if (exceptionType === 'DID_NOT_RESPOND') {
       if(!window.confirm("Confirmar que o colaborador optou por NÃO RESPONDER a entrevista?")) return;
       finalData = {
-        id: crypto.randomUUID(),
+        id: formData.id || crypto.randomUUID(),
         interviewDate: new Date().toISOString().split('T')[0],
         reason: 'Não respondeu',
         colleaguesRating: 0, leaderRating: 0, leaderName: '',
@@ -188,6 +193,18 @@ export const Desligamentos: React.FC = () => {
         salaryRating: 0, benefitsRating: 0, jobSatisfactionRating: 0,
         interviewerName: user?.name || 'Sistema',
         didNotRespond: true
+      };
+    } else if (exceptionType === 'NOT_APPLICABLE') {
+      if(!window.confirm("Confirmar que este colaborador não precisa passar por entrevista (Ex: Demissão/Justa Causa)?")) return;
+      finalData = {
+        id: formData.id || crypto.randomUUID(),
+        interviewDate: new Date().toISOString().split('T')[0],
+        reason: 'Não Aplicável (Dispensado/Demitido)',
+        colleaguesRating: 0, leaderRating: 0, leaderName: '',
+        trainingRating: 0, trainerName: '', growthRating: 0,
+        salaryRating: 0, benefitsRating: 0, jobSatisfactionRating: 0,
+        interviewerName: user?.name || 'Sistema',
+        didNotRespond: false // Deixamos false para não confundir com a recusa do funcionário
       };
     } else {
       finalData = {
@@ -297,26 +314,34 @@ export const Desligamentos: React.FC = () => {
              </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="bg-rose-600 rounded-3xl p-6 text-white shadow-lg shadow-rose-200 flex flex-col justify-center relative overflow-hidden">
                <TrendingDown className="absolute -right-4 -bottom-4 text-rose-500 size-32 opacity-50" />
-               <p className="text-rose-200 font-bold uppercase tracking-widest text-xs mb-1 relative z-10">Respostas Coletadas</p>
+               <p className="text-rose-200 font-bold uppercase tracking-widest text-[10px] mb-1 relative z-10">Respostas Coletadas</p>
                <p className="text-5xl font-black relative z-10">{analytics.totalAnswered}</p>
             </div>
             
-            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-5">
-              <div className="p-4 bg-slate-100 text-slate-600 rounded-2xl"><UserMinus size={28}/></div>
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-slate-100 text-slate-600 rounded-2xl"><UserMinus size={24}/></div>
               <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Recusaram Responder</p>
-                <p className="text-3xl font-black text-slate-800">{analytics.totalSkipped}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Recusaram<br/>Responder</p>
+                <p className="text-3xl font-black text-slate-800 mt-1">{analytics.totalSkipped}</p>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-5">
-              <div className="p-4 bg-amber-50 text-amber-600 rounded-2xl"><AlertTriangle size={28}/></div>
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-slate-100 text-slate-600 rounded-2xl"><CheckSquare size={24}/></div>
               <div>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Ainda Pendentes</p>
-                <p className="text-3xl font-black text-slate-800">{analytics.totalPendingInPeriod}</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Não Precisou<br/>(Demitidos)</p>
+                <p className="text-3xl font-black text-slate-800 mt-1">{analytics.totalNotApplicable}</p>
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-4">
+              <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl"><AlertTriangle size={24}/></div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Ainda<br/>Pendentes</p>
+                <p className="text-3xl font-black text-slate-800 mt-1">{analytics.totalPendingInPeriod}</p>
               </div>
             </div>
           </div>
@@ -397,7 +422,7 @@ export const Desligamentos: React.FC = () => {
                 <th className="p-4 pl-6">Ex-Colaborador</th>
                 <th className="p-4 text-center">Setor / Unidade</th>
                 <th className="p-4 text-center">Data Desligamento</th>
-                <th className="p-4 text-center">Motivo (Sistema)</th>
+                <th className="p-4 text-center">Motivo (RH)</th>
                 <th className="p-4 pr-6 text-right">Ação</th>
               </tr>
             </thead>
@@ -466,14 +491,20 @@ export const Desligamentos: React.FC = () => {
             </div>
 
             <div className="p-6 overflow-y-auto custom-scrollbar bg-white">
-              {formData.didNotRespond ? (
+              {formData.reason === 'Não Aplicável (Dispensado/Demitido)' ? (
+                <div className="text-center py-12">
+                   <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-4"><CheckSquare size={32} /></div>
+                   <h3 className="text-xl font-bold text-slate-800">Entrevista Não Aplicável</h3>
+                   <p className="text-slate-500 mt-2">O colaborador foi demitido ou dispensado da entrevista. Ela não conta nas métricas.</p>
+                </div>
+              ) : formData.didNotRespond ? (
                 <div className="text-center py-12">
                    <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><X size={32} /></div>
                    <h3 className="text-xl font-bold text-slate-800">Colaborador optou por não responder</h3>
-                   <p className="text-slate-500 mt-2">Esta entrevista foi arquivada sem dados coletados.</p>
+                   <p className="text-slate-500 mt-2">Esta entrevista foi arquivada sem dados coletados, mas conta como recusa no relatório.</p>
                 </div>
               ) : (
-                <form id="exit-form" onSubmit={(e) => handleSave(e, false)} className="space-y-8">
+                <form id="exit-form" onSubmit={(e) => handleSave(e, 'NORMAL')} className="space-y-8">
                   
                   {/* DADOS DA ENTREVISTA E MOTIVO */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-rose-50/50 p-6 rounded-2xl border border-rose-100">
@@ -483,7 +514,7 @@ export const Desligamentos: React.FC = () => {
                     </div>
                     
                     <div className="space-y-2">
-                      <label className="text-xs font-black text-rose-800 uppercase tracking-widest block">Motivo Real da Saída</label>
+                      <label className="text-xs font-black text-rose-800 uppercase tracking-widest block">Motivo Real da Saída (Relatado por ele)</label>
                       <select 
                         required 
                         className="w-full border border-rose-200 p-3 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 bg-white font-bold" 
@@ -556,26 +587,34 @@ export const Desligamentos: React.FC = () => {
               )}
             </div>
 
-            <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-3xl flex items-center justify-between shrink-0">
-               <div>
-                  {!formData.didNotRespond && (
-                     <button type="button" onClick={(e) => handleSave(e, true)} className="text-xs font-bold text-red-600 bg-red-100 hover:bg-red-200 px-4 py-2.5 rounded-xl transition-colors">
-                        O Colaborador se Recusou a Responder
-                     </button>
+            <div className="p-5 border-t border-slate-100 bg-slate-50 rounded-b-3xl flex flex-col sm:flex-row items-center justify-between shrink-0 gap-4">
+               
+               <div className="flex gap-2 w-full sm:w-auto">
+                  {(!formData.didNotRespond && formData.reason !== 'Não Aplicável (Dispensado/Demitido)') && (
+                     <>
+                       <button type="button" onClick={(e) => handleSave(e, 'DID_NOT_RESPOND')} className="flex-1 sm:flex-none text-[10px] font-bold text-rose-600 bg-rose-100 hover:bg-rose-200 px-3 py-2 rounded-lg transition-colors">
+                          Recusou Responder
+                       </button>
+                       <button type="button" onClick={(e) => handleSave(e, 'NOT_APPLICABLE')} className="flex-1 sm:flex-none text-[10px] font-bold text-slate-600 bg-slate-200 hover:bg-slate-300 px-3 py-2 rounded-lg transition-colors">
+                          Não Aplicável (Demitido)
+                       </button>
+                     </>
                   )}
                </div>
-               <div className="flex gap-3">
-                 <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
-                 {!formData.didNotRespond && (
+
+               <div className="flex gap-3 w-full sm:w-auto">
+                 <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 sm:flex-none px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
+                 {(!formData.didNotRespond && formData.reason !== 'Não Aplicável (Dispensado/Demitido)') && (
                    <button 
                      type="submit" form="exit-form"
-                     className="bg-rose-600 hover:bg-rose-700 text-white px-8 py-2.5 rounded-xl font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
+                     className="flex-1 sm:flex-none bg-rose-600 hover:bg-rose-700 text-white px-8 py-2.5 rounded-xl font-bold shadow-md transition-all active:scale-95 disabled:opacity-50"
                      disabled={!formData.reason || !formData.colleaguesRating || !formData.leaderRating || !formData.trainingRating || !formData.growthRating || !formData.salaryRating || !formData.benefitsRating || !formData.jobSatisfactionRating}
                    >
                      {interviewingEmp.exitInterview ? 'Salvar Edição' : 'Concluir Entrevista'}
                    </button>
                  )}
                </div>
+
             </div>
           </div>
         </div>
