@@ -195,7 +195,7 @@ export interface KPI {
 // ==========================================
 // NOVAS INTERFACES: ABSENTEÍSMO
 // ==========================================
-export type DocumentType = 'Atestado' | 'Declaração' | 'Acompanhante de Dependente' | 'Falta Injustificada';
+export type DocumentType = 'Atestado' | 'Declaração' | 'Acompanhante de Dependente' | 'Falta Injustificada' | 'Licença Prevista em Lei';
 
 export interface AbsenceRecord {
   id: string;
@@ -264,6 +264,7 @@ export interface EmployeeHistoryRecord {
   description: string;
   createdBy?: string; // Quem registrou o histórico
 }
+
 // ==========================================
 // NOVAS INTERFACES: ENTREVISTA DE DESLIGAMENTO
 // ==========================================
@@ -292,10 +293,6 @@ export interface ExitInterview {
   didNotRespond?: boolean; // Caso o colaborador não queira responder
 }
 
-// ATENÇÃO: Na sua interface `Employee` atual, adicione a propriedade `exitInterview`
-// Ficará assim dentro do Employee:
-// exitInterview?: ExitInterview;
-
 export interface Employee {
   id: string;
   name: string;
@@ -309,14 +306,16 @@ export interface Employee {
   contractType: ContractType;
   hasPendingInfo?: boolean;
 
-  // NOVO: Jornada do colaborador
+  // NOVO: Jornada e dias trabalhados
   dailyWorkload?: number; // Ex: 8.8 para CLT normal, 6.0 para Estagiário
+  workDays?: number[]; // <--- ADICIONADO: Array com dias da semana (ex: [1,2,3,4,5] para Seg-Sex)
 
-  // --- NOVOS CAMPOS PARA EXPERIÊNCIA ---
+  // --- NOVOS CAMPOS PARA EXPERIÊNCIA E DESLIGAMENTO ---
   probationType?: ProbationType; 
   experienceInterviews?: ExperienceInterview[];
+  exitInterview?: ExitInterview; // <--- ADICIONADO AQUI: Entrevista de desligamento atrelada ao perfil
 
-  terminationDate?: string; // <--- ADICIONADO PARA O CÁLCULO DE TURNOVER DOS SETORES
+  terminationDate?: string; // Para o cálculo de turnover dos setores
   terminationReason?: string;
   leaveReason?: string;
   leaveExpectedReturn?: string;

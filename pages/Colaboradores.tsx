@@ -4,7 +4,7 @@ import { Employee, EmployeeStatus, EmployeeHistoryRecord, ContractType, Employee
 import { 
   Contact, Plus, Search, Filter, Edit2, Trash2, 
   History, Calendar, Phone, Briefcase, MapPin, 
-  ChevronRight, ArrowLeft, Save, AlertCircle, XCircle, Clock, FileText
+  ChevronRight, ArrowLeft, Save, AlertCircle, XCircle, Clock, FileText, RefreshCw
 } from 'lucide-react';
 
 const SCHEDULE_OPTIONS = [
@@ -13,6 +13,16 @@ const SCHEDULE_OPTIONS = [
   'Comercial Produção (07h às 11h43 e 13h às 17h05)',
   'Comercial Adm (08h às 18h / Sex até 17h)',
   'Outro'
+];
+
+const WEEK_DAYS = [
+  { value: 1, label: 'Seg' },
+  { value: 2, label: 'Ter' },
+  { value: 3, label: 'Qua' },
+  { value: 4, label: 'Qui' },
+  { value: 5, label: 'Sex' },
+  { value: 6, label: 'Sáb' },
+  { value: 0, label: 'Dom' }
 ];
 
 export const Colaboradores: React.FC = () => {
@@ -28,7 +38,6 @@ export const Colaboradores: React.FC = () => {
   const [contractFilter, setContractFilter] = useState<ContractType | 'Todos'>('Todos');
   const [scheduleFilter, setScheduleFilter] = useState('Todos'); 
 
-  // Estado para a observação livre do desligamento
   const [terminationObservation, setTerminationObservation] = useState('');
 
   const [formData, setFormData] = useState<Partial<Employee> & any>({
@@ -37,6 +46,7 @@ export const Colaboradores: React.FC = () => {
     dailyWorkload: 8.8,
     probationType: '45+45',
     workSchedule: '', 
+    workDays: [1, 2, 3, 4, 5], // Padrão Seg a Sex
     history: []
   });
 
@@ -89,7 +99,6 @@ export const Colaboradores: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Concatena a observação livre ao motivo de desligamento, se for Inativo
     let finalTerminationReason = formData.terminationReason;
     if (formData.status === 'Inativo') {
         if (!finalTerminationReason) {
@@ -109,6 +118,12 @@ export const Colaboradores: React.FC = () => {
         }
     }
 
+    // Se a pessoa esvaziou os dias úteis, avisa
+    if (!formData.workDays || formData.workDays.length === 0) {
+       alert("Selecione pelo menos um dia de trabalho para o colaborador.");
+       return;
+    }
+
     const employeeData = {
       ...formData,
       terminationReason: finalTerminationReason,
@@ -125,8 +140,22 @@ export const Colaboradores: React.FC = () => {
     }
     
     setView('list');
-    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', history: [] });
+    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', workDays: [1,2,3,4,5], history: [] });
     setTerminationObservation('');
+  };
+
+  // Botão para forçar Seg a Sex em todos que não tem
+  const handleSyncWorkDays = async () => {
+    if (!window.confirm("Iszso irá aplicar o padrão de trabalho de 'Segunda a Sexta' para todos os colaboradores que ainda não têm essa informação configurada. Deseja continuar?")) return;
+    
+    let updatedCount = 0;
+    for (const emp of employees) {
+       if (!emp.workDays || emp.workDays.length === 0) {
+          await updateEmployee({ ...emp, workDays: [1, 2, 3, 4, 5] });
+          updatedCount++;
+       }
+    }
+    alert(`${updatedCount} colaboradores foram atualizados para o padrão Segunda a Sexta com sucesso!`);
   };
 
   const formatToYMD = (dateVal: any) => {
@@ -181,8 +210,6 @@ export const Colaboradores: React.FC = () => {
   };
 
   const handleEdit = (emp: Employee) => {
-    
-    // Lógica para quebrar o motivo e a observação caso existam
     let mainReason = emp.terminationReason || '';
     let obsText = '';
     
@@ -200,6 +227,7 @@ export const Colaboradores: React.FC = () => {
       dailyWorkload: emp.dailyWorkload || 8.8, 
       probationType: emp.probationType || '45+45',
       workSchedule: (emp as any).workSchedule || '',
+      workDays: emp.workDays || [1, 2, 3, 4, 5], // Padrão se não tiver
       birthDate: formatToYMD(emp.birthDate),
       admissionDate: formatToYMD(emp.admissionDate),
       leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn),
@@ -208,6 +236,15 @@ export const Colaboradores: React.FC = () => {
     });
     setTerminationObservation(obsText);
     setView('form');
+  };
+
+  const toggleWorkDay = (dayValue: number) => {
+    const currentDays = formData.workDays || [];
+    if (currentDays.includes(dayValue)) {
+        setFormData({ ...formData, workDays: currentDays.filter((d: number) => d !== dayValue) });
+    } else {
+        setFormData({ ...formData, workDays: [...currentDays, dayValue].sort() });
+    }
   };
 
   const openDetails = (emp: Employee) => {
@@ -264,17 +301,27 @@ export const Colaboradores: React.FC = () => {
         </div>
         
         {view === 'list' && (
-          <button 
-            onClick={() => { 
-                setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', history: [] }); 
-                setTerminationObservation('');
-                setView('form'); 
-            }}
-            className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg"
-          >
-            <Plus size={20} />
-            <span>Admitir Colaborador</span>
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button 
+                onClick={handleSyncWorkDays}
+                className="flex items-center justify-center space-x-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm"
+                title="Aplica Seg-Sex para todos os colaboradores que estiverem sem dias configurados"
+            >
+                <RefreshCw size={18} />
+                <span className="hidden sm:inline">Sincronizar Dias Trabalhados</span>
+            </button>
+            <button 
+                onClick={() => { 
+                    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', workDays: [1,2,3,4,5], history: [] }); 
+                    setTerminationObservation('');
+                    setView('form'); 
+                }}
+                className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg"
+            >
+                <Plus size={20} />
+                <span>Admitir Colaborador</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -384,7 +431,6 @@ export const Colaboradores: React.FC = () => {
                     <span>{emp.sector}</span>
                   </p>
 
-                  {/* HORÁRIO NO CARD */}
                   <p className="text-slate-500 text-xs flex items-center flex-wrap gap-1.5 mb-4 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
                     <Clock size={14} className="text-blue-400" /> 
                     <span className="font-medium truncate">{(emp as any).workSchedule || 'Horário não definido'}</span>
@@ -554,8 +600,8 @@ export const Colaboradores: React.FC = () => {
                     </select>
                   </div>
                   
-                  {/* NOVO CAMPO: TURNO / HORÁRIO */}
-                  <div className="space-y-2 md:col-span-4 mt-2">
+                  {/* CAMPO DE TURNO / HORÁRIO */}
+                  <div className="space-y-2 md:col-span-2 mt-2">
                     <label className="text-sm font-bold text-slate-700">Turno / Horário de Trabalho</label>
                     <select 
                       required 
@@ -566,6 +612,27 @@ export const Colaboradores: React.FC = () => {
                       <option value="">Selecione o Horário...</option>
                       {SCHEDULE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                     </select>
+                  </div>
+
+                  {/* NOVO CAMPO: DIAS DE TRABALHO (CHECKBOXES) */}
+                  <div className="space-y-2 md:col-span-2 mt-2">
+                    <label className="text-sm font-bold text-slate-700">Dias de Trabalho (Ignora nos Atestados)</label>
+                    <div className="flex gap-1">
+                       {WEEK_DAYS.map(day => (
+                          <button
+                             key={day.value}
+                             type="button"
+                             onClick={() => toggleWorkDay(day.value)}
+                             className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all border ${
+                                (formData.workDays || []).includes(day.value)
+                                   ? 'bg-blue-600 text-white border-blue-700 shadow-sm'
+                                   : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50'
+                             }`}
+                          >
+                             {day.label}
+                          </button>
+                       ))}
+                    </div>
                   </div>
 
                 </div>
@@ -584,10 +651,8 @@ export const Colaboradores: React.FC = () => {
                 </div>
               )}
 
-              {/* BLOCO DE DESLIGAMENTO ATUALIZADO COM CAMPO LIVRE */}
               {formData.status === 'Inativo' && (
                 <div className="p-5 bg-red-50 border border-red-200 rounded-xl space-y-4 animate-in fade-in">
-                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-sm font-bold text-red-800">Data de Desligamento</label>
@@ -607,7 +672,6 @@ export const Colaboradores: React.FC = () => {
                       </select>
                     </div>
                   </div>
-
                   <div className="space-y-2 border-t border-red-200 pt-3">
                      <label className="text-sm font-bold text-red-800 flex items-center gap-1"><FileText size={14}/> Observações Adicionais (RH)</label>
                      <textarea 
@@ -618,7 +682,6 @@ export const Colaboradores: React.FC = () => {
                         onChange={e => setTerminationObservation(e.target.value)} 
                      />
                   </div>
-
                 </div>
               )}
 
@@ -686,16 +749,20 @@ export const Colaboradores: React.FC = () => {
 
                 <div className="flex justify-between border-t border-slate-100 pt-3"><span className="text-slate-400">Jornada (h/dia):</span> <span className="font-bold text-slate-700">{selectedEmployee.dailyWorkload || 8.8}</span></div>
                 
-                {/* MOSTRA HORÁRIO NA FICHA */}
                 <div className="flex flex-col gap-1 border-t border-slate-100 pt-3">
                   <span className="text-slate-400 text-xs">Turno de Trabalho:</span> 
                   <span className="font-bold text-slate-700 text-right">{(selectedEmployee as any).workSchedule || 'Não definido'}</span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-slate-400 text-xs">Dias da Semana:</span> 
+                  <span className="font-bold text-slate-700 text-right">
+                     {selectedEmployee.workDays ? selectedEmployee.workDays.map(d => WEEK_DAYS.find(wd => wd.value === d)?.label).join(', ') : 'Seg, Ter, Qua, Qui, Sex'}
+                  </span>
                 </div>
               </div>
             </div>
             
             <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-slate-200 shadow-sm min-h-[400px]">
-              
               <div className="flex justify-between items-center mb-8 border-b border-slate-100 pb-4">
                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
                   <History className="text-blue-600" /> Histórico Funcional
