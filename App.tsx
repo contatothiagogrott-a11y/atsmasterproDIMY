@@ -20,6 +20,7 @@ import { Experiencia } from './pages/Experiencia';
 import { Reunioes } from './pages/Reunioes';
 import { Aniversariantes } from './pages/Aniversariantes';
 import { Integracao } from './pages/Integracao';
+import { Setores } from './pages/Setores';
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
@@ -93,6 +94,7 @@ const App: React.FC = () => {
             <Route path="/experiencia" element={<Experiencia />} />
             <Route path="/reunioes" element={<Reunioes />} />
             <Route path="/aniversariantes" element={<Aniversariantes />} />
+            <Route path="/setores" element={<ProtectedRoute allowedRoles={['MASTER', 'AUXILIAR_RH']}><Setores /></ProtectedRoute>} />
 
           </Route>
 

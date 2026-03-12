@@ -18,7 +18,8 @@ import {
   CalendarClock,
   Coffee,
   Gift,
-  UserPlus
+  UserPlus,
+  Building2
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -151,6 +152,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     <Link to="/aniversariantes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/aniversariantes') ? 'bg-pink-50 text-pink-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-pink-600 text-sm'}`}>
                       <Gift size={18} />
                       <span>Aniversariantes</span>
+                    </Link>
+                  )}
+
+                  {canViewAbsenteismo && (
+                    <Link to="/setores" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/setores') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600 text-sm'}`}>
+                      <Building2 size={18} />
+                      <span>Setores</span>
                     </Link>
                   )}
 
