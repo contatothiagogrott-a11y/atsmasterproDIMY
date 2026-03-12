@@ -44,14 +44,14 @@ const ProtectedRoute = () => {
     return <Navigate to="/" replace />;
   }
 
-  // 2. AUXILIAR DE RH: Liberado para Dashboard, Gestão e Configurações
-  const allowedAuxiliarRoutes = ['/', '/absenteismo', '/colaboradores', '/reunioes', '/aniversariantes', '/settings'];
+  // 2. AUXILIAR DE RH: Liberado para Dashboard, Gestão e Configurações (Agora inclui /setores)
+  const allowedAuxiliarRoutes = ['/', '/absenteismo', '/colaboradores', '/reunioes', '/aniversariantes', '/settings', '/setores'];
   if (isAuxiliar && !allowedAuxiliarRoutes.includes(location.pathname)) {
     return <Navigate to="/" replace />;
   }
 
-  // 3. RECRUTADOR: Bloqueado APENAS nas páginas profundas de DP/Gestão
-  const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores', '/experiencia'];
+  // 3. RECRUTADOR: Bloqueado APENAS nas páginas profundas de DP/Gestão (Agora bloqueia /setores)
+  const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores', '/experiencia', '/setores'];
   if (!isMaster && !isAuxiliar && !isRecepcao && forbiddenRecruiterRoutes.includes(location.pathname)) {
     return <Navigate to="/" replace />;
   }
@@ -94,7 +94,9 @@ const App: React.FC = () => {
             <Route path="/experiencia" element={<Experiencia />} />
             <Route path="/reunioes" element={<Reunioes />} />
             <Route path="/aniversariantes" element={<Aniversariantes />} />
-            <Route path="/setores" element={<ProtectedRoute allowedRoles={['MASTER', 'AUXILIAR_RH']}><Setores /></ProtectedRoute>} />
+            
+            {/* ROTA CORRIGIDA (SEM O PROTECTED ROUTE E LAYOUT DUPLICADOS) */}
+            <Route path="/setores" element={<Setores />} />
 
           </Route>
 
