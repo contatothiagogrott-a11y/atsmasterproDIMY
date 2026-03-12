@@ -86,7 +86,10 @@ export const JobDetails: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<Candidate>>({});
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  
+  // Controle de perdas (Rejeição/Desistência)
   const [lossReasonType, setLossReasonType] = useState(''); 
+  const [lossObservation, setLossObservation] = useState(''); // NOVO ESTADO: Observações livres de perda
 
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [techCandidate, setTechCandidate] = useState<Candidate | null>(null);
@@ -134,11 +137,18 @@ export const JobDetails: React.FC = () => {
     payload.lastInteractionAt = normalizeDateForPersistence(payload.lastInteractionAt);
 
     if (payload.status === 'Reprovado' || payload.status === 'Desistência') {
-        if (!payload.rejectionReason) { 
-            alert("Por favor, informe o motivo da perda."); 
+        if (!lossReasonType) { 
+            alert("Por favor, selecione ou informe o motivo principal da perda."); 
             return; 
         }
         
+        // Junta o motivo da perda com a observação livre (se houver) para o rejectionReason
+        if (lossReasonType === 'Outros') {
+           payload.rejectionReason = lossObservation ? `Outros: ${lossObservation}` : 'Outros motivos';
+        } else {
+           payload.rejectionReason = lossObservation ? `${lossReasonType} | Obs: ${lossObservation}` : lossReasonType;
+        }
+
         payload.rejectedBy = user?.name || 'Sistema';
         
         if (payload.lastInteractionAt) {
@@ -173,14 +183,33 @@ export const JobDetails: React.FC = () => {
         setFormData({ ...candidate });
         
         if (candidate.rejectionReason) {
-            const isGeneral = GENERAL_REJECTION_REASONS.includes(candidate.rejectionReason);
-            const isWithdrawal = WITHDRAWAL_REASONS.includes(candidate.rejectionReason);
+            // Tenta quebrar a string se ela foi unida (Motivo | Obs: Texto)
+            let mainReason = candidate.rejectionReason;
+            let obsText = '';
+            
+            if (candidate.rejectionReason.includes(' | Obs: ')) {
+               const parts = candidate.rejectionReason.split(' | Obs: ');
+               mainReason = parts[0];
+               obsText = parts[1] || '';
+            } else if (candidate.rejectionReason.startsWith('Outros: ')) {
+               mainReason = 'Outros';
+               obsText = candidate.rejectionReason.replace('Outros: ', '');
+            }
+
+            const isGeneral = GENERAL_REJECTION_REASONS.includes(mainReason);
+            const isWithdrawal = WITHDRAWAL_REASONS.includes(mainReason);
+            
             if (isGeneral || isWithdrawal) {
-                setLossReasonType(candidate.rejectionReason);
+                setLossReasonType(mainReason);
             } else {
                 setLossReasonType('Outros');
+                if(!obsText && mainReason !== 'Outros motivos') obsText = mainReason;
             }
-        } else { setLossReasonType(''); }
+            setLossObservation(obsText);
+        } else { 
+            setLossReasonType(''); 
+            setLossObservation('');
+        }
     } else {
         setSelectedCandidate(null);
         setFormData({ 
@@ -191,6 +220,7 @@ export const JobDetails: React.FC = () => {
             createdAt: new Date().toISOString() 
         });
         setLossReasonType('');
+        setLossObservation('');
     }
     setIsModalOpen(true);
   };
@@ -426,6 +456,7 @@ export const JobDetails: React.FC = () => {
             <option value="TODOS">Todos os Status</option>
             <option value="Aguardando Triagem">Aguardando Triagem</option>
             <option value="Em Análise">Em Análise</option>
+            <option value="Em Teste">Em Teste</option>
             <option value="Entrevista">Entrevista</option>
             <option value="Aprovado">Aprovado</option>
             <option value="Reprovado">Reprovado</option>
@@ -610,7 +641,11 @@ export const JobDetails: React.FC = () => {
                    <select className="w-full border p-2 rounded font-bold text-sm" value={formData.status || 'Aguardando Triagem'} onChange={e => {
                        const newStatus = e.target.value;
                        setFormData({...formData, status: newStatus});
-                       if (!['Reprovado', 'Desistência'].includes(newStatus)) { setLossReasonType(''); setFormData(p => ({...p, rejectionReason: undefined})); }
+                       if (!['Reprovado', 'Desistência'].includes(newStatus)) { 
+                           setLossReasonType(''); 
+                           setLossObservation('');
+                           setFormData(p => ({...p, rejectionReason: undefined})); 
+                       }
                    }}>
                       <option value="Aguardando Triagem">Aguardando Triagem</option>
                       <option value="Em Análise">Em Análise</option>
@@ -642,27 +677,38 @@ export const JobDetails: React.FC = () => {
                     </div>
                 )}
 
+                {/* BLOCO DE MOTIVOS DE PERDA / REJEIÇÃO REFORMULADO */}
                 {(formData.status === 'Reprovado' || formData.status === 'Desistência') && (
-                    <div className="md:col-span-2 bg-red-50 p-4 rounded-lg border border-red-200 animate-fadeIn">
-                        <label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1"><AlertTriangle size={12}/> Motivo da Perda (Obrigatório)</label>
-                        <select className="w-full border border-red-300 p-2 rounded bg-white mb-3 text-sm" value={lossReasonType} 
-                            onChange={e => {
-                                const val = e.target.value;
-                                setLossReasonType(val);
-                                if (val !== 'Outros') setFormData({...formData, rejectionReason: val});
-                                else setFormData({...formData, rejectionReason: ''});
-                            }}>
-                            <option value="">-- Selecione o Motivo --</option>
-                            {formData.status === 'Desistência' ? (
-                                WITHDRAWAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)
-                            ) : (
-                                GENERAL_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)
-                            )}
-                            <option value="Outros">Outros (Escrever...)</option>
-                        </select>
-                        {lossReasonType === 'Outros' && (
-                            <textarea className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white min-h-[80px] text-sm shadow-inner" placeholder="Descreva o motivo detalhadamente..." value={formData.rejectionReason || ''} onChange={e => setFormData({...formData, rejectionReason: e.target.value})} />
-                        )}
+                    <div className="md:col-span-2 bg-red-50 p-5 rounded-xl border border-red-200 animate-fadeIn space-y-4">
+                        
+                        <div>
+                           <label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1"><AlertTriangle size={14}/> Motivo da Perda (Obrigatório)</label>
+                           <select className="w-full border border-red-300 p-2.5 rounded-lg bg-white text-sm outline-none focus:ring-2 focus:ring-red-400" value={lossReasonType} 
+                               onChange={e => setLossReasonType(e.target.value)}>
+                               <option value="">-- Selecione o Motivo Principal --</option>
+                               {formData.status === 'Desistência' ? (
+                                   WITHDRAWAL_REASONS.map(r => <option key={r} value={r}>{r}</option>)
+                               ) : (
+                                   GENERAL_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)
+                               )}
+                               <option value="Outros">Outros (Descrever abaixo)</option>
+                           </select>
+                        </div>
+
+                        {/* CAMPO DE TEXTO LIVRE PARA OBSERVAÇÕES DO RECRUTADOR */}
+                        <div>
+                           <label className="block text-xs font-bold text-red-700 mb-1 flex items-center gap-1"><FileText size={14}/> Observações do Recrutador (Livre)</label>
+                           <textarea 
+                              className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white min-h-[100px] text-sm shadow-inner resize-none" 
+                              placeholder={lossReasonType === 'Outros' ? 'Descreva detalhadamente o motivo da perda aqui...' : 'Adicione notas, comportamentos ou detalhes sobre a reprovação/desistência...'} 
+                              value={lossObservation} 
+                              onChange={e => setLossObservation(e.target.value)} 
+                           />
+                           {lossReasonType === 'Outros' && !lossObservation && (
+                              <p className="text-[10px] text-red-500 mt-1 font-bold animate-pulse">Como selecionou "Outros", você precisa escrever algo aqui.</p>
+                           )}
+                        </div>
+
                     </div>
                 )}
 

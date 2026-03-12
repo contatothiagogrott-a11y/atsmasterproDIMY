@@ -4,7 +4,7 @@ import { Employee, EmployeeStatus, EmployeeHistoryRecord, ContractType, Employee
 import { 
   Contact, Plus, Search, Filter, Edit2, Trash2, 
   History, Calendar, Phone, Briefcase, MapPin, 
-  ChevronRight, ArrowLeft, Save, AlertCircle, XCircle, Clock
+  ChevronRight, ArrowLeft, Save, AlertCircle, XCircle, Clock, FileText
 } from 'lucide-react';
 
 const SCHEDULE_OPTIONS = [
@@ -16,7 +16,7 @@ const SCHEDULE_OPTIONS = [
 ];
 
 export const Colaboradores: React.FC = () => {
-  const { employees = [], addEmployee, updateEmployee, removeEmployee, settings = [], absences = [], user } = useData();
+  const { employees = [], addEmployee, updateEmployee, removeEmployee, settings = [], absences = [], user } = useData() as any;
   
   const [view, setView] = useState<'list' | 'form' | 'details'>('list');
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -26,14 +26,17 @@ export const Colaboradores: React.FC = () => {
   const [sectorFilter, setSectorFilter] = useState('Todos');
   const [unitFilter, setUnitFilter] = useState('Todas');
   const [contractFilter, setContractFilter] = useState<ContractType | 'Todos'>('Todos');
-  const [scheduleFilter, setScheduleFilter] = useState('Todos'); // <--- NOVO FILTRO
+  const [scheduleFilter, setScheduleFilter] = useState('Todos'); 
+
+  // Estado para a observação livre do desligamento
+  const [terminationObservation, setTerminationObservation] = useState('');
 
   const [formData, setFormData] = useState<Partial<Employee> & any>({
     status: 'Ativo',
     contractType: 'CLT',
     dailyWorkload: 8.8,
     probationType: '45+45',
-    workSchedule: '', // <--- NOVO CAMPO
+    workSchedule: '', 
     history: []
   });
 
@@ -45,10 +48,10 @@ export const Colaboradores: React.FC = () => {
   });
 
   const filteredEmployees = useMemo(() => {
-    return employees.filter(emp => {
+    return employees.filter((emp: any) => {
       const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           emp.role.toLowerCase().includes(searchTerm.toLowerCase());
-                           
+                             emp.role.toLowerCase().includes(searchTerm.toLowerCase());
+                             
       let matchesStatus = false;
       if (statusFilter === 'Todos') matchesStatus = true;
       else if (statusFilter === 'Pendentes') matchesStatus = !!emp.hasPendingInfo;
@@ -67,8 +70,8 @@ export const Colaboradores: React.FC = () => {
     if (!selectedEmployee) return [];
     
     const employeeAbsences = absences
-      .filter(a => a.employeeName.toLowerCase() === selectedEmployee.name.toLowerCase())
-      .map(a => ({
+      .filter((a: any) => a.employeeName.toLowerCase() === selectedEmployee.name.toLowerCase())
+      .map((a: any) => ({
         id: a.id,
         date: a.absenceDate,
         type: 'Falta/Afastamento',
@@ -76,7 +79,7 @@ export const Colaboradores: React.FC = () => {
         isAbsence: true
       }));
 
-    const manualHistory = (selectedEmployee.history || []).map(h => ({ ...h, isAbsence: false }));
+    const manualHistory = (selectedEmployee.history || []).map((h: any) => ({ ...h, isAbsence: false }));
     
     return [...employeeAbsences, ...manualHistory].sort((a, b) => 
       new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -85,8 +88,30 @@ export const Colaboradores: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Concatena a observação livre ao motivo de desligamento, se for Inativo
+    let finalTerminationReason = formData.terminationReason;
+    if (formData.status === 'Inativo') {
+        if (!finalTerminationReason) {
+            alert("Por favor, selecione o motivo principal do desligamento.");
+            return;
+        }
+        if (finalTerminationReason === 'Outros' && !terminationObservation) {
+            alert("Por favor, detalhe o motivo do desligamento no campo de observação.");
+            return;
+        }
+        if (terminationObservation) {
+            if (finalTerminationReason === 'Outros') {
+                finalTerminationReason = `Outros: ${terminationObservation}`;
+            } else {
+                finalTerminationReason = `${finalTerminationReason} | Obs: ${terminationObservation}`;
+            }
+        }
+    }
+
     const employeeData = {
       ...formData,
+      terminationReason: finalTerminationReason,
       id: formData.id || crypto.randomUUID(),
       hasPendingInfo: false,
       createdAt: formData.createdAt || new Date().toISOString(),
@@ -98,8 +123,10 @@ export const Colaboradores: React.FC = () => {
     } else {
       await addEmployee(employeeData);
     }
+    
     setView('list');
     setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', history: [] });
+    setTerminationObservation('');
   };
 
   const formatToYMD = (dateVal: any) => {
@@ -154,6 +181,20 @@ export const Colaboradores: React.FC = () => {
   };
 
   const handleEdit = (emp: Employee) => {
+    
+    // Lógica para quebrar o motivo e a observação caso existam
+    let mainReason = emp.terminationReason || '';
+    let obsText = '';
+    
+    if (mainReason.includes(' | Obs: ')) {
+       const parts = mainReason.split(' | Obs: ');
+       mainReason = parts[0];
+       obsText = parts[1] || '';
+    } else if (mainReason.startsWith('Outros: ')) {
+       mainReason = 'Outros';
+       obsText = emp.terminationReason?.replace('Outros: ', '') || '';
+    }
+
     setFormData({ 
       ...emp, 
       dailyWorkload: emp.dailyWorkload || 8.8, 
@@ -162,8 +203,10 @@ export const Colaboradores: React.FC = () => {
       birthDate: formatToYMD(emp.birthDate),
       admissionDate: formatToYMD(emp.admissionDate),
       leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn),
-      terminationDate: formatToYMD((emp as any).terminationDate) 
+      terminationDate: formatToYMD(emp.terminationDate),
+      terminationReason: mainReason 
     });
+    setTerminationObservation(obsText);
     setView('form');
   };
 
@@ -206,9 +249,6 @@ export const Colaboradores: React.FC = () => {
   };
 
   const standardTerminations = ['Pedido de Demissão (Voluntário)', 'Demissão sem justa causa (Involuntário)', 'Demissão por justa causa', 'Término de Contrato', 'Acordo Mútuo'];
-  const currentReason = formData.terminationReason || '';
-  const isCustomTermination = currentReason !== '' && !standardTerminations.includes(currentReason);
-  const selectValue = isCustomTermination ? 'Outros' : currentReason;
 
   return (
     <div className="space-y-6">
@@ -225,7 +265,11 @@ export const Colaboradores: React.FC = () => {
         
         {view === 'list' && (
           <button 
-            onClick={() => { setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', history: [] }); setView('form'); }}
+            onClick={() => { 
+                setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', history: [] }); 
+                setTerminationObservation('');
+                setView('form'); 
+            }}
             className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-lg"
           >
             <Plus size={20} />
@@ -285,7 +329,7 @@ export const Colaboradores: React.FC = () => {
                   onChange={e => setSectorFilter(e.target.value)}
                 >
                   <option value="Todos">Todos Setores</option>
-                  {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  {settings.filter((s:any) => s.type === 'SECTOR').map((s:any) => <option key={s.id} value={s.name}>{s.name}</option>)}
                 </select>
               </div>
               
@@ -304,7 +348,7 @@ export const Colaboradores: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredEmployees.map(emp => (
+            {filteredEmployees.map((emp: any) => (
               <div 
                 key={emp.id} 
                 className={`bg-white border-2 rounded-2xl overflow-hidden hover:shadow-md transition-all group relative ${
@@ -388,11 +432,11 @@ export const Colaboradores: React.FC = () => {
             
             {formData.hasPendingInfo && (
                <div className="bg-orange-50 border-b border-orange-200 p-4 flex items-start gap-3 text-orange-800">
-                  <AlertCircle className="mt-0.5 flex-shrink-0" />
-                  <div>
-                    <h4 className="font-bold text-sm">Atenção na Importação</h4>
-                    <p className="text-xs">O setor "{formData.sector}" vindo da planilha não está cadastrado nas configurações. Selecione um setor válido abaixo e salve para resolver a pendência.</p>
-                  </div>
+                 <AlertCircle className="mt-0.5 flex-shrink-0" />
+                 <div>
+                   <h4 className="font-bold text-sm">Atenção na Importação</h4>
+                   <p className="text-xs">O setor "{formData.sector}" vindo da planilha não está cadastrado nas configurações. Selecione um setor válido abaixo e salve para resolver a pendência.</p>
+                 </div>
                </div>
             )}
             
@@ -440,8 +484,8 @@ export const Colaboradores: React.FC = () => {
                       onChange={e => setFormData({...formData, sector: e.target.value})}
                     >
                       <option value="">Selecione...</option>
-                      {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                      {formData.sector && !settings.some(s => s.type === 'SECTOR' && s.name === formData.sector) && (
+                      {settings.filter((s:any) => s.type === 'SECTOR').map((s:any) => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      {formData.sector && !settings.some((s:any) => s.type === 'SECTOR' && s.name === formData.sector) && (
                         <option value={formData.sector} disabled>{formData.sector} (Inativo)</option>
                       )}
                     </select>
@@ -456,8 +500,8 @@ export const Colaboradores: React.FC = () => {
                       onChange={e => setFormData({...formData, unit: e.target.value})}
                     >
                       <option value="">Selecione...</option>
-                      {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                      {formData.unit && !settings.some(s => s.type === 'UNIT' && s.name === formData.unit) && (
+                      {settings.filter((s:any) => s.type === 'UNIT').map((s:any) => <option key={s.id} value={s.name}>{s.name}</option>)}
+                      {formData.unit && !settings.some((s:any) => s.type === 'UNIT' && s.name === formData.unit) && (
                         <option value={formData.unit} disabled>{formData.unit} (Inativo)</option>
                       )}
                     </select>
@@ -540,41 +584,41 @@ export const Colaboradores: React.FC = () => {
                 </div>
               )}
 
+              {/* BLOCO DE DESLIGAMENTO ATUALIZADO COM CAMPO LIVRE */}
               {formData.status === 'Inativo' && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-red-800">Data de Desligamento</label>
-                    <input required type="date" className="w-full border border-red-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" value={formData.terminationDate || ''} onChange={e => setFormData({...formData, terminationDate: e.target.value})} />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-red-800">Motivo Principal</label>
-                    <select 
-                      required 
-                      className="w-full border border-red-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" 
-                      value={selectValue} 
-                      onChange={e => {
-                        const val = e.target.value;
-                        if (val === 'Outros') setFormData({...formData, terminationReason: 'Outros motivos'});
-                        else setFormData({...formData, terminationReason: val});
-                      }}
-                    >
-                      <option value="">Selecione...</option>
-                      {standardTerminations.map(t => <option key={t} value={t}>{t}</option>)}
-                      <option value="Outros">Outros (Descrever...)</option>
-                    </select>
-                  </div>
-                  {isCustomTermination && (
-                    <div className="space-y-2 md:col-span-2 border-t border-red-200 pt-3">
-                      <label className="text-sm font-bold text-red-800">Descreva o Motivo (Outros)</label>
-                      <input 
-                        required 
-                        className="w-full border border-red-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" 
-                        placeholder="Ex: Mudança de cidade, insatisfação..." 
-                        value={formData.terminationReason === 'Outros motivos' ? '' : formData.terminationReason} 
-                        onChange={e => setFormData({...formData, terminationReason: e.target.value})} 
-                      />
+                <div className="p-5 bg-red-50 border border-red-200 rounded-xl space-y-4 animate-in fade-in">
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-red-800">Data de Desligamento</label>
+                      <input required type="date" className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" value={formData.terminationDate || ''} onChange={e => setFormData({...formData, terminationDate: e.target.value})} />
                     </div>
-                  )}
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-red-800">Motivo Principal</label>
+                      <select 
+                        required 
+                        className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white" 
+                        value={formData.terminationReason === 'Outros' || !standardTerminations.includes(formData.terminationReason || '') ? (formData.terminationReason ? 'Outros' : '') : formData.terminationReason} 
+                        onChange={e => setFormData({...formData, terminationReason: e.target.value})}
+                      >
+                        <option value="">Selecione...</option>
+                        {standardTerminations.map(t => <option key={t} value={t}>{t}</option>)}
+                        <option value="Outros">Outros (Descrever abaixo)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 border-t border-red-200 pt-3">
+                     <label className="text-sm font-bold text-red-800 flex items-center gap-1"><FileText size={14}/> Observações Adicionais (RH)</label>
+                     <textarea 
+                        className="w-full border border-red-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-red-500 bg-white resize-none shadow-inner" 
+                        rows={3}
+                        placeholder="Adicione notas, histórico de performance, motivos do pedido de demissão, etc..." 
+                        value={terminationObservation} 
+                        onChange={e => setTerminationObservation(e.target.value)} 
+                     />
+                  </div>
+
                 </div>
               )}
 
@@ -633,7 +677,10 @@ export const Colaboradores: React.FC = () => {
                 {selectedEmployee.status === 'Inativo' && (
                   <>
                     <div className="flex justify-between border-t border-red-100 pt-3"><span className="text-red-400">Desligamento:</span> <span className="font-bold text-red-600">{formatDate((selectedEmployee as any).terminationDate)}</span></div>
-                    <div className="flex justify-between"><span className="text-red-400">Motivo:</span> <span className="font-bold text-red-600 text-right max-w-[60%] leading-tight">{selectedEmployee.terminationReason}</span></div>
+                    <div className="flex flex-col gap-1 border-t border-red-50 pt-2">
+                       <span className="text-red-400 text-xs">Motivo / Observações:</span> 
+                       <span className="font-bold text-red-700 leading-tight bg-red-50 p-2 rounded-lg">{selectedEmployee.terminationReason}</span>
+                    </div>
                   </>
                 )}
 
