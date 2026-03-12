@@ -131,7 +131,7 @@ export const exportJobCandidates = (job: Job, candidates: Candidate[]) => {
   XLSX.writeFile(workbook, `ATS_Candidatos_${job.title.replace(/\s+/g, '_')}.xlsx`);
 };
 
-// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - ATUALIZADO COM CORREÇÃO DE STATUS ---
+// --- EXPORT 3: RELATÓRIO ESTRATÉGICO (BI) - AGORA COM FUNIL E PERDAS ---
 export const exportStrategicReport = (metrics: any, startDate: string, endDate: string, candidates?: Candidate[]) => {
     const wb = XLSX.utils.book_new();
   
@@ -190,7 +190,7 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
     XLSX.utils.book_append_sheet(wb, wsSector, "Análise por Setor");
   
     // ==========================================
-    // ABA 3: MOTIVOS DE PERDA
+    // ABA 3: MOTIVOS DE PERDA (ESTATÍSTICA)
     // ==========================================
     const rejectionRows = Object.entries(metrics.rejected?.reasons || {}).map(([reason, count]: any) => [
         "Reprovação (Empresa)", reason, count
@@ -213,12 +213,12 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
     XLSX.utils.book_append_sheet(wb, wsReasons, "Diagnóstico de Perdas");
 
     // ==========================================
-    // ABA 4: DETALHAMENTO VAGAS TRABALHADAS (VOLUME TOTAL) - COM LÓGICA DE STATUS NO PERÍODO
+    // ABA 4: DETALHAMENTO VAGAS TRABALHADAS 
     // ==========================================
     if (metrics.allActive && metrics.allActive.list) {
         const workedJobsHeaders = [
             "Título da Vaga", 
-            "Status no Período", // Nome ajustado para refletir a lógica
+            "Status no Período", 
             "Setor", 
             "Unidade", 
             "Data Abertura", 
@@ -228,7 +228,6 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
             "Substituído (Se houver)"
         ];
 
-        // Definindo a data limite do filtro para comparação
         const filterEndDate = new Date(endDate);
         filterEndDate.setHours(23, 59, 59, 999);
 
@@ -239,19 +238,15 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
             const solicitante = job.requesterName || 'N/I';
             const substituido = (tipo === 'Substituição') ? (details.replacedEmployee || '-') : '-';
             
-            // LÓGICA DE "STATUS NO PERÍODO":
-            // Se a vaga foi fechada DEPOIS do filtro, ela conta como "Aberta" neste relatório.
             let statusNoPeriodo = job.status;
             let dataFechamentoVisual = '-';
 
             if (job.closedAt) {
                 const closedDate = new Date(job.closedAt);
-                // Se fechou DEPOIS do período analisado, para este relatório ela estava Aberta
                 if (closedDate > filterEndDate) {
                     statusNoPeriodo = 'Aberta';
                     dataFechamentoVisual = 'Em aberto (neste período)';
                 } else {
-                    // Se fechou DENTRO ou ANTES, mostra Fechada/Cancelada
                     dataFechamentoVisual = formatDate(job.closedAt);
                 }
             } else {
@@ -260,7 +255,7 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
 
             return [
                 job.title,
-                statusNoPeriodo, // Usa o status calculado, não o job.status bruto
+                statusNoPeriodo, 
                 job.sector,
                 job.unit,
                 formatDate(job.openedAt),
@@ -281,24 +276,91 @@ export const exportStrategicReport = (metrics: any, startDate: string, endDate: 
 
         const wsWorked = XLSX.utils.aoa_to_sheet(wsDataWorked);
         wsWorked['!cols'] = [
-            { wch: 30 }, // Título
-            { wch: 15 }, // Status
-            { wch: 20 }, // Setor
-            { wch: 15 }, // Unidade
-            { wch: 15 }, // Abertura
-            { wch: 20 }, // Fechamento
-            { wch: 20 }, // Tipo
-            { wch: 30 }, // Solicitante
-            { wch: 30 }  // Substituído
+            { wch: 30 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, 
+            { wch: 20 }, { wch: 20 }, { wch: 30 }, { wch: 30 } 
         ];
-        XLSX.utils.book_append_sheet(wb, wsWorked, "Vagas Trabalhadas (Detalhe)");
+        XLSX.utils.book_append_sheet(wb, wsWorked, "Vagas Trabalhadas");
+    }
+
+    // ==========================================
+    // ABA 5: FUNIL E PERDAS DETALHADAS (NOVO)
+    // ==========================================
+    if (candidates && candidates.length > 0) {
+        // Função auxiliar para quebrar Motivo e Observação Livre
+        const parseRejection = (reasonStr?: string) => {
+            if (!reasonStr) return { main: '-', obs: '-' };
+            if (reasonStr.includes(' | Obs: ')) {
+                const parts = reasonStr.split(' | Obs: ');
+                return { main: parts[0], obs: parts[1] };
+            }
+            if (reasonStr.startsWith('Outros: ')) {
+                return { main: 'Outros', obs: reasonStr.replace('Outros: ', '') };
+            }
+            return { main: reasonStr, obs: '-' };
+        };
+
+        const startTimestamp = new Date(startDate).getTime();
+        const endTimestamp = new Date(endDate);
+        endTimestamp.setHours(23, 59, 59, 999);
+        const end = endTimestamp.getTime();
+
+        const isWithin = (dateStr?: string) => {
+            if (!dateStr) return false;
+            const d = new Date(dateStr).getTime();
+            return d >= startTimestamp && d <= end;
+        };
+
+        const funnelCandidates = candidates.filter(c => 
+           isWithin(c.firstContactAt) || 
+           isWithin(c.interviewAt) || 
+           isWithin(c.techTestDate) || 
+           isWithin(c.rejectionDate) ||
+           (c.timeline?.startDate && isWithin(c.timeline.startDate))
+        );
+
+        const funnelHeaders = [
+            "Candidato", "Origem", "Status Atual", 
+            "Data 1º Contato", "Data Entrevista", "Data Teste", "Data Perda/Fechamento", 
+            "Motivo Principal (Perda)", "Observações do Recrutador"
+        ];
+
+        const funnelRows = funnelCandidates.map(c => {
+           const parsedLoss = parseRejection(c.rejectionReason);
+           
+           return [
+              c.name,
+              c.origin,
+              c.status,
+              formatDate(c.firstContactAt) || '-',
+              formatDate(c.interviewAt) || '-',
+              formatDate(c.techTestDate) || '-',
+              formatDate(c.rejectionDate) || '-',
+              parsedLoss.main,
+              parsedLoss.obs
+           ];
+        });
+
+        const wsDataFunnel = [
+            ["DETALHAMENTO DO FUNIL E PERDAS"],
+            [`Período: ${formatDate(startDate)} a ${formatDate(endDate)}`],
+            [""],
+            funnelHeaders,
+            ...funnelRows
+        ];
+
+        const wsFunnel = XLSX.utils.aoa_to_sheet(wsDataFunnel);
+        wsFunnel['!cols'] = [
+            { wch: 30 }, { wch: 20 }, { wch: 20 }, 
+            { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, 
+            { wch: 30 }, { wch: 50 } 
+        ];
+        XLSX.utils.book_append_sheet(wb, wsFunnel, "Funil e Perdas");
     }
   
     // Gera o arquivo
     XLSX.writeFile(wb, `ATS_Relatorio_Estrategico_${startDate}_ate_${endDate}.xlsx`);
 };
 
-// Mantenha o exportJobsList se ainda for necessário
 export const exportJobsList = (jobs: Job[], candidates: Candidate[]) => {
   const data = jobs.filter(j => !j.isHidden).map(job => ({
       "Vaga": job.title,
