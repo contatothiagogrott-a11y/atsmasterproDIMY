@@ -11,6 +11,8 @@ export const Experiencia: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'prazos' | 'relatorio' | 'historico'>('prazos');
   
   const isMaster = user?.role === 'MASTER';
+  const isRecruiter = user?.role === 'RECRUITER';
+  const canEdit = isMaster || isRecruiter; // Recrutadores agora podem editar as entrevistas
 
   // --- ESTADOS DE FILTRO ---
   const [filterStart, setFilterStart] = useState(() => {
@@ -32,6 +34,7 @@ export const Experiencia: React.FC = () => {
     interviewDate: new Date().toISOString().split('T')[0],
     qLeader: 0, qColleagues: 0, qTraining: 0, 
     qJobSatisfaction: 0, qCompanySatisfaction: 0, qBenefits: 0,
+    qRecommend: undefined, // Novo campo: Indicação DIMY (0 a 10 ou undefined)
     trainerName: '', comments: ''
   });
 
@@ -108,6 +111,12 @@ export const Experiencia: React.FC = () => {
 
   }, [employees, filterStart, filterEnd, filterSector, filterUnit]);
 
+  const formatDateToBR = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  };
+
   // --- LÓGICA DO EXPORT EXCEL ---
   const handleExportExcel = () => {
     if (allCompletedInterviews.length === 0) {
@@ -122,6 +131,7 @@ export const Experiencia: React.FC = () => {
       'Setor': inv.employeeSector,
       'Unidade': inv.employeeUnit,
       'Cargo': inv.employeeRole,
+      'Indicação DIMY (eNPS)': inv.qRecommend !== undefined ? inv.qRecommend : 'Não respondeu',
       'Nota: Liderança': inv.qLeader,
       'Nota: Equipe': inv.qColleagues,
       'Nota: Treinamento': inv.qTraining,
@@ -154,31 +164,43 @@ export const Experiencia: React.FC = () => {
     XLSX.writeFile(workbook, fileName);
   };
 
-  // --- LÓGICA DO eNPS ---
+  // --- LÓGICA DO eNPS VERDADEIRO (Baseado na Pergunta de Indicação) ---
+  const trueEnpsData = useMemo(() => {
+    const answeredInterviews = allCompletedInterviews.filter(inv => inv.qRecommend !== undefined && inv.qRecommend !== null);
+    if (answeredInterviews.length === 0) return { promoters: 0, passives: 0, detractors: 0, score: 0, total: 0 };
+    
+    const total = answeredInterviews.length;
+    const promoters = answeredInterviews.filter(inv => inv.qRecommend >= 9).length; // 9 ou 10
+    const passives = answeredInterviews.filter(inv => inv.qRecommend === 7 || inv.qRecommend === 8).length; // 7 ou 8
+    const detractors = answeredInterviews.filter(inv => inv.qRecommend <= 6).length; // 0 a 6
+    
+    const pctPromotores = (promoters / total) * 100;
+    const pctDetratores = (detractors / total) * 100;
+    const score = Math.round(pctPromotores - pctDetratores);
+    
+    return { promoters, passives, detractors, score, total };
+  }, [allCompletedInterviews]);
+
+  // Lógica das perguntas de satisfação (1 a 4) - Mantido para os sub-indicadores
   const analytics = useMemo(() => {
-    const calculateNPS = (scoreArray: number[]) => {
+    const calculateSatisfaction = (scoreArray: number[]) => {
       if (scoreArray.length === 0) return { promoters: 0, passives: 0, detractors: 0, score: 0, total: 0 };
       const total = scoreArray.length;
-      
       const promoters = scoreArray.filter(s => s === 4).length;
       const passives = scoreArray.filter(s => s === 3).length;
       const detractors = scoreArray.filter(s => s <= 2).length;
-      
       const pctPromotores = (promoters / total) * 100;
       const pctDetratores = (detractors / total) * 100;
-      const score = Math.round(pctPromotores - pctDetratores);
-      
-      return { promoters, passives, detractors, score, total };
+      return { promoters, passives, detractors, score: Math.round(pctPromotores - pctDetratores), total };
     };
 
     return {
-      total: allCompletedInterviews.length,
-      leader: calculateNPS(allCompletedInterviews.map(i => i.qLeader)),
-      colleagues: calculateNPS(allCompletedInterviews.map(i => i.qColleagues)),
-      training: calculateNPS(allCompletedInterviews.map(i => i.qTraining)),
-      job: calculateNPS(allCompletedInterviews.map(i => i.qJobSatisfaction)),
-      company: calculateNPS(allCompletedInterviews.map(i => i.qCompanySatisfaction)),
-      benefits: calculateNPS(allCompletedInterviews.map(i => i.qBenefits)),
+      leader: calculateSatisfaction(allCompletedInterviews.map(i => i.qLeader)),
+      colleagues: calculateSatisfaction(allCompletedInterviews.map(i => i.qColleagues)),
+      training: calculateSatisfaction(allCompletedInterviews.map(i => i.qTraining)),
+      job: calculateSatisfaction(allCompletedInterviews.map(i => i.qJobSatisfaction)),
+      company: calculateSatisfaction(allCompletedInterviews.map(i => i.qCompanySatisfaction)),
+      benefits: calculateSatisfaction(allCompletedInterviews.map(i => i.qBenefits)),
     };
   }, [allCompletedInterviews]);
 
@@ -198,6 +220,7 @@ export const Experiencia: React.FC = () => {
       employeeSector: interviewData.employeeSector || interviewingEmp.sector,
       employeeUnit: interviewData.employeeUnit || interviewingEmp.unit || '',
 
+      qRecommend: interviewData.qRecommend, // Salva o eNPS verdadeiro
       qLeader: interviewData.qLeader!,
       qColleagues: interviewData.qColleagues!,
       qTraining: interviewData.qTraining!,
@@ -290,12 +313,6 @@ export const Experiencia: React.FC = () => {
     );
   };
 
-  const formatDateToBR = (dateStr: string) => {
-    if (!dateStr) return '';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
-  };
-
   return (
     <div className="space-y-6 pb-12">
       {/* HEADER */}
@@ -311,23 +328,26 @@ export const Experiencia: React.FC = () => {
         </div>
 
         {/* BOTÃO DE REGISTRO RETROATIVO */}
-        <button 
-          onClick={() => {
-            setManualEntry(true);
-            setInterviewingEmp(null);
-            setInterviewData({
-              period: '1º Período',
-              interviewDate: new Date().toISOString().split('T')[0],
-              qLeader: 0, qColleagues: 0, qTraining: 0, 
-              qJobSatisfaction: 0, qCompanySatisfaction: 0, qBenefits: 0,
-              trainerName: '', comments: ''
-            });
-          }}
-          className="flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-5 py-2.5 rounded-xl font-bold transition-colors border border-indigo-200"
-        >
-          <Plus size={18} />
-          Registro Retroativo
-        </button>
+        {canEdit && (
+          <button 
+            onClick={() => {
+              setManualEntry(true);
+              setInterviewingEmp(null);
+              setInterviewData({
+                period: '1º Período',
+                interviewDate: new Date().toISOString().split('T')[0],
+                qLeader: 0, qColleagues: 0, qTraining: 0, 
+                qJobSatisfaction: 0, qCompanySatisfaction: 0, qBenefits: 0,
+                qRecommend: undefined,
+                trainerName: '', comments: ''
+              });
+            }}
+            className="flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-5 py-2.5 rounded-xl font-bold transition-colors border border-indigo-200"
+          >
+            <Plus size={18} />
+            Registro Retroativo
+          </button>
+        )}
       </div>
 
       <div className="flex space-x-2 border-b border-slate-200">
@@ -358,7 +378,7 @@ export const Experiencia: React.FC = () => {
               <Filter size={16} className="text-slate-400" />
               <select value={filterSector} onChange={e => setFilterSector(e.target.value)} className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]">
                 <option value="Todos">Todos os Setores</option>
-                {settings.filter(s => s.type === 'SECTOR').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                {settings.filter((s:any) => s.type === 'SECTOR').map((s:any) => <option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
             </div>
 
@@ -366,7 +386,7 @@ export const Experiencia: React.FC = () => {
               <MapPin size={16} className="text-slate-400" />
               <select value={filterUnit} onChange={e => setFilterUnit(e.target.value)} className="bg-transparent py-2 text-sm outline-none cursor-pointer min-w-[120px]">
                 <option value="Todas">Todas as Unidades</option>
-                {settings.filter(s => s.type === 'UNIT').map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                {settings.filter((s:any) => s.type === 'UNIT').map((s:any) => <option key={s.id} value={s.name}>{s.name}</option>)}
               </select>
             </div>
           </div>
@@ -418,20 +438,23 @@ export const Experiencia: React.FC = () => {
                     <td className="p-4 text-right">
                       {emp.alreadyInterviewed ? (
                         <span className="inline-flex items-center gap-1 text-emerald-600 text-xs font-bold bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg"><CheckSquare size={14} /> Avaliado</span>
-                      ) : (
+                      ) : canEdit ? (
                         <button 
                           onClick={() => { 
                             setManualEntry(false);
                             setInterviewingEmp(emp as Employee); 
                             setInterviewData({ 
                               period: emp.currentPeriod as any,
-                              interviewDate: new Date().toISOString().split('T')[0]
+                              interviewDate: new Date().toISOString().split('T')[0],
+                              qRecommend: undefined
                             }); 
                           }}
                           className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors shadow-sm"
                         >
                           Avaliar Agora
                         </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">Aguardando RH</span>
                       )}
                     </td>
                   </tr>
@@ -448,19 +471,31 @@ export const Experiencia: React.FC = () => {
       {/* ABA: TERMÔMETRO eNPS */}
       {activeTab === 'relatorio' && (
         <div className="space-y-6 animate-in fade-in">
+          
+          {/* CARD DE eNPS VERDADEIRO */}
           <div className="bg-indigo-900 rounded-3xl p-8 text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-16 opacity-10">
               <BarChart size={150} />
             </div>
-            <div className="z-10">
-              <h2 className="text-2xl font-black mb-1">Termômetro de Experiência (eNPS)</h2>
-              <p className="text-indigo-200">Visão geral do acolhimento, calculada subtraindo Detratores (1 e 2) de Promotores (4).</p>
+            <div className="z-10 max-w-2xl">
+              <h2 className="text-3xl font-black mb-2">Termômetro de Cultura (eNPS)</h2>
+              <p className="text-indigo-200 font-medium">"Qual a chance de você indicar a DIMY para um amigo trabalhar?"</p>
+              <div className="flex gap-4 mt-6 text-sm font-bold">
+                 <div className="bg-emerald-500/20 border border-emerald-500/30 px-3 py-1.5 rounded-lg"><span className="text-emerald-400">{trueEnpsData.promoters}</span> Promotores (9-10)</div>
+                 <div className="bg-blue-500/20 border border-blue-500/30 px-3 py-1.5 rounded-lg"><span className="text-blue-400">{trueEnpsData.passives}</span> Neutros (7-8)</div>
+                 <div className="bg-red-500/20 border border-red-500/30 px-3 py-1.5 rounded-lg"><span className="text-red-400">{trueEnpsData.detractors}</span> Detratores (0-6)</div>
+              </div>
             </div>
-            <div className="bg-indigo-800 p-4 rounded-2xl border border-indigo-700 text-center min-w-[150px] z-10">
-              <p className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-1">Entrevistas Filtradas</p>
-              <p className="text-4xl font-black">{analytics.total}</p>
+            <div className="bg-indigo-800 p-6 rounded-2xl border border-indigo-700 text-center min-w-[200px] z-10 shadow-inner">
+              <p className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-1">SCORE GLOBAL</p>
+              <p className={`text-6xl font-black ${trueEnpsData.score > 0 ? 'text-emerald-400' : trueEnpsData.score < 0 ? 'text-red-400' : 'text-white'}`}>
+                {trueEnpsData.total > 0 ? trueEnpsData.score : '-'}
+              </p>
+              <p className="text-[10px] text-indigo-400 mt-2">{trueEnpsData.total} respostas filtradas</p>
             </div>
           </div>
+
+          <h3 className="font-black text-slate-700 uppercase tracking-widest text-sm pt-4 border-t border-slate-200">Índices de Acolhimento e Estrutura</h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
@@ -475,8 +510,8 @@ export const Experiencia: React.FC = () => {
                 <h3 className="font-bold text-slate-700 mb-4 h-10 line-clamp-2 leading-tight">{item.title}</h3>
                 
                 <div className="flex items-end gap-3 mb-6 border-b border-slate-100 pb-4">
-                  <div className={`text-5xl font-black tracking-tighter ${getScoreColor(item.data.score)}`}>{item.data.total > 0 ? item.data.score : '-'}</div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase pb-1.5 tracking-widest">eNPS Score</div>
+                  <div className={`text-4xl font-black tracking-tighter ${getScoreColor(item.data.score)}`}>{item.data.total > 0 ? item.data.score : '-'}</div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase pb-1.5 tracking-widest">NPS Interno</div>
                 </div>
 
                 <div className="space-y-3 text-sm">
@@ -524,7 +559,7 @@ export const Experiencia: React.FC = () => {
               {allCompletedInterviews.map((interview, index) => (
                 <div key={index} className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow relative group flex flex-col">
                   
-                  {isMaster && (
+                  {canEdit && (
                     <div className="absolute top-3 right-3 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => handleEditInterview(interview)} className="p-1.5 bg-slate-100 hover:bg-blue-100 text-slate-500 hover:text-blue-600 rounded-lg transition-colors"><Edit2 size={12} /></button>
                       <button onClick={() => handleDeleteInterview(interview.employeeId, interview.id)} className="p-1.5 bg-slate-100 hover:bg-red-100 text-slate-500 hover:text-red-600 rounded-lg transition-colors"><Trash2 size={12} /></button>
@@ -542,6 +577,14 @@ export const Experiencia: React.FC = () => {
                     <p className="text-[11px] font-medium text-slate-500 truncate mt-0.5">
                       {interview.employeeRole} • {interview.employeeSector} {interview.employeeUnit !== 'Geral' ? `• ${interview.employeeUnit}` : ''}
                     </p>
+                  </div>
+
+                  {/* Mostra se ele indicaria a empresa (eNPS Oficial) */}
+                  <div className="mb-4 bg-indigo-50 border border-indigo-100 p-3 rounded-xl flex items-center justify-between">
+                     <span className="text-[10px] font-black text-indigo-800 uppercase tracking-widest leading-tight">Chance de Indicação<br/>(0 a 10)</span>
+                     <span className={`text-xl font-black ${interview.qRecommend >= 9 ? 'text-emerald-600' : interview.qRecommend >= 7 ? 'text-blue-600' : interview.qRecommend !== undefined ? 'text-red-600' : 'text-slate-400 text-xs'}`}>
+                        {interview.qRecommend !== undefined ? interview.qRecommend : 'N/R'}
+                     </span>
                   </div>
 
                   {/* Notas Super Compactas */}
@@ -603,7 +646,7 @@ export const Experiencia: React.FC = () => {
 
             <form id="interview-form" onSubmit={handleSaveInterview} className="p-6 space-y-8 overflow-y-auto custom-scrollbar">
               
-              {/* BLOCO DE DADOS CADASTRAIS (Aparece com destaque no Modo Manual) */}
+              {/* BLOCO DE DADOS CADASTRAIS */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-6 border-b border-slate-100">
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-slate-700">Data da Entrevista</label>
@@ -619,12 +662,12 @@ export const Experiencia: React.FC = () => {
                         className="w-full border border-slate-300 p-2.5 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                         value={interviewingEmp?.id || ''} 
                         onChange={e => {
-                          const emp = employees.find(x => x.id === e.target.value);
+                          const emp = employees.find((x: Employee) => x.id === e.target.value);
                           setInterviewingEmp(emp || null);
                         }}
                       >
                         <option value="">Selecione...</option>
-                        {employees.map(emp => (
+                        {employees.map((emp: Employee) => (
                           <option key={emp.id} value={emp.id}>{emp.name}</option>
                         ))}
                       </select>
@@ -646,13 +689,47 @@ export const Experiencia: React.FC = () => {
                 )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
-                <ScoreSelector label="1. Acolhimento da Liderança" value={interviewData.qLeader || 0} onChange={v => setInterviewData({...interviewData, qLeader: v})} />
-                <ScoreSelector label="2. Acolhimento dos Colegas" value={interviewData.qColleagues || 0} onChange={v => setInterviewData({...interviewData, qColleagues: v})} />
-                <ScoreSelector label="3. Qualidade do Treinamento" value={interviewData.qTraining || 0} onChange={v => setInterviewData({...interviewData, qTraining: v})} />
-                <ScoreSelector label="4. Satisfação com o Cargo" value={interviewData.qJobSatisfaction || 0} onChange={v => setInterviewData({...interviewData, qJobSatisfaction: v})} />
-                <ScoreSelector label="5. Satisfação com a Empresa" value={interviewData.qCompanySatisfaction || 0} onChange={v => setInterviewData({...interviewData, qCompanySatisfaction: v})} />
-                <ScoreSelector label="6. Satisfação com Benefícios" value={interviewData.qBenefits || 0} onChange={v => setInterviewData({...interviewData, qBenefits: v})} />
+              {/* A PERGUNTA DE eNPS (OFICIAL) */}
+              <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-2xl shadow-sm text-center">
+                 <h3 className="font-black text-indigo-900 text-lg mb-2">A Pergunta Definitiva (eNPS Oficial)</h3>
+                 <p className="text-sm text-indigo-700 mb-6">"Numa escala de 0 a 10, qual a probabilidade de você recomendar a DIMY como um bom lugar para trabalhar para um amigo ou conhecido?"</p>
+                 
+                 <div className="flex flex-wrap justify-center gap-2 mb-4">
+                    {[0,1,2,3,4,5,6,7,8,9,10].map(num => (
+                        <button 
+                          key={num} 
+                          type="button"
+                          onClick={() => setInterviewData({...interviewData, qRecommend: num})}
+                          className={`w-10 h-10 rounded-xl font-black text-lg transition-transform ${
+                              interviewData.qRecommend === num 
+                                ? (num >= 9 ? 'bg-emerald-500 text-white scale-110 shadow-lg' : num >= 7 ? 'bg-blue-500 text-white scale-110 shadow-lg' : 'bg-red-500 text-white scale-110 shadow-lg') 
+                                : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          {num}
+                        </button>
+                    ))}
+                 </div>
+                 <button 
+                    type="button" 
+                    onClick={() => setInterviewData({...interviewData, qRecommend: undefined})}
+                    className={`text-xs font-bold px-4 py-2 rounded-lg transition-colors ${interviewData.qRecommend === undefined ? 'bg-slate-800 text-white' : 'text-slate-500 bg-slate-200 hover:bg-slate-300'}`}
+                 >
+                    Não Respondeu / Recusou-se
+                 </button>
+              </div>
+
+              {/* PREENCHIMENTO DOS PILARES ESTRUTURAIS */}
+              <div>
+                <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">Índices de Estrutura Interna (1 a 4)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
+                  <ScoreSelector label="1. Acolhimento da Liderança" value={interviewData.qLeader || 0} onChange={v => setInterviewData({...interviewData, qLeader: v})} />
+                  <ScoreSelector label="2. Acolhimento dos Colegas" value={interviewData.qColleagues || 0} onChange={v => setInterviewData({...interviewData, qColleagues: v})} />
+                  <ScoreSelector label="3. Qualidade do Treinamento" value={interviewData.qTraining || 0} onChange={v => setInterviewData({...interviewData, qTraining: v})} />
+                  <ScoreSelector label="4. Satisfação com a Função" value={interviewData.qJobSatisfaction || 0} onChange={v => setInterviewData({...interviewData, qJobSatisfaction: v})} />
+                  <ScoreSelector label="5. Satisfação com a Empresa" value={interviewData.qCompanySatisfaction || 0} onChange={v => setInterviewData({...interviewData, qCompanySatisfaction: v})} />
+                  <ScoreSelector label="6. Satisfação com Benefícios" value={interviewData.qBenefits || 0} onChange={v => setInterviewData({...interviewData, qBenefits: v})} />
+                </div>
               </div>
 
               <div className="border-t border-slate-100 pt-6 space-y-6">
