@@ -1,18 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { Employee, AbsenceRecord } from '../types';
+import { Employee, AbsenceRecord, Job } from '../types';
 import { 
   Building2, Users, UserMinus, CalendarX, ArrowLeft, 
-  Search, Clock, ChevronDown, ChevronUp, AlertTriangle, Activity, FileText
+  Search, Clock, ChevronDown, ChevronUp, Activity, 
+  Briefcase, AlertTriangle, Target, CheckCircle2, PauseCircle
 } from 'lucide-react';
 
 export const Setores: React.FC = () => {
-  const { employees = [], absences = [], settings = [] } = useData() as any;
+  const { employees = [], absences = [], settings = [], jobs = [] } = useData() as any;
 
   // Controle de Navegação: null = Lista de Setores | string = Nome do Setor Aberto
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
 
-  // Filtros da Visão Detalhada (Absenteísmo)
+  // Aba Ativa dentro do Setor
+  const [activeDetail, setActiveDetail] = useState<'ABSENCES' | 'TURNOVER' | 'JOBS'>('ABSENCES');
+
+  // Filtros de Data
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     return new Date(date.getFullYear(), date.getMonth(), 1).toISOString().split('T')[0];
@@ -22,7 +26,6 @@ export const Setores: React.FC = () => {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().split('T')[0];
   });
   
-  // Controle de Card Expansível de Colaborador na Visão Detalhada
   const [expandedEmp, setExpandedEmp] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -73,7 +76,6 @@ export const Setores: React.FC = () => {
   const sectorsSummary = useMemo(() => {
     const sectors = settings.filter((s: any) => s.type === 'SECTOR').map((s: any) => s.name);
     
-    // Adiciona setores que possam estar nos funcionários mas não nas configurações
     employees.forEach((emp: Employee) => {
       if (emp.sector && !sectors.includes(emp.sector)) {
         sectors.push(emp.sector);
@@ -96,32 +98,30 @@ export const Setores: React.FC = () => {
 
   const filteredSectorsSummary = sectorsSummary.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  // --- LÓGICA DA VISÃO DETALHADA (ABSENTEÍSMO DO SETOR) ---
-  const sectorDetails = useMemo(() => {
-    if (!selectedSector) return null;
+  // --- LÓGICA DA VISÃO DETALHADA (ABSENTEÍSMO, TURNOVER, VAGAS) ---
+  const { absDetails, turnoverDetails, jobsDetails, sectorEmps } = useMemo(() => {
+    if (!selectedSector) return { absDetails: null, turnoverDetails: [], jobsDetails: null, sectorEmps: [] };
 
-    const sectorEmps = employees.filter((e: Employee) => e.sector === selectedSector);
+    const emps = employees.filter((e: Employee) => e.sector === selectedSector);
     
-    // Filtra as ausências APENAS deste setor e NESTE período
+    // 1. ABSENTEÍSMO
     const periodAbsences = absences.filter((a: AbsenceRecord) => {
-      const emp = sectorEmps.find((e: Employee) => e.name.toLowerCase() === a.employeeName?.toLowerCase());
+      const emp = emps.find((e: Employee) => e.name.toLowerCase() === a.employeeName?.toLowerCase());
       if (!emp) return false;
-      
       const safeDate = formatToYMD(a.absenceDate);
       if (!safeDate) return false;
       return safeDate >= startDate && safeDate <= endDate;
     });
 
-    let totalSectorLostHours = 0;
+    let totalLostHours = 0;
     const absByEmployee: Record<string, { emp: Employee, totalHours: number, records: any[] }> = {};
 
     periodAbsences.forEach((record: AbsenceRecord) => {
-      const emp = sectorEmps.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase())!;
+      const emp = emps.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase())!;
       const workload = emp.dailyWorkload || 8.8;
 
       let amount = record.durationAmount || 0;
       let unit = record.durationUnit;
-
       if (!unit && record.documentDuration) {
         const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
         if (match) {
@@ -131,11 +131,9 @@ export const Setores: React.FC = () => {
       }
 
       let hours = unit === 'Dias' ? amount * workload : amount;
-      totalSectorLostHours += hours;
+      totalLostHours += hours;
 
-      if (!absByEmployee[emp.name]) {
-        absByEmployee[emp.name] = { emp, totalHours: 0, records: [] };
-      }
+      if (!absByEmployee[emp.name]) absByEmployee[emp.name] = { emp, totalHours: 0, records: [] };
       absByEmployee[emp.name].totalHours += hours;
       absByEmployee[emp.name].records.push({
         ...record,
@@ -144,32 +142,71 @@ export const Setores: React.FC = () => {
       });
     });
 
+    // 2. TURNOVER (Desligamentos no Período)
+    const turnover = emps.filter((e: any) => {
+      if (e.status !== 'Inativo' || !e.terminationDate) return false;
+      const tDate = formatToYMD(e.terminationDate);
+      return tDate >= startDate && tDate <= endDate;
+    }).sort((a: any, b: any) => new Date(b.terminationDate).getTime() - new Date(a.terminationDate).getTime());
+
+    // 3. VAGAS (Recrutamento)
+    const sJobs = jobs.filter((j: Job) => j.sector === selectedSector);
+    
+    const abertas = sJobs.filter((j: Job) => j.status === 'Aberta'); // Abertas atualmente (independe da data)
+    
+    const fechadas = sJobs.filter((j: Job) => {
+      if (j.status !== 'Fechada' || !j.closedAt) return false;
+      const cDate = formatToYMD(j.closedAt);
+      return cDate >= startDate && cDate <= endDate;
+    });
+
+    const canceladas = sJobs.filter((j: Job) => {
+      if (!['Congelada', 'Cancelada'].includes(j.status)) return false;
+      let eventDate = j.closedAt ? formatToYMD(j.closedAt) : null;
+      if (!eventDate && j.freezeHistory && j.freezeHistory.length > 0) {
+         eventDate = formatToYMD(j.freezeHistory[j.freezeHistory.length - 1].startDate);
+      }
+      if (!eventDate) eventDate = formatToYMD(j.openedAt);
+      return eventDate >= startDate && eventDate <= endDate;
+    });
+
     return {
-      employees: sectorEmps,
-      totalLostHours: totalSectorLostHours,
-      absentEmployees: Object.values(absByEmployee).sort((a, b) => b.totalHours - a.totalHours)
+      sectorEmps: emps,
+      absDetails: {
+        totalLostHours,
+        absentEmployees: Object.values(absByEmployee).sort((a, b) => b.totalHours - a.totalHours)
+      },
+      turnoverDetails: turnover,
+      jobsDetails: { abertas, fechadas, canceladas }
     };
-  }, [selectedSector, employees, absences, startDate, endDate]);
+  }, [selectedSector, employees, absences, jobs, startDate, endDate]);
 
 
   // ============================================================================
   // RENDERIZAÇÃO DA VISÃO DETALHADA DO SETOR
   // ============================================================================
-  if (selectedSector && sectorDetails) {
+  if (selectedSector && absDetails && jobsDetails) {
+    
+    const turnoverVoluntario = turnoverDetails.filter((e: any) => e.terminationReason?.toLowerCase().includes('pedido')).length;
+    const turnoverInvoluntario = turnoverDetails.length - turnoverVoluntario;
+
     return (
       <div className="space-y-6 pb-12 animate-in slide-in-from-right-4 duration-300">
         
         {/* HEADER DETALHES */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-2">
           <div className="flex items-center gap-4">
-            <button onClick={() => setSelectedSector(null)} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
+            <button 
+              onClick={() => { setSelectedSector(null); setActiveDetail('ABSENCES'); }} 
+              className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"
+            >
               <ArrowLeft size={24} />
             </button>
             <div>
               <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
                 <Building2 className="text-indigo-600" /> {selectedSector}
               </h1>
-              <p className="text-slate-500 text-sm font-medium mt-1">Análise de Absenteísmo do Setor</p>
+              <p className="text-slate-500 text-sm font-medium mt-1">Análise de Dados do Setor • {sectorEmps.length} Alocados</p>
             </div>
           </div>
 
@@ -180,108 +217,279 @@ export const Setores: React.FC = () => {
           </div>
         </div>
 
-        {/* RESUMO DO PERÍODO */}
+        {/* CARDS DE NAVEGAÇÃO INTERNA (MACRO) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-indigo-600 p-6 rounded-3xl text-white shadow-lg shadow-indigo-200 flex flex-col justify-center">
-            <p className="text-indigo-200 font-bold uppercase tracking-widest text-xs mb-1">Horas Perdidas no Período</p>
-            <p className="text-5xl font-black">{formatHours(sectorDetails.totalLostHours)}</p>
+          <div 
+            onClick={() => setActiveDetail('ABSENCES')}
+            className={`p-6 rounded-3xl cursor-pointer transition-all border ${activeDetail === 'ABSENCES' ? 'bg-red-600 text-white shadow-lg shadow-red-200 border-red-600' : 'bg-white text-slate-700 border-slate-200 hover:border-red-300'}`}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`p-3 rounded-2xl ${activeDetail === 'ABSENCES' ? 'bg-red-500 text-white' : 'bg-red-50 text-red-600'}`}><CalendarX size={24}/></div>
+              <p className={`font-bold uppercase tracking-widest text-xs ${activeDetail === 'ABSENCES' ? 'text-red-200' : 'text-slate-400'}`}>Absenteísmo</p>
+            </div>
+            <p className="text-4xl font-black">{formatHours(absDetails.totalLostHours)}</p>
+            <p className={`text-xs mt-2 ${activeDetail === 'ABSENCES' ? 'text-red-100' : 'text-slate-500'}`}>{absDetails.absentEmployees.length} colaboradores faltaram</p>
           </div>
           
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-5">
-            <div className="p-4 bg-red-50 text-red-600 rounded-2xl"><CalendarX size={28}/></div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Colaboradores com Faltas</p>
-              <p className="text-3xl font-black text-slate-800">{sectorDetails.absentEmployees.length}</p>
+          <div 
+            onClick={() => setActiveDetail('TURNOVER')}
+            className={`p-6 rounded-3xl cursor-pointer transition-all border ${activeDetail === 'TURNOVER' ? 'bg-amber-600 text-white shadow-lg shadow-amber-200 border-amber-600' : 'bg-white text-slate-700 border-slate-200 hover:border-amber-300'}`}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`p-3 rounded-2xl ${activeDetail === 'TURNOVER' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-600'}`}><UserMinus size={24}/></div>
+              <p className={`font-bold uppercase tracking-widest text-xs ${activeDetail === 'TURNOVER' ? 'text-amber-200' : 'text-slate-400'}`}>Desligamentos</p>
             </div>
+            <p className="text-4xl font-black">{turnoverDetails.length}</p>
+            <p className={`text-xs mt-2 flex gap-2 ${activeDetail === 'TURNOVER' ? 'text-amber-100' : 'text-slate-500'}`}>
+              <span>{turnoverVoluntario} Pedidos</span> • <span>{turnoverInvoluntario} Empresa</span>
+            </p>
           </div>
 
-          <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex items-center gap-5">
-            <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl"><Users size={28}/></div>
-            <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Alocados no Setor</p>
-              <p className="text-3xl font-black text-slate-800">{sectorDetails.employees.length}</p>
+          <div 
+            onClick={() => setActiveDetail('JOBS')}
+            className={`p-6 rounded-3xl cursor-pointer transition-all border ${activeDetail === 'JOBS' ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 border-blue-600' : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300'}`}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`p-3 rounded-2xl ${activeDetail === 'JOBS' ? 'bg-blue-500 text-white' : 'bg-blue-50 text-blue-600'}`}><Briefcase size={24}/></div>
+              <p className={`font-bold uppercase tracking-widest text-xs ${activeDetail === 'JOBS' ? 'text-blue-200' : 'text-slate-400'}`}>Vagas Abertas</p>
             </div>
+            <p className="text-4xl font-black">{jobsDetails.abertas.length}</p>
+            <p className={`text-xs mt-2 flex gap-2 ${activeDetail === 'JOBS' ? 'text-blue-100' : 'text-slate-500'}`}>
+              <span className="font-bold">No período:</span> {jobsDetails.fechadas.length} Concluídas • {jobsDetails.canceladas.length} Canc.
+            </p>
           </div>
         </div>
 
-        {/* LISTA DE COLABORADORES FALTANTES */}
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 bg-slate-50">
-            <h3 className="text-lg font-bold text-slate-800">Detalhamento por Colaborador</h3>
-          </div>
-          
-          <div className="p-6">
-            {sectorDetails.absentEmployees.length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
-                <Activity size={48} className="mx-auto mb-3 opacity-20" />
-                <p>Nenhuma ausência registrada neste setor para o período selecionado.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {sectorDetails.absentEmployees.map((data, idx) => (
-                  <div key={idx} className={`border rounded-2xl overflow-hidden transition-all ${expandedEmp === data.emp.id ? 'border-indigo-400 ring-4 ring-indigo-50 shadow-md' : 'border-slate-200 hover:border-indigo-200'}`}>
-                    
-                    {/* CABEÇALHO DO CARD CLICÁVEL */}
-                    <div 
-                      className="p-5 flex items-center justify-between cursor-pointer bg-white"
-                      onClick={() => setExpandedEmp(expandedEmp === data.emp.id ? null : data.emp.id)}
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-black text-lg">
-                          {data.emp.name.charAt(0)}
+        {/* ================= ABA 1: ABSENTEÍSMO ================= */}
+        {activeDetail === 'ABSENCES' && (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
+            <div className="p-6 border-b border-slate-100 bg-slate-50">
+              <h3 className="text-lg font-bold text-slate-800">Detalhamento de Faltas no Período</h3>
+            </div>
+            <div className="p-6">
+              {absDetails.absentEmployees.length === 0 ? (
+                <div className="text-center py-12 text-slate-400">
+                  <Activity size={48} className="mx-auto mb-3 opacity-20" />
+                  <p>Nenhuma ausência registrada neste setor para o período selecionado.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {absDetails.absentEmployees.map((data, idx) => (
+                    <div key={idx} className={`border rounded-2xl overflow-hidden transition-all ${expandedEmp === data.emp.id ? 'border-red-400 ring-4 ring-red-50 shadow-md' : 'border-slate-200 hover:border-red-200'}`}>
+                      
+                      {/* CABEÇALHO DO CARD CLICÁVEL */}
+                      <div 
+                        className="p-5 flex items-center justify-between cursor-pointer bg-white"
+                        onClick={() => setExpandedEmp(expandedEmp === data.emp.id ? null : data.emp.id)}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-black text-lg">
+                            {data.emp.name.charAt(0)}
+                          </div>
+                          <div>
+                            <h4 className="font-bold text-slate-800">{data.emp.name}</h4>
+                            <p className="text-xs font-medium text-slate-500 mt-0.5">{data.emp.role}</p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="font-bold text-slate-800">{data.emp.name}</h4>
-                          <p className="text-xs font-medium text-slate-500 mt-0.5">{data.emp.role}</p>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">Perdidas</p>
+                            <p className="text-lg font-black text-red-600">{formatHours(data.totalHours)}</p>
+                          </div>
+                          <div className={`p-1.5 rounded-full transition-colors ${expandedEmp === data.emp.id ? 'bg-red-100 text-red-700' : 'bg-slate-50 text-slate-400'}`}>
+                            {expandedEmp === data.emp.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <p className="text-[10px] font-black text-red-400 uppercase tracking-widest">Perdidas</p>
-                          <p className="text-lg font-black text-red-600">{formatHours(data.totalHours)}</p>
-                        </div>
-                        <div className={`p-1.5 rounded-full transition-colors ${expandedEmp === data.emp.id ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-50 text-slate-400'}`}>
-                          {expandedEmp === data.emp.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                        </div>
-                      </div>
-                    </div>
 
-                    {/* CONTEÚDO EXPANDIDO (HISTÓRICO DA PESSOA) */}
-                    {expandedEmp === data.emp.id && (
-                      <div className="bg-slate-50 border-t border-indigo-100 p-4 animate-in slide-in-from-top-2">
-                        <ul className="space-y-3">
-                          {data.records.sort((a, b) => new Date(b.absenceDate).getTime() - new Date(a.absenceDate).getTime()).map((rec, rIdx) => (
-                            <li key={rIdx} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                              <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs font-black text-slate-700">{formatDateToBR(rec.absenceDate)}</span>
-                                  <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
-                                    rec.documentType === 'Atestado' ? 'bg-blue-100 text-blue-700' :
-                                    rec.documentType === 'Falta Injustificada' ? 'bg-red-100 text-red-700' :
-                                    rec.documentType === 'Acompanhante de Dependente' ? 'bg-emerald-100 text-emerald-700' :
-                                    'bg-amber-100 text-amber-700'
-                                  }`}>
-                                    {rec.documentType}
+                      {/* CONTEÚDO EXPANDIDO (HISTÓRICO DA PESSOA) */}
+                      {expandedEmp === data.emp.id && (
+                        <div className="bg-slate-50 border-t border-red-100 p-4 animate-in slide-in-from-top-2">
+                          <ul className="space-y-3">
+                            {data.records.sort((a, b) => new Date(b.absenceDate).getTime() - new Date(a.absenceDate).getTime()).map((rec, rIdx) => (
+                              <li key={rIdx} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-xs font-black text-slate-700">{formatDateToBR(rec.absenceDate)}</span>
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                                      rec.documentType === 'Atestado' ? 'bg-blue-100 text-blue-700' :
+                                      rec.documentType === 'Falta Injustificada' ? 'bg-red-100 text-red-700' :
+                                      rec.documentType === 'Acompanhante de Dependente' ? 'bg-emerald-100 text-emerald-700' :
+                                      'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {rec.documentType}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-500 truncate max-w-[250px]" title={rec.reason}>{rec.reason}</p>
+                                </div>
+                                <div className="text-right sm:text-left shrink-0">
+                                  <span className="inline-flex items-center gap-1 text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">
+                                    <Clock size={12} /> {rec.displayDuration}
                                   </span>
                                 </div>
-                                <p className="text-xs text-slate-500 truncate max-w-[250px]" title={rec.reason}>{rec.reason}</p>
-                              </div>
-                              <div className="text-right sm:text-left shrink-0">
-                                <span className="inline-flex items-center gap-1 text-xs font-bold bg-slate-100 text-slate-600 px-2 py-1 rounded-lg">
-                                  <Clock size={12} /> {rec.displayDuration}
-                                </span>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* ================= ABA 2: TURNOVER ================= */}
+        {activeDetail === 'TURNOVER' && (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
+            <div className="p-6 border-b border-slate-100 bg-slate-50">
+              <h3 className="text-lg font-bold text-slate-800">Desligamentos Registrados</h3>
+            </div>
+            <div className="p-0">
+              {turnoverDetails.length === 0 ? (
+                <div className="text-center py-16 text-slate-400">
+                  <UserMinus size={48} className="mx-auto mb-3 opacity-20" />
+                  <p>Nenhum desligamento no setor neste período.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-white border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                    <tr>
+                      <th className="p-4 pl-6">Data de Saída</th>
+                      <th className="p-4">Colaborador</th>
+                      <th className="p-4">Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {turnoverDetails.map((emp: any) => {
+                      const isVoluntary = emp.terminationReason?.toLowerCase().includes('pedido');
+                      return (
+                        <tr key={emp.id} className="hover:bg-amber-50/30 transition-colors">
+                          <td className="p-4 pl-6 font-bold text-slate-700">
+                            {formatDateToBR(emp.terminationDate)}
+                          </td>
+                          <td className="p-4">
+                            <p className="font-bold text-slate-800">{emp.name}</p>
+                            <p className="text-xs text-slate-500">{emp.role}</p>
+                          </td>
+                          <td className="p-4">
+                            <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
+                              isVoluntary ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              {emp.terminationReason || 'Não informado'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ================= ABA 3: VAGAS ================= */}
+        {activeDetail === 'JOBS' && (
+          <div className="space-y-6 animate-in fade-in">
+            {/* Abertas Atualmente */}
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-blue-50/50 flex items-center gap-2">
+                <Target className="text-blue-600" size={20} />
+                <h3 className="text-lg font-bold text-blue-900">Trabalhando Agora (Abertas)</h3>
+              </div>
+              <div className="p-0">
+                {jobsDetails.abertas.length === 0 ? (
+                  <p className="text-center py-8 text-slate-400 text-sm">Nenhuma vaga em aberto para este setor.</p>
+                ) : (
+                  <table className="w-full text-left text-sm">
+                    <tbody className="divide-y divide-slate-100">
+                      {jobsDetails.abertas.map((j: Job) => (
+                        <tr key={j.id} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="p-4 pl-6">
+                            <p className="font-bold text-slate-800">{j.title}</p>
+                            <p className="text-xs text-slate-500">Aberta em: {formatDateToBR(j.openedAt)}</p>
+                          </td>
+                          <td className="p-4 text-right pr-6">
+                            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                              Em Andamento
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Fechadas no Período */}
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-emerald-50/50 flex items-center gap-2">
+                <CheckCircle2 className="text-emerald-600" size={20} />
+                <h3 className="text-lg font-bold text-emerald-900">Vagas Concluídas no Período</h3>
+              </div>
+              <div className="p-0">
+                {jobsDetails.fechadas.length === 0 ? (
+                  <p className="text-center py-8 text-slate-400 text-sm">Nenhuma contratação finalizada neste período.</p>
+                ) : (
+                  <table className="w-full text-left text-sm">
+                    <tbody className="divide-y divide-slate-100">
+                      {jobsDetails.fechadas.map((j: Job) => (
+                        <tr key={j.id} className="hover:bg-emerald-50/30 transition-colors">
+                          <td className="p-4 pl-6">
+                            <p className="font-bold text-slate-800">{j.title}</p>
+                            <p className="text-xs text-slate-500">Fechada em: {formatDateToBR(j.closedAt!)}</p>
+                          </td>
+                          <td className="p-4 text-right pr-6">
+                            <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                              Contratada
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Canceladas / Congeladas no Período */}
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
+                <PauseCircle className="text-slate-500" size={20} />
+                <h3 className="text-lg font-bold text-slate-700">Canceladas ou Congeladas no Período</h3>
+              </div>
+              <div className="p-0">
+                {jobsDetails.canceladas.length === 0 ? (
+                  <p className="text-center py-8 text-slate-400 text-sm">Nenhuma vaga suspensa neste período.</p>
+                ) : (
+                  <table className="w-full text-left text-sm">
+                    <tbody className="divide-y divide-slate-100">
+                      {jobsDetails.canceladas.map((j: Job) => (
+                        <tr key={j.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-4 pl-6">
+                            <p className="font-bold text-slate-800">{j.title}</p>
+                            <p className="text-xs text-slate-500">
+                              {j.status === 'Cancelada' ? `Cancelada em: ${formatDateToBR(j.closedAt!)}` : 'Congelada'}
+                            </p>
+                          </td>
+                          <td className="p-4 text-right pr-6">
+                            <span className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${j.status === 'Cancelada' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {j.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+          </div>
+        )}
       </div>
     );
   }
@@ -297,8 +505,8 @@ export const Setores: React.FC = () => {
             <Building2 size={24} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Setores</h1>
-            <p className="text-slate-500 text-sm">Visão macro de quadro de funcionários e absenteísmo por área</p>
+            <h1 className="text-2xl font-bold text-slate-800">Setores e Áreas</h1>
+            <p className="text-slate-500 text-sm">Visão macro de quadro, absenteísmo e rotatividade</p>
           </div>
         </div>
 
