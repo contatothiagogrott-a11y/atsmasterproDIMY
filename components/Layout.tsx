@@ -19,7 +19,8 @@ import {
   Coffee,
   Gift,
   UserPlus,
-  Building2
+  Building2,
+  UserMinus
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -47,7 +48,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const canViewAbsenteismo = isMaster || isAuxiliar;
   const canViewColaboradores = isMaster; 
   
-  // AQUI FOI A ALTERAÇÃO: MASTER e RECRUTADOR podem ver!
+  // MASTER e RECRUTADOR podem ver Experiência e Desligamentos!
   const canViewExperiencia = isMaster || isRecruiter; 
   
   // Reuniões: Todas as contas MENOS a Recepção
@@ -173,6 +174,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     <Link to="/experiencia" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/experiencia') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
                       <CalendarClock size={18} />
                       <span>Acomp. de Experiência</span>
+                    </Link>
+                  )}
+
+                  {/* NOVO LINK ADICIONADO: ENTREVISTA DE DESLIGAMENTO */}
+                  {canViewExperiencia && (
+                    <Link to="/desligamentos" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/desligamentos') ? 'bg-rose-50 text-rose-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-rose-600 text-sm'}`}>
+                      <UserMinus size={18} />
+                      <span>Entrev. Desligamento</span>
                     </Link>
                   )}
 

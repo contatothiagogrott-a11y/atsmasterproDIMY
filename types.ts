@@ -264,6 +264,37 @@ export interface EmployeeHistoryRecord {
   description: string;
   createdBy?: string; // Quem registrou o histórico
 }
+// ==========================================
+// NOVAS INTERFACES: ENTREVISTA DE DESLIGAMENTO
+// ==========================================
+export interface ExitInterview {
+  id: string;
+  interviewDate: string;
+  reason: string; 
+  reasonObservation?: string; 
+  
+  colleaguesRating: number; // 4=Ótimo, 3=Bom, 2=Regular, 1=Péssimo
+  
+  leaderName: string;
+  leaderRating: number;
+  
+  trainerName: string;
+  trainingRating: number;
+  
+  growthRating: number;
+  salaryRating: number;
+  benefitsRating: number;
+  jobSatisfactionRating: number;
+  
+  additionalComments?: string;
+  interviewerName: string;
+  
+  didNotRespond?: boolean; // Caso o colaborador não queira responder
+}
+
+// ATENÇÃO: Na sua interface `Employee` atual, adicione a propriedade `exitInterview`
+// Ficará assim dentro do Employee:
+// exitInterview?: ExitInterview;
 
 export interface Employee {
   id: string;
