@@ -116,6 +116,7 @@ export interface Candidate {
     needsLabExam?: boolean;
     labExamDate?: string;
     itTicketCreated?: boolean;
+    completed?: boolean; // <--- ADICIONADO PARA FECHAR O CICLO DE INTEGRAÇÃO
   };
 
   // SLA Metrics (New)
@@ -229,7 +230,8 @@ export interface ExperienceInterview {
   employeeSector?: string;
   employeeUnit?: string;
   
-  // Avaliações de 1 a 4 (eNPS)
+  // Avaliações de 1 a 4 e eNPS Oficial
+  qRecommend?: number; // <--- ADICIONADO: Nota de 0 a 10 para o eNPS
   qLeader: number;
   qColleagues: number;
   qTraining: number;
@@ -283,6 +285,7 @@ export interface Employee {
   probationType?: ProbationType; 
   experienceInterviews?: ExperienceInterview[];
 
+  terminationDate?: string; // <--- ADICIONADO PARA O CÁLCULO DE TURNOVER DOS SETORES
   terminationReason?: string;
   leaveReason?: string;
   leaveExpectedReturn?: string;
@@ -303,7 +306,7 @@ export interface MeetingEvent {
   instructor?: string;        
   date: string;         
   time: string;               // Hora Início
-  endTime?: string;           // <--- NOVO: Hora Fim
+  endTime?: string;           // Hora Fim
   location: string;     
   requirements: string; 
   participantCount: number; 

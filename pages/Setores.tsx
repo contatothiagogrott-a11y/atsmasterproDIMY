@@ -4,7 +4,7 @@ import { Employee, AbsenceRecord, Job } from '../types';
 import { 
   Building2, Users, UserMinus, CalendarX, ArrowLeft, 
   Search, Clock, ChevronDown, ChevronUp, Activity, 
-  Briefcase, AlertTriangle, Target, CheckCircle2, PauseCircle, Contact
+  Briefcase, Target, CheckCircle2, PauseCircle, Contact
 } from 'lucide-react';
 
 export const Setores: React.FC = () => {
@@ -13,7 +13,7 @@ export const Setores: React.FC = () => {
   // Controle de Navegação: null = Lista de Setores | string = Nome do Setor Aberto
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
 
-  // Aba Ativa dentro do Setor (Agora com TEAM)
+  // Aba Ativa dentro do Setor
   const [activeDetail, setActiveDetail] = useState<'ABSENCES' | 'TURNOVER' | 'JOBS' | 'TEAM'>('ABSENCES');
 
   // Filtros de Data
@@ -56,7 +56,8 @@ export const Setores: React.FC = () => {
     return str; 
   };
 
-  const formatDateToBR = (dateStr: string) => {
+  const formatDateToBR = (dateStr: string | undefined) => {
+    if (!dateStr) return '-';
     const ymd = formatToYMD(dateStr);
     if (!ymd || ymd.length < 10) return dateStr;
     const [year, month, day] = ymd.split('-');
@@ -142,12 +143,17 @@ export const Setores: React.FC = () => {
       });
     });
 
-    // 2. TURNOVER (Desligamentos no Período)
-    const turnover = emps.filter((e: any) => {
+    // 2. TURNOVER (Desligamentos no Período) - Agora com o tipo corrigido
+    const turnover = emps.filter((e: Employee) => {
       if (e.status !== 'Inativo' || !e.terminationDate) return false;
       const tDate = formatToYMD(e.terminationDate);
+      if (!tDate) return false;
       return tDate >= startDate && tDate <= endDate;
-    }).sort((a: any, b: any) => new Date(b.terminationDate).getTime() - new Date(a.terminationDate).getTime());
+    }).sort((a: Employee, b: Employee) => {
+      const dateA = new Date(formatToYMD(a.terminationDate)).getTime();
+      const dateB = new Date(formatToYMD(b.terminationDate)).getTime();
+      return dateB - dateA;
+    });
 
     // 3. VAGAS (Recrutamento)
     const sJobs = jobs.filter((j: Job) => j.sector === selectedSector);
@@ -187,7 +193,7 @@ export const Setores: React.FC = () => {
   // ============================================================================
   if (selectedSector && absDetails && jobsDetails) {
     
-    const turnoverVoluntario = turnoverDetails.filter((e: any) => e.terminationReason?.toLowerCase().includes('pedido')).length;
+    const turnoverVoluntario = turnoverDetails.filter((e: Employee) => e.terminationReason?.toLowerCase().includes('pedido')).length;
     const turnoverInvoluntario = turnoverDetails.length - turnoverVoluntario;
 
     // Organizar Quadro de Pessoal por Status
@@ -332,7 +338,7 @@ export const Setores: React.FC = () => {
                              </td>
                              <td className="p-4 text-center text-slate-500 text-xs">
                                <p>Motivo: <span className="font-medium text-slate-700">{emp.leaveReason || 'Não inf.'}</span></p>
-                               <p>Retorno: <span className="font-medium text-slate-700">{formatDateToBR(emp.leaveExpectedReturn!)}</span></p>
+                               <p>Retorno: <span className="font-medium text-slate-700">{formatDateToBR(emp.leaveExpectedReturn)}</span></p>
                              </td>
                              <td className="p-4 text-right pr-6">
                                <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider">
@@ -467,7 +473,7 @@ export const Setores: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {turnoverDetails.map((emp: any) => {
+                    {turnoverDetails.map((emp: Employee) => {
                       const isVoluntary = emp.terminationReason?.toLowerCase().includes('pedido');
                       return (
                         <tr key={emp.id} className="hover:bg-amber-50/30 transition-colors">
