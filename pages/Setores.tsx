@@ -4,7 +4,7 @@ import { Employee, AbsenceRecord, Job } from '../types';
 import { 
   Building2, Users, UserMinus, CalendarX, ArrowLeft, 
   Search, Clock, ChevronDown, ChevronUp, Activity, 
-  Briefcase, AlertTriangle, Target, CheckCircle2, PauseCircle
+  Briefcase, AlertTriangle, Target, CheckCircle2, PauseCircle, Contact
 } from 'lucide-react';
 
 export const Setores: React.FC = () => {
@@ -13,8 +13,8 @@ export const Setores: React.FC = () => {
   // Controle de Navegação: null = Lista de Setores | string = Nome do Setor Aberto
   const [selectedSector, setSelectedSector] = useState<string | null>(null);
 
-  // Aba Ativa dentro do Setor
-  const [activeDetail, setActiveDetail] = useState<'ABSENCES' | 'TURNOVER' | 'JOBS'>('ABSENCES');
+  // Aba Ativa dentro do Setor (Agora com TEAM)
+  const [activeDetail, setActiveDetail] = useState<'ABSENCES' | 'TURNOVER' | 'JOBS' | 'TEAM'>('ABSENCES');
 
   // Filtros de Data
   const [startDate, setStartDate] = useState(() => {
@@ -98,7 +98,7 @@ export const Setores: React.FC = () => {
 
   const filteredSectorsSummary = sectorsSummary.filter(s => s.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  // --- LÓGICA DA VISÃO DETALHADA (ABSENTEÍSMO, TURNOVER, VAGAS) ---
+  // --- LÓGICA DA VISÃO DETALHADA (ABSENTEÍSMO, TURNOVER, VAGAS E QUADRO) ---
   const { absDetails, turnoverDetails, jobsDetails, sectorEmps } = useMemo(() => {
     if (!selectedSector) return { absDetails: null, turnoverDetails: [], jobsDetails: null, sectorEmps: [] };
 
@@ -152,7 +152,7 @@ export const Setores: React.FC = () => {
     // 3. VAGAS (Recrutamento)
     const sJobs = jobs.filter((j: Job) => j.sector === selectedSector);
     
-    const abertas = sJobs.filter((j: Job) => j.status === 'Aberta'); // Abertas atualmente (independe da data)
+    const abertas = sJobs.filter((j: Job) => j.status === 'Aberta'); // Abertas atualmente
     
     const fechadas = sJobs.filter((j: Job) => {
       if (j.status !== 'Fechada' || !j.closedAt) return false;
@@ -190,6 +190,10 @@ export const Setores: React.FC = () => {
     const turnoverVoluntario = turnoverDetails.filter((e: any) => e.terminationReason?.toLowerCase().includes('pedido')).length;
     const turnoverInvoluntario = turnoverDetails.length - turnoverVoluntario;
 
+    // Organizar Quadro de Pessoal por Status
+    const teamAtivos = sectorEmps.filter((e: Employee) => e.status === 'Ativo').sort((a: Employee, b: Employee) => a.name.localeCompare(b.name));
+    const teamAfastados = sectorEmps.filter((e: Employee) => e.status === 'Afastado').sort((a: Employee, b: Employee) => a.name.localeCompare(b.name));
+
     return (
       <div className="space-y-6 pb-12 animate-in slide-in-from-right-4 duration-300">
         
@@ -210,15 +214,30 @@ export const Setores: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border border-slate-200">
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer" />
-            <span className="text-slate-300">até</span>
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer" />
-          </div>
+          {activeDetail !== 'TEAM' && (
+            <div className="flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border border-slate-200">
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer" />
+              <span className="text-slate-300">até</span>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer" />
+            </div>
+          )}
         </div>
 
         {/* CARDS DE NAVEGAÇÃO INTERNA (MACRO) */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          
+          <div 
+            onClick={() => setActiveDetail('TEAM')}
+            className={`p-6 rounded-3xl cursor-pointer transition-all border ${activeDetail === 'TEAM' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 border-indigo-600' : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'}`}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`p-3 rounded-2xl ${activeDetail === 'TEAM' ? 'bg-indigo-500 text-white' : 'bg-indigo-50 text-indigo-600'}`}><Contact size={24}/></div>
+              <p className={`font-bold uppercase tracking-widest text-xs ${activeDetail === 'TEAM' ? 'text-indigo-200' : 'text-slate-400'}`}>Quadro de Pessoal</p>
+            </div>
+            <p className="text-4xl font-black">{teamAtivos.length + teamAfastados.length}</p>
+            <p className={`text-xs mt-2 ${activeDetail === 'TEAM' ? 'text-indigo-100' : 'text-slate-500'}`}>{teamAtivos.length} Ativos • {teamAfastados.length} Afastados</p>
+          </div>
+
           <div 
             onClick={() => setActiveDetail('ABSENCES')}
             className={`p-6 rounded-3xl cursor-pointer transition-all border ${activeDetail === 'ABSENCES' ? 'bg-red-600 text-white shadow-lg shadow-red-200 border-red-600' : 'bg-white text-slate-700 border-slate-200 hover:border-red-300'}`}
@@ -260,11 +279,93 @@ export const Setores: React.FC = () => {
           </div>
         </div>
 
+        {/* ================= ABA 0: QUADRO DE PESSOAL (NOVA) ================= */}
+        {activeDetail === 'TEAM' && (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
+            <div className="p-6 border-b border-slate-100 bg-indigo-50/30 flex items-center gap-3">
+               <div className="bg-indigo-100 text-indigo-600 p-2 rounded-xl"><Users size={20}/></div>
+               <div>
+                  <h3 className="text-lg font-bold text-indigo-900">Quadro de Colaboradores</h3>
+                  <p className="text-xs text-slate-500">Lista completa de quem está alocado neste setor atualmente.</p>
+               </div>
+            </div>
+            <div className="p-0">
+               
+               {/* ATIVOS */}
+               {teamAtivos.length > 0 && (
+                  <div className="mb-2">
+                     <div className="bg-slate-50 px-6 py-2 border-b border-slate-100 font-bold text-xs text-slate-400 uppercase tracking-widest">Colaboradores Ativos ({teamAtivos.length})</div>
+                     <table className="w-full text-left text-sm">
+                       <tbody className="divide-y divide-slate-100">
+                         {teamAtivos.map((emp: Employee) => (
+                           <tr key={emp.id} className="hover:bg-slate-50/50 transition-colors">
+                             <td className="p-4 pl-6">
+                               <p className="font-bold text-slate-800">{emp.name}</p>
+                               <p className="text-xs text-slate-500">{emp.role}</p>
+                             </td>
+                             <td className="p-4 text-center text-slate-500 text-xs">
+                                Adm: {formatDateToBR(emp.admissionDate)}
+                             </td>
+                             <td className="p-4 text-right pr-6">
+                               <span className="bg-emerald-100 text-emerald-700 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                                 Ativo
+                               </span>
+                             </td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                  </div>
+               )}
+
+               {/* AFASTADOS */}
+               {teamAfastados.length > 0 && (
+                  <div className="mb-2 border-t border-slate-200">
+                     <div className="bg-amber-50/30 px-6 py-2 border-b border-slate-100 font-bold text-xs text-amber-600 uppercase tracking-widest">Afastados ({teamAfastados.length})</div>
+                     <table className="w-full text-left text-sm">
+                       <tbody className="divide-y divide-slate-100">
+                         {teamAfastados.map((emp: Employee) => (
+                           <tr key={emp.id} className="hover:bg-amber-50/30 transition-colors">
+                             <td className="p-4 pl-6">
+                               <p className="font-bold text-slate-800">{emp.name}</p>
+                               <p className="text-xs text-slate-500">{emp.role}</p>
+                             </td>
+                             <td className="p-4 text-center text-slate-500 text-xs">
+                               <p>Motivo: <span className="font-medium text-slate-700">{emp.leaveReason || 'Não inf.'}</span></p>
+                               <p>Retorno: <span className="font-medium text-slate-700">{formatDateToBR(emp.leaveExpectedReturn!)}</span></p>
+                             </td>
+                             <td className="p-4 text-right pr-6">
+                               <span className="bg-amber-100 text-amber-700 px-3 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                                 Afastado
+                               </span>
+                             </td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                  </div>
+               )}
+
+               {teamAtivos.length === 0 && teamAfastados.length === 0 && (
+                 <div className="text-center py-16 text-slate-400">
+                    <UserMinus size={48} className="mx-auto mb-3 opacity-20" />
+                    <p>Não há nenhum colaborador alocado neste setor no momento.</p>
+                 </div>
+               )}
+
+            </div>
+          </div>
+        )}
+
         {/* ================= ABA 1: ABSENTEÍSMO ================= */}
         {activeDetail === 'ABSENCES' && (
           <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
-            <div className="p-6 border-b border-slate-100 bg-slate-50">
-              <h3 className="text-lg font-bold text-slate-800">Detalhamento de Faltas no Período</h3>
+            <div className="p-6 border-b border-slate-100 bg-red-50/30 flex items-center gap-3">
+              <div className="bg-red-100 text-red-600 p-2 rounded-xl"><CalendarX size={20}/></div>
+              <div>
+                 <h3 className="text-lg font-bold text-red-900">Detalhamento de Faltas no Período</h3>
+                 <p className="text-xs text-slate-500">Expanda os cards para ver os motivos das ausências.</p>
+              </div>
             </div>
             <div className="p-6">
               {absDetails.absentEmployees.length === 0 ? (
@@ -343,8 +444,12 @@ export const Setores: React.FC = () => {
         {/* ================= ABA 2: TURNOVER ================= */}
         {activeDetail === 'TURNOVER' && (
           <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden animate-in fade-in">
-            <div className="p-6 border-b border-slate-100 bg-slate-50">
-              <h3 className="text-lg font-bold text-slate-800">Desligamentos Registrados</h3>
+            <div className="p-6 border-b border-slate-100 bg-amber-50/30 flex items-center gap-3">
+              <div className="bg-amber-100 text-amber-600 p-2 rounded-xl"><UserMinus size={20}/></div>
+              <div>
+                 <h3 className="text-lg font-bold text-amber-900">Desligamentos Registrados no Período</h3>
+                 <p className="text-xs text-slate-500">Histórico de saída (turnover) deste setor.</p>
+              </div>
             </div>
             <div className="p-0">
               {turnoverDetails.length === 0 ? (
@@ -395,9 +500,12 @@ export const Setores: React.FC = () => {
           <div className="space-y-6 animate-in fade-in">
             {/* Abertas Atualmente */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-blue-50/50 flex items-center gap-2">
-                <Target className="text-blue-600" size={20} />
-                <h3 className="text-lg font-bold text-blue-900">Trabalhando Agora (Abertas)</h3>
+              <div className="p-6 border-b border-slate-100 bg-blue-50/50 flex items-center gap-3">
+                <div className="bg-blue-100 text-blue-600 p-2 rounded-xl"><Target size={20} /></div>
+                <div>
+                   <h3 className="text-lg font-bold text-blue-900">Trabalhando Agora (Abertas)</h3>
+                   <p className="text-xs text-slate-500">Vagas que o RH está procurando ativamente (independente da data de abertura).</p>
+                </div>
               </div>
               <div className="p-0">
                 {jobsDetails.abertas.length === 0 ? (
@@ -426,9 +534,12 @@ export const Setores: React.FC = () => {
 
             {/* Fechadas no Período */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-emerald-50/50 flex items-center gap-2">
-                <CheckCircle2 className="text-emerald-600" size={20} />
-                <h3 className="text-lg font-bold text-emerald-900">Vagas Concluídas no Período</h3>
+              <div className="p-6 border-b border-slate-100 bg-emerald-50/50 flex items-center gap-3">
+                <div className="bg-emerald-100 text-emerald-600 p-2 rounded-xl"><CheckCircle2 size={20} /></div>
+                <div>
+                   <h3 className="text-lg font-bold text-emerald-900">Vagas Concluídas no Período</h3>
+                   <p className="text-xs text-slate-500">Vagas finalizadas dentro das datas filtradas acima.</p>
+                </div>
               </div>
               <div className="p-0">
                 {jobsDetails.fechadas.length === 0 ? (
@@ -457,9 +568,12 @@ export const Setores: React.FC = () => {
 
             {/* Canceladas / Congeladas no Período */}
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-              <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-                <PauseCircle className="text-slate-500" size={20} />
-                <h3 className="text-lg font-bold text-slate-700">Canceladas ou Congeladas no Período</h3>
+              <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+                <div className="bg-slate-200 text-slate-600 p-2 rounded-xl"><PauseCircle size={20} /></div>
+                <div>
+                   <h3 className="text-lg font-bold text-slate-700">Canceladas ou Congeladas no Período</h3>
+                   <p className="text-xs text-slate-500">Vagas que foram pausadas ou canceladas dentro das datas filtradas.</p>
+                </div>
               </div>
               <div className="p-0">
                 {jobsDetails.canceladas.length === 0 ? (
