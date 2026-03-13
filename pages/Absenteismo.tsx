@@ -93,17 +93,15 @@ export const Absenteismo: React.FC = () => {
   };
 
   // =========================================================================
-  // NOVO MOTOR DE CÁLCULO (IGNORA FINAIS DE SEMANA)
+  // MOTOR DE CÁLCULO (IGNORA FINAIS DE SEMANA, EXCETO PARA LICENÇA LEGAL)
   // =========================================================================
   const calculateWorkingHours = (record: Partial<AbsenceRecord>, emp: Employee | undefined) => {
     const workload = emp?.dailyWorkload || 8.8;
-    // O padrão é 1 a 5 (Segunda a Sexta). O Domingo é 0 e Sábado é 6.
     const workDays = (emp as any)?.workDays || [1, 2, 3, 4, 5]; 
     
     let amount = record.durationAmount || 0;
     let unit = record.durationUnit;
     
-    // Tratamento legado de string
     if (!unit && record.documentDuration) {
       const match = record.documentDuration.match(/(\d+(?:\.\d+)?)\s*(dia|hora)/i);
       if (match) {
@@ -112,14 +110,18 @@ export const Absenteismo: React.FC = () => {
       } else { unit = 'Dias'; amount = 1; }
     }
 
-    if (unit === 'Horas') return amount; // Horas são absolutas
+    if (unit === 'Horas') return amount; 
 
-    // Se for 'Dias', varre o calendário para descontar finais de semana
+    // SE FOR LICENÇA, É DIA CORRIDO (NÃO DESCONTA FINAL DE SEMANA)
+    if (record.documentType === 'Licença Prevista em Lei') {
+        return amount * workload;
+    }
+
+    // Se for outro documento (Atestado/Injustificada/Acompanhante), varre o calendário
     let workingDays = 0;
     const safeDateStr = formatToYMD(record.absenceDate);
-    if (!safeDateStr) return amount * workload; // Fallback se der erro na data
+    if (!safeDateStr) return amount * workload; 
 
-    // Seta para 12:00 para evitar que o fuso horário mude o dia acidentalmente
     let currentDate = new Date(safeDateStr + 'T12:00:00Z');
     let daysLeft = amount;
 
@@ -127,18 +129,16 @@ export const Absenteismo: React.FC = () => {
         const currentDayOfWeek = currentDate.getDay();
         
         if (daysLeft < 1) {
-            // Fração de dia (ex: 0.5 dia)
             if (workDays.includes(currentDayOfWeek)) {
                 workingDays += daysLeft;
             }
             daysLeft = 0;
         } else {
-            // Dia inteiro
             if (workDays.includes(currentDayOfWeek)) {
                 workingDays += 1;
             }
             daysLeft -= 1;
-            currentDate.setDate(currentDate.getDate() + 1); // Avança 1 dia
+            currentDate.setDate(currentDate.getDate() + 1); 
         }
     }
 
@@ -208,7 +208,7 @@ export const Absenteismo: React.FC = () => {
   const currentEntryHours = useMemo(() => {
     const emp = employees.find((e: Employee) => e.name.toLowerCase() === formData.employeeName?.toLowerCase());
     return calculateWorkingHours(formData as AbsenceRecord, emp);
-  }, [formData.employeeName, formData.durationAmount, formData.durationUnit, formData.absenceDate, employees]);
+  }, [formData.employeeName, formData.durationAmount, formData.durationUnit, formData.absenceDate, formData.documentType, employees]);
 
   const usedCompanionHoursThisYear = useMemo(() => {
     if (!formData.employeeName || !formData.absenceDate) return 0;
@@ -254,7 +254,6 @@ export const Absenteismo: React.FC = () => {
       else if (record.documentType === 'Acompanhante de Dependente') { acompanhamentos++; acompanhamentosHours += hours; }
       else if (record.documentType === 'Licença Prevista em Lei') { licencas++; licencasHours += hours; }
 
-      // Se for Licença, não soma no prejuízo (totalLostHours) nem no ranking de devedores
       if (record.documentType !== 'Licença Prevista em Lei') {
         totalLostHours += hours;
         if (record.reason) reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + hours;
@@ -274,7 +273,7 @@ export const Absenteismo: React.FC = () => {
     };
   }, [filteredAbsences, employees]);
 
-  // --- IA DE AGRUPAMENTO (COM LISTA DE REGISTROS) ---
+  // --- IA DE AGRUPAMENTO ---
   const aiResults = useMemo(() => {
     const categoryRules = [
       { name: '👨‍👩‍👧 Acompanhamento Familiar', regex: /(filh[oa]|mãe|pai|espos[oa]|marido|dependente|acompanhante|z76|z763)/i },
@@ -300,7 +299,6 @@ export const Absenteismo: React.FC = () => {
     pureKeys.forEach(k => { categories[k] = { hours: 0, reasons: new Set(), records: [] }; });
 
     filteredAbsences.forEach((record: AbsenceRecord) => {
-        // IGNORA LICENÇAS NA IA POIS ELAS NÃO SÃO "TEMPO PERDIDO" PROBLEMATICO
         if (record.documentType === 'Licença Prevista em Lei') return;
 
         const reason = (record.reason || '').toLowerCase();
