@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Employee, ExperienceInterview } from '../types';
 import { addDays, differenceInDays, parseISO } from 'date-fns';
-import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar, Edit2, Trash2, Download, Plus } from 'lucide-react';
+import { CalendarClock, CheckSquare, BarChart, AlertCircle, X, MessageSquare, UserCheck, Filter, MapPin, Calendar, Edit2, Trash2, Download, Plus, ChevronRight } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export const Experiencia: React.FC = () => {
@@ -12,7 +12,7 @@ export const Experiencia: React.FC = () => {
   
   const isMaster = user?.role === 'MASTER';
   const isRecruiter = user?.role === 'RECRUITER';
-  const canEdit = isMaster || isRecruiter; // Recrutadores agora podem editar as entrevistas
+  const canEdit = isMaster || isRecruiter; 
 
   // --- ESTADOS DE FILTRO ---
   const [filterStart, setFilterStart] = useState(() => {
@@ -26,7 +26,7 @@ export const Experiencia: React.FC = () => {
   const [filterSector, setFilterSector] = useState('Todos');
   const [filterUnit, setFilterUnit] = useState('Todas');
 
-  // --- ESTADOS DO MODAL ---
+  // --- ESTADOS DO MODAL E FORMULÁRIO ---
   const [manualEntry, setManualEntry] = useState(false);
   const [interviewingEmp, setInterviewingEmp] = useState<Employee | null>(null);
   const [interviewData, setInterviewData] = useState<Partial<ExperienceInterview>>({
@@ -34,9 +34,12 @@ export const Experiencia: React.FC = () => {
     interviewDate: new Date().toISOString().split('T')[0],
     qLeader: 0, qColleagues: 0, qTraining: 0, 
     qJobSatisfaction: 0, qCompanySatisfaction: 0, qBenefits: 0,
-    qRecommend: undefined, // Novo campo: Indicação DIMY (0 a 10 ou undefined)
+    qRecommend: undefined, 
     trainerName: '', comments: ''
   });
+
+  // --- ESTADO DO DRILL DOWN (MODAL DE LISTAGEM DE QUEM VOTOU) ---
+  const [drillDownTarget, setDrillDownTarget] = useState<string | null>(null);
 
   // --- LÓGICA DE PRAZOS ---
   const probationList = useMemo(() => {
@@ -170,9 +173,9 @@ export const Experiencia: React.FC = () => {
     if (answeredInterviews.length === 0) return { promoters: 0, passives: 0, detractors: 0, score: 0, total: 0 };
     
     const total = answeredInterviews.length;
-    const promoters = answeredInterviews.filter(inv => inv.qRecommend >= 9).length; // 9 ou 10
-    const passives = answeredInterviews.filter(inv => inv.qRecommend === 7 || inv.qRecommend === 8).length; // 7 ou 8
-    const detractors = answeredInterviews.filter(inv => inv.qRecommend <= 6).length; // 0 a 6
+    const promoters = answeredInterviews.filter(inv => inv.qRecommend >= 9).length; 
+    const passives = answeredInterviews.filter(inv => inv.qRecommend === 7 || inv.qRecommend === 8).length; 
+    const detractors = answeredInterviews.filter(inv => inv.qRecommend <= 6).length; 
     
     const pctPromotores = (promoters / total) * 100;
     const pctDetratores = (detractors / total) * 100;
@@ -181,7 +184,7 @@ export const Experiencia: React.FC = () => {
     return { promoters, passives, detractors, score, total };
   }, [allCompletedInterviews]);
 
-  // Lógica das perguntas de satisfação (1 a 4) - Mantido para os sub-indicadores
+  // Lógica das perguntas de satisfação (1 a 4)
   const analytics = useMemo(() => {
     const calculateSatisfaction = (scoreArray: number[]) => {
       if (scoreArray.length === 0) return { promoters: 0, passives: 0, detractors: 0, score: 0, total: 0 };
@@ -220,7 +223,7 @@ export const Experiencia: React.FC = () => {
       employeeSector: interviewData.employeeSector || interviewingEmp.sector,
       employeeUnit: interviewData.employeeUnit || interviewingEmp.unit || '',
 
-      qRecommend: interviewData.qRecommend, // Salva o eNPS verdadeiro
+      qRecommend: interviewData.qRecommend, 
       qLeader: interviewData.qLeader!,
       qColleagues: interviewData.qColleagues!,
       qTraining: interviewData.qTraining!,
@@ -275,6 +278,13 @@ export const Experiencia: React.FC = () => {
     };
 
     await updateEmployee(updatedEmp);
+  };
+
+  // Redireciona o usuário para a aba de Histórico e abre a edição de quem ele clicou no Drill Down
+  const handleJumpToInterview = (interview: any) => {
+    setDrillDownTarget(null);
+    setActiveTab('historico');
+    handleEditInterview(interview);
   };
 
   // --- HELPERS VISUAIS ---
@@ -479,8 +489,8 @@ export const Experiencia: React.FC = () => {
             </div>
             <div className="z-10 max-w-2xl">
               <h2 className="text-3xl font-black mb-2">Termômetro de Cultura (eNPS)</h2>
-              <p className="text-indigo-200 font-medium">"Qual a chance de você indicar a DIMY para um amigo trabalhar?"</p>
-              <div className="flex gap-4 mt-6 text-sm font-bold">
+              <p className="text-indigo-200 font-medium">"Qual a chance de você indicar a empresa para um amigo trabalhar?"</p>
+              <div className="flex flex-wrap gap-4 mt-6 text-sm font-bold">
                  <div className="bg-emerald-500/20 border border-emerald-500/30 px-3 py-1.5 rounded-lg"><span className="text-emerald-400">{trueEnpsData.promoters}</span> Promotores (9-10)</div>
                  <div className="bg-blue-500/20 border border-blue-500/30 px-3 py-1.5 rounded-lg"><span className="text-blue-400">{trueEnpsData.passives}</span> Neutros (7-8)</div>
                  <div className="bg-red-500/20 border border-red-500/30 px-3 py-1.5 rounded-lg"><span className="text-red-400">{trueEnpsData.detractors}</span> Detratores (0-6)</div>
@@ -499,15 +509,22 @@ export const Experiencia: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
-              { title: 'Acolhimento da Liderança', data: analytics.leader },
-              { title: 'Acolhimento da Equipe', data: analytics.colleagues },
-              { title: 'Qualidade do Treinamento', data: analytics.training },
-              { title: 'Satisfação com a Função', data: analytics.job },
-              { title: 'Satisfação com a Empresa', data: analytics.company },
-              { title: 'Satisfação com Benefícios', data: analytics.benefits },
+              { id: 'qLeader', title: 'Acolhimento da Liderança', data: analytics.leader },
+              { id: 'qColleagues', title: 'Acolhimento da Equipe', data: analytics.colleagues },
+              { id: 'qTraining', title: 'Qualidade do Treinamento', data: analytics.training },
+              { id: 'qJobSatisfaction', title: 'Satisfação com a Função', data: analytics.job },
+              { id: 'qCompanySatisfaction', title: 'Satisfação com a Empresa', data: analytics.company },
+              { id: 'qBenefits', title: 'Satisfação com Benefícios', data: analytics.benefits },
             ].map((item, i) => (
-              <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow">
-                <h3 className="font-bold text-slate-700 mb-4 h-10 line-clamp-2 leading-tight">{item.title}</h3>
+              <div 
+                key={i} 
+                onClick={() => setDrillDownTarget(item.id)}
+                className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group"
+              >
+                <div className="flex justify-between items-start">
+                    <h3 className="font-bold text-slate-700 mb-4 h-10 line-clamp-2 leading-tight group-hover:text-indigo-600 transition-colors">{item.title}</h3>
+                    <ChevronRight className="text-slate-300 group-hover:text-indigo-500 transition-colors mt-1" size={20}/>
+                </div>
                 
                 <div className="flex items-end gap-3 mb-6 border-b border-slate-100 pb-4">
                   <div className={`text-4xl font-black tracking-tighter ${getScoreColor(item.data.score)}`}>{item.data.total > 0 ? item.data.score : '-'}</div>
@@ -627,7 +644,7 @@ export const Experiencia: React.FC = () => {
 
       {/* MODAL DO FORMULÁRIO DE ENTREVISTA (Automático, Edição e Retroativo) */}
       {(interviewingEmp || manualEntry) && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[200] p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
             
             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50 rounded-t-2xl shrink-0">
@@ -692,7 +709,7 @@ export const Experiencia: React.FC = () => {
               {/* A PERGUNTA DE eNPS (OFICIAL) */}
               <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-2xl shadow-sm text-center">
                  <h3 className="font-black text-indigo-900 text-lg mb-2">A Pergunta Definitiva (eNPS Oficial)</h3>
-                 <p className="text-sm text-indigo-700 mb-6">"Numa escala de 0 a 10, qual a probabilidade de você recomendar a DIMY como um bom lugar para trabalhar para um amigo ou conhecido?"</p>
+                 <p className="text-sm text-indigo-700 mb-6">"Numa escala de 0 a 10, qual a probabilidade de você recomendar a empresa como um bom lugar para trabalhar para um amigo ou conhecido?"</p>
                  
                  <div className="flex flex-wrap justify-center gap-2 mb-4">
                     {[0,1,2,3,4,5,6,7,8,9,10].map(num => (
@@ -757,6 +774,94 @@ export const Experiencia: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ======================= MODAL DRILL DOWN DE NOTAS ======================= */}
+      {drillDownTarget && (
+         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[100] p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl flex flex-col max-h-[85vh]">
+               <div className="p-6 border-b border-slate-100 bg-slate-50 rounded-t-3xl flex justify-between items-center shrink-0">
+                  <div>
+                     <h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg flex items-center gap-2">
+                        <BarChart className="text-indigo-600"/> Detalhamento de Notas
+                     </h3>
+                     <p className="text-xs text-slate-500 font-bold mt-1">Avaliando o pilar: <span className="text-indigo-600 uppercase tracking-widest">{
+                        drillDownTarget === 'qLeader' ? 'Acolhimento da Liderança' :
+                        drillDownTarget === 'qColleagues' ? 'Acolhimento da Equipe' :
+                        drillDownTarget === 'qTraining' ? 'Qualidade do Treinamento' :
+                        drillDownTarget === 'qJobSatisfaction' ? 'Satisfação com a Função' :
+                        drillDownTarget === 'qCompanySatisfaction' ? 'Satisfação com a Empresa' :
+                        'Satisfação com Benefícios'
+                     }</span></p>
+                  </div>
+                  <button onClick={() => setDrillDownTarget(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-indigo-600 transition-colors"><X size={24} /></button>
+               </div>
+
+               <div className="p-0 overflow-y-auto custom-scrollbar bg-slate-50">
+                  
+                  {/* AGRUPAMENTO: DETRATORES (RUIM/PÉSSIMO) */}
+                  <div className="p-4">
+                     <h4 className="font-black text-red-600 uppercase tracking-widest text-[10px] mb-3 border-b border-red-200 pb-1">Detratores (Ruim ou Péssimo)</h4>
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {allCompletedInterviews.filter(i => i[drillDownTarget] <= 2).map((inv, idx) => (
+                           <div key={idx} className="bg-white p-3 rounded-xl shadow-sm border border-red-100 flex items-center justify-between hover:border-red-300 transition-colors">
+                              <div>
+                                 <p className="font-bold text-slate-800 text-sm">{inv.employeeName}</p>
+                                 <p className="text-[10px] text-slate-500">{inv.employeeSector}</p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                 <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 font-black flex items-center justify-center">{inv[drillDownTarget]}</div>
+                                 <button onClick={() => handleJumpToInterview(inv)} className="text-indigo-600 hover:underline text-[10px] font-bold">Ver Tudo</button>
+                              </div>
+                           </div>
+                        ))}
+                        {allCompletedInterviews.filter(i => i[drillDownTarget] <= 2).length === 0 && <p className="text-xs text-slate-400 italic">Nenhum detrator neste período.</p>}
+                     </div>
+                  </div>
+
+                  {/* AGRUPAMENTO: PASSIVOS (BOM) */}
+                  <div className="p-4">
+                     <h4 className="font-black text-blue-600 uppercase tracking-widest text-[10px] mb-3 border-b border-blue-200 pb-1">Passivos (Nota: Bom)</h4>
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {allCompletedInterviews.filter(i => i[drillDownTarget] === 3).map((inv, idx) => (
+                           <div key={idx} className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 hover:border-blue-300 transition-colors flex items-center justify-between">
+                              <div>
+                                 <p className="font-bold text-slate-800 text-sm">{inv.employeeName}</p>
+                                 <p className="text-[10px] text-slate-500">{inv.employeeSector}</p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 font-black flex items-center justify-center">{inv[drillDownTarget]}</div>
+                                 <button onClick={() => handleJumpToInterview(inv)} className="text-indigo-600 hover:underline text-[10px] font-bold">Ver Tudo</button>
+                              </div>
+                           </div>
+                        ))}
+                        {allCompletedInterviews.filter(i => i[drillDownTarget] === 3).length === 0 && <p className="text-xs text-slate-400 italic">Nenhum voto "Bom" neste período.</p>}
+                     </div>
+                  </div>
+
+                  {/* AGRUPAMENTO: PROMOTORES (ÓTIMO) */}
+                  <div className="p-4">
+                     <h4 className="font-black text-emerald-600 uppercase tracking-widest text-[10px] mb-3 border-b border-emerald-200 pb-1">Promotores (Nota: Ótimo)</h4>
+                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {allCompletedInterviews.filter(i => i[drillDownTarget] === 4).map((inv, idx) => (
+                           <div key={idx} className="bg-white p-3 rounded-xl shadow-sm border border-emerald-100 flex items-center justify-between hover:border-emerald-300 transition-colors">
+                              <div>
+                                 <p className="font-bold text-slate-800 text-sm">{inv.employeeName}</p>
+                                 <p className="text-[10px] text-slate-500">{inv.employeeSector}</p>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                 <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 font-black flex items-center justify-center">{inv[drillDownTarget]}</div>
+                                 <button onClick={() => handleJumpToInterview(inv)} className="text-indigo-600 hover:underline text-[10px] font-bold">Ver Tudo</button>
+                              </div>
+                           </div>
+                        ))}
+                        {allCompletedInterviews.filter(i => i[drillDownTarget] === 4).length === 0 && <p className="text-xs text-slate-400 italic">Nenhum voto "Ótimo" neste período.</p>}
+                     </div>
+                  </div>
+
+               </div>
+            </div>
+         </div>
       )}
     </div>
   );
