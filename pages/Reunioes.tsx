@@ -362,7 +362,7 @@ export const Reunioes: React.FC = () => {
             <Coffee size={24} />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Cafés e Reuniões</h1>
+            <h1 className="text-2xl font-bold text-slate-800">Treinamentos e Reuniões</h1>
             <p className="text-slate-500 text-sm">Gestão de eventos, treinamentos e listas de presença</p>
           </div>
         </div>
