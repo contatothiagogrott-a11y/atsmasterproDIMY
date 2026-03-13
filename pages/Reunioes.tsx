@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { MeetingEvent, Employee } from '../types';
-import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, Download, UserPlus, Presentation, X, FileSpreadsheet, Copy, BarChart3 } from 'lucide-react';
+import { Coffee, Plus, Trash2, Edit2, MapPin, Users, Clock, Calendar, CheckCircle, XCircle, Download, UserPlus, Presentation, X, FileSpreadsheet, Copy, BarChart3, Info, Building2 } from 'lucide-react';
 import ExcelJS from 'exceljs'; 
 
 export const Reunioes: React.FC = () => {
@@ -52,13 +52,30 @@ export const Reunioes: React.FC = () => {
       .sort((a: MeetingEvent, b: MeetingEvent) => b.date.localeCompare(a.date)); 
   }, [meetings, todayStr]);
 
-  // --- LÓGICA DO PAINEL HHT (Homem-Hora de Treinamento) ---
+  // --- FUNÇÕES DE APOIO PARA DATAS ---
+  const formatToYMD = (dateVal: any) => {
+    if (!dateVal) return '';
+    let str = String(dateVal).trim().split('T')[0].split(' ')[0];
+    const parts = str.split(/[\/\-]/);
+    if (parts.length === 3) {
+        if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    return str; 
+  };
+
+  const formatDateToBR = (dateStr: string) => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}/${month}/${year}`;
+  };
+
   const calculateDurationInHours = (startTime: string, endTime: string) => {
      if (!startTime || !endTime) return 0;
      const start = new Date(`1970-01-01T${startTime}:00Z`);
      const end = new Date(`1970-01-01T${endTime}:00Z`);
      let diff = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-     if (diff < 0) diff += 24; // Passou da meia-noite
+     if (diff < 0) diff += 24; 
      return diff;
   };
 
@@ -71,8 +88,9 @@ export const Reunioes: React.FC = () => {
       return `${h}h ${m}m`;
   };
 
+  // --- LÓGICA DO PAINEL HHT (Homem-Hora de Treinamento) ---
   const hhtAnalytics = useMemo(() => {
-      // Filtra apenas Treinamentos ou Integrações dentro do período selecionado
+      // 1. Filtra apenas Treinamentos ou Integrações dentro do período selecionado
       const trainingEvents = meetings.filter((m: MeetingEvent) => {
          if (m.type !== 'Treinamento' && m.type !== 'Integração') return false;
          if (m.date < hhtStartDate || m.date > hhtEndDate) return false;
@@ -84,7 +102,7 @@ export const Reunioes: React.FC = () => {
       const allUniqueParticipants = new Set<string>();
 
       const detailedTrainings = trainingEvents.map((t: MeetingEvent) => {
-          const duration = calculateDurationInHours(t.time, t.endTime || t.time); // Se não tem endTime, assume 0h
+          const duration = calculateDurationInHours(t.time, t.endTime || t.time); 
           const participants = t.participantIds && t.participantIds.length > 0 ? t.participantIds.length : t.participantCount;
           
           if (t.participantIds) t.participantIds.forEach(id => allUniqueParticipants.add(id));
@@ -96,19 +114,36 @@ export const Reunioes: React.FC = () => {
           return { ...t, duration, participants, hht };
       }).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-      // Média de horas por pessoa
-      const averagePerEmployee = allUniqueParticipants.size > 0 
-          ? totalHHT / allUniqueParticipants.size 
-          : 0;
+      // 2. Quadro Total de Colaboradores (CÁLCULO INTELIGENTE NO TEMPO)
+      // O colaborador estava na empresa em algum momento entre hhtStartDate e hhtEndDate?
+      const totalAtivosNoPeriodo = employees.filter((e: Employee) => {
+          const adDate = formatToYMD(e.admissionDate);
+          const termDate = formatToYMD(e.terminationDate);
+
+          // Se a data de admissão for DEPOIS do final do filtro, ele ainda não existia na empresa.
+          if (adDate && adDate > hhtEndDate) return false;
+
+          // Se ele foi demitido ANTES do início do filtro, ele já não estava mais na empresa.
+          if (termDate && termDate < hhtStartDate) return false;
+
+          // Se passou pelas regras, ele fez parte do quadro durante o período analisado.
+          return true;
+      }).length;
+      
+      // 3. Cálculo das duas médias
+      const averageGlobal = totalAtivosNoPeriodo > 0 ? totalHHT / totalAtivosNoPeriodo : 0;
+      const averagePerParticipant = allUniqueParticipants.size > 0 ? totalHHT / allUniqueParticipants.size : 0;
 
       return {
          totalHHT,
          totalTrainings: trainingEvents.length,
          totalUniquePeopleTrained: allUniqueParticipants.size,
-         averagePerEmployee,
+         totalAtivos: totalAtivosNoPeriodo,
+         averageGlobal,
+         averagePerParticipant,
          detailedList: detailedTrainings
       };
-  }, [meetings, hhtStartDate, hhtEndDate]);
+  }, [meetings, hhtStartDate, hhtEndDate, employees]);
 
 
   const handleTemplateClick = () => {
@@ -300,12 +335,6 @@ export const Reunioes: React.FC = () => {
       console.error(err);
       alert("Ocorreu um erro ao gerar a planilha. Verifique se o modelo não está corrompido.");
     }
-  };
-
-  const formatDateToBR = (dateStr: string) => {
-    if (!dateStr) return '';
-    const [year, month, day] = dateStr.split('-');
-    return `${day}/${month}/${year}`;
   };
 
   const isTomorrow = (dateStr: string) => {
@@ -502,6 +531,17 @@ export const Reunioes: React.FC = () => {
       {view === 'analytics' && (
          <div className="space-y-6 animate-in slide-in-from-right-4">
             
+            <div className="bg-indigo-50 border border-indigo-100 p-5 rounded-2xl flex gap-4 shadow-sm items-start">
+               <Info className="text-indigo-600 shrink-0 mt-0.5" />
+               <div>
+                  <h3 className="font-bold text-indigo-900 text-sm uppercase tracking-widest mb-1">Como o HHT é calculado?</h3>
+                  <p className="text-sm text-indigo-800 leading-relaxed">
+                     O <b>Homem-Hora de Treinamento (HHT)</b> é o principal indicador de capacitação na Gestão de Pessoas. Ele não mede apenas a duração do evento no relógio, mas sim o esforço investido no grupo. Se 15 pessoas assistem a um curso de 4 horas, a empresa investiu <b>60 horas de treinamento</b> (15 x 4).<br/><br/>
+                     Aqui você encontra dois prismas: A <b>Média Global</b> (usada para auditorias e ISO, dividindo pelo quadro total de funcionários da empresa) e a <b>Média Específica</b> (que mede o volume de conhecimento injetado apenas nas pessoas que efetivamente participaram das turmas).
+                  </p>
+               </div>
+            </div>
+
             <div className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                <div className="flex items-center gap-2">
                   <Calendar size={18} className="text-indigo-600" />
@@ -514,41 +554,65 @@ export const Reunioes: React.FC = () => {
                </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-               {/* HHT CARD */}
-               <div className="md:col-span-2 bg-gradient-to-br from-indigo-800 to-indigo-900 p-8 rounded-3xl text-white shadow-xl relative overflow-hidden">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+               
+               {/* HHT CARD - HERO */}
+               <div className="lg:col-span-2 bg-gradient-to-br from-indigo-800 to-indigo-900 p-8 rounded-3xl text-white shadow-xl relative overflow-hidden flex flex-col justify-center">
                   <BarChart3 className="absolute -right-4 -bottom-4 opacity-10 size-48"/>
-                  <h3 className="font-bold text-indigo-200 uppercase tracking-widest text-xs mb-2">Homem-Hora de Treinamento (HHT)</h3>
-                  <div className="flex items-end gap-3">
+                  <h3 className="font-bold text-indigo-200 uppercase tracking-widest text-xs mb-2">Homem-Hora de Treinamento (HHT Total)</h3>
+                  <div className="flex items-end gap-3 mb-3">
                      <p className="text-6xl font-black">{formatHHT(hhtAnalytics.totalHHT)}</p>
                   </div>
-                  <p className="text-sm text-indigo-300 mt-4 leading-relaxed max-w-sm">
-                     Soma total do tempo investido na capacitação do time. (Horas do Evento × Nº de Participantes).
-                  </p>
-               </div>
-
-               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center gap-2">
-                  <div className="flex items-center gap-3 text-slate-500 mb-2">
-                     <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Presentation size={20}/></div>
-                     <span className="text-xs font-bold uppercase tracking-widest">Eventos Realizados</span>
+                  <div className="bg-indigo-950/40 p-3 rounded-xl border border-indigo-700/50 mt-auto relative z-10 w-fit">
+                    <p className="text-[11px] text-indigo-300 font-mono">Fórmula: Σ (Nº de Participantes × Horas de Duração)</p>
                   </div>
-                  <p className="text-4xl font-black text-slate-800">{hhtAnalytics.totalTrainings}</p>
-                  <p className="text-xs text-slate-400">Treinamentos no período</p>
                </div>
 
-               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center gap-2">
+               {/* MÉDIA GLOBAL */}
+               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center relative group hover:border-blue-300 transition-colors">
+                  <div className="flex items-center gap-3 text-slate-500 mb-2">
+                     <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Building2 size={20}/></div>
+                     <span className="text-[10px] font-bold uppercase tracking-widest">Média Global (Empresa)</span>
+                  </div>
+                  <p className="text-4xl font-black text-slate-800">{formatHHT(hhtAnalytics.averageGlobal)}</p>
+                  <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase tracking-wide">Por Colaborador</p>
+                  
+                  <div className="absolute top-6 right-6 cursor-help">
+                     <Info size={16} className="text-slate-300 group-hover:text-blue-400 transition-colors" />
+                     <div className="hidden group-hover:block absolute top-6 right-0 w-64 bg-slate-800 text-white text-[11px] p-4 rounded-xl shadow-2xl z-50 font-medium leading-relaxed">
+                        Exigido em relatórios de diretoria e auditorias (ex: ISO 30414). <br/><br/>
+                        <b>Fórmula:</b> Total de HHT ÷ Total de Colaboradores Ativos no Período (<b>{hhtAnalytics.totalAtivos}</b>).<br/>
+                        <i>Mostra o esforço de capacitação diluído por toda a empresa.</i>
+                     </div>
+                  </div>
+               </div>
+
+               {/* MÉDIA POR PARTICIPANTE */}
+               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm flex flex-col justify-center relative group hover:border-emerald-300 transition-colors">
                   <div className="flex items-center gap-3 text-slate-500 mb-2">
                      <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><Users size={20}/></div>
-                     <span className="text-xs font-bold uppercase tracking-widest">Média Estratégica</span>
+                     <span className="text-[10px] font-bold uppercase tracking-widest">Média Específica (Turma)</span>
                   </div>
-                  <p className="text-4xl font-black text-slate-800">{formatHHT(hhtAnalytics.averagePerEmployee)}</p>
-                  <p className="text-xs text-slate-400">Tempo médio por colaborador</p>
+                  <p className="text-4xl font-black text-slate-800">{formatHHT(hhtAnalytics.averagePerParticipant)}</p>
+                  <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase tracking-wide">Por Participante Treinado</p>
+                  
+                  <div className="absolute top-6 right-6 cursor-help">
+                     <Info size={16} className="text-slate-300 group-hover:text-emerald-400 transition-colors" />
+                     <div className="hidden group-hover:block absolute top-6 right-0 w-64 bg-slate-800 text-white text-[11px] p-4 rounded-xl shadow-2xl z-50 font-medium leading-relaxed">
+                        Usado para medir a intensidade real dos cursos fornecidos.<br/><br/>
+                        <b>Fórmula:</b> Total de HHT ÷ Participantes Únicos (<b>{hhtAnalytics.totalUniquePeopleTrained}</b>).<br/>
+                        <i>Mostra quantas horas, em média, quem foi selecionado para os cursos acabou recebendo.</i>
+                     </div>
+                  </div>
                </div>
             </div>
 
             <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-               <div className="p-6 border-b border-slate-100 bg-slate-50">
+               <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
                   <h3 className="text-lg font-bold text-slate-800">Detalhamento dos Treinamentos</h3>
+                  <div className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 shadow-sm">
+                     {hhtAnalytics.totalTrainings} Eventos no período
+                  </div>
                </div>
                
                <div className="p-0">
@@ -572,15 +636,15 @@ export const Reunioes: React.FC = () => {
                               <tr key={t.id} className="hover:bg-indigo-50/30 transition-colors">
                                  <td className="p-4 pl-6">
                                     <p className="font-bold text-slate-800 text-sm">{t.title}</p>
-                                    <p className="text-xs text-slate-500">Instrutor: {t.instructor || 'N/I'}</p>
+                                    <p className="text-xs text-slate-500 mt-0.5">Instrutor: {t.instructor || 'N/I'}</p>
                                  </td>
                                  <td className="p-4 text-center">
                                     <p className="font-bold text-slate-700 text-sm">{formatDateToBR(t.date)}</p>
-                                    <p className="text-xs font-bold text-indigo-500">{t.duration} horas ({t.time} as {t.endTime || 'N/I'})</p>
+                                    <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-0.5">{formatHHT(t.duration)} ({t.time} as {t.endTime || 'N/I'})</p>
                                  </td>
                                  <td className="p-4 text-center">
-                                    <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-xs font-bold">
-                                       {t.participants} pessoas
+                                    <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-lg text-xs font-bold border border-slate-200 shadow-sm">
+                                       {t.participants} <span className="opacity-50">pessoas</span>
                                     </span>
                                  </td>
                                  <td className="p-4 text-right pr-6">
@@ -613,14 +677,14 @@ export const Reunioes: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-bold text-slate-700">Título do Evento</label>
-                <input required type="text" placeholder="Ex: Café de Integração..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+                <input required type="text" placeholder="Ex: Treinamento de Vendas, Integração..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700">Tipo de Evento</label>
-                <select className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 bg-white" value={formData.type || 'Reunião'} onChange={e => setFormData({...formData, type: e.target.value as any})}>
+                <select className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500 bg-white font-bold" value={formData.type || 'Reunião'} onChange={e => setFormData({...formData, type: e.target.value as any})}>
                   <option value="Reunião">Reunião Geral</option>
-                  <option value="Treinamento">Treinamento / Curso</option>
-                  <option value="Integração">Integração de Novos</option>
+                  <option value="Treinamento" className="text-indigo-600">Treinamento / Curso (Gera HHT)</option>
+                  <option value="Integração" className="text-emerald-600">Integração de Novos (Gera HHT)</option>
                   <option value="Coffee Break">Coffee Break</option>
                   <option value="Outros">Outros</option>
                 </select>
@@ -642,18 +706,18 @@ export const Reunioes: React.FC = () => {
               </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-bold text-slate-700">Local</label>
-                <input required type="text" placeholder="Ex: Copa..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} />
+                <input required type="text" placeholder="Ex: Auditório..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.location} onChange={e => setFormData({...formData, location: e.target.value})} />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700 flex items-center gap-1"><Presentation size={14}/> Instrutor(a) / Coordenador</label>
-                <input type="text" placeholder="Nome..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.instructor || ''} onChange={e => setFormData({...formData, instructor: e.target.value})} />
+                <input type="text" placeholder="Nome do Instrutor..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.instructor || ''} onChange={e => setFormData({...formData, instructor: e.target.value})} />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-bold text-slate-700">O que será necessário? (Opcional)</label>
-                <input type="text" placeholder="Ex: Projetor, água e bolo..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} />
+                <input type="text" placeholder="Ex: Projetor, água e apostilas..." className="w-full border border-slate-300 p-3 rounded-xl outline-none focus:ring-2 focus:ring-orange-500" value={formData.requirements} onChange={e => setFormData({...formData, requirements: e.target.value})} />
               </div>
             </div>
 
@@ -722,4 +786,4 @@ export const Reunioes: React.FC = () => {
       )}
     </div>
   );
-};0
+};
