@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { Employee, SettingItem } from '../types';
 import { 
-  Users, Calendar, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet, Download, UploadCloud
+  Users, Calendar, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet, Download, UploadCloud, Copy, Info
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -44,11 +44,13 @@ export const QuadroPessoal: React.FC = () => {
     return {};
   }, [currentBudgetSetting]);
 
-  // --- MÁQUINA DO TEMPO COM LEITURA DE HISTÓRICO ---
+  // --- MÁQUINA DO TEMPO COM REGRAS DE FECHAMENTO (DIA 25) ---
   const headcountData = useMemo(() => {
     const [year, month] = selectedPeriod.split('-');
+    
+    // Datas Chave para as regras de negócio do DP
     const startOfMonth = `${year}-${month}-01`;
-    const endOfMonth = new Date(Number(year), Number(month), 0).toISOString().split('T')[0];
+    const closingDate = `${year}-${month}-25`; // Dia do fechamento da folha/quadro
 
     const data: Record<string, { ativos: number, afastados: number, list: Employee[] }> = {};
     sectors.forEach((s: string) => data[s] = { ativos: 0, afastados: 0, list: [] });
@@ -68,17 +70,19 @@ export const QuadroPessoal: React.FC = () => {
       const adDate = formatToYMD(emp.admissionDate);
       const termDate = formatToYMD(emp.terminationDate);
 
-      // Regras de Existência no Tempo:
-      if (adDate && adDate > endOfMonth) return; // Foi admitido depois do mês acabar
-      if (termDate && termDate < startOfMonth) return; // Foi demitido antes do mês começar
+      // REGRA 1: Se entrou dentro do mês, não conta (Tem que ser menor que o dia 01)
+      if (adDate && adDate >= startOfMonth) return; 
 
-      // --- DESCOBRINDO O SETOR NO PASSADO ---
+      // REGRA 2: Se saiu antes de fechar o mês, não conta (Tem que ter ficado até pelo menos dia 25)
+      if (termDate && termDate < closingDate) return; 
+
+      // --- DESCOBRINDO O SETOR NA DATA DE FECHAMENTO (DIA 25) ---
       let snapshotSector = emp.sector || 'Sem Setor';
 
       if (emp.history && emp.history.length > 0) {
-          // Filtra históricos até o último dia do mês analisado que contenham a palavra "Setor:"
+          // Filtra históricos até a data de fechamento que contenham a palavra "Setor:"
           const sectorRecords = emp.history
-              .filter((h: any) => h.date <= endOfMonth)
+              .filter((h: any) => h.date <= closingDate)
               .filter((h: any) => h.description.match(/Setor:\s*([^|]+)/i));
 
           if (sectorRecords.length > 0) {
@@ -95,6 +99,7 @@ export const QuadroPessoal: React.FC = () => {
       // Garante que a chave do setor exista no objeto de dados
       if (!data[snapshotSector]) data[snapshotSector] = { ativos: 0, afastados: 0, list: [] };
 
+      // Se passou por tudo, está computado no quadro deste mês!
       if (emp.status === 'Afastado') {
         data[snapshotSector].afastados += 1;
       } else {
@@ -120,6 +125,35 @@ export const QuadroPessoal: React.FC = () => {
       await addSetting({ id: crypto.randomUUID(), type: 'HEADCOUNT_BUDGET', name: selectedPeriod, value: jsonValue });
     }
     setIsEditing(false);
+  };
+
+  // Puxa o orçamento do mês anterior
+  const handleCopyPreviousMonth = () => {
+    const [yearStr, monthStr] = selectedPeriod.split('-');
+    let year = parseInt(yearStr, 10);
+    let month = parseInt(monthStr, 10);
+
+    if (month === 1) {
+      month = 12;
+      year -= 1;
+    } else {
+      month -= 1;
+    }
+
+    const prevPeriod = `${year}-${String(month).padStart(2, '0')}`;
+    const prevSetting = settings.find((s: SettingItem) => s.type === 'HEADCOUNT_BUDGET' && s.name === prevPeriod);
+    
+    if (prevSetting && prevSetting.value) {
+      try {
+        const prevBudget = JSON.parse(prevSetting.value);
+        setBudgetDraft(prevBudget);
+        alert(`Orçamento de ${prevPeriod} copiado com sucesso! Verifique os números e clique em "Salvar Orçamento".`);
+      } catch (e) {
+        alert("Erro ao ler o orçamento do mês anterior.");
+      }
+    } else {
+      alert(`Ainda não existe um orçamento salvo para o mês de ${prevPeriod}.`);
+    }
   };
 
   // --- INTELIGÊNCIA DE IMPORTAÇÃO EXCEL ---
@@ -252,6 +286,17 @@ export const QuadroPessoal: React.FC = () => {
         </div>
       </div>
 
+      {/* AVISO DE REGRA DE NEGÓCIO */}
+      <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-start gap-3 shadow-sm text-blue-800 mb-2">
+        <Info className="mt-0.5 shrink-0" size={20} />
+        <div className="text-sm leading-relaxed">
+          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Fechamento DP (Corte: Dia 25)</span>
+          Os números de "Ativos" abaixo refletem o quadro real do mês considerando: <br/>
+          <b>1.</b> Só contam pessoas admitidas <i>antes</i> do dia 1º deste mês.<br/>
+          <b>2.</b> Só contam pessoas que trabalharam <i>pelo menos até o dia 25</i> (data de fechamento).
+        </div>
+      </div>
+
       {/* CONTROLE DE PERÍODO E AÇÕES */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -269,7 +314,14 @@ export const QuadroPessoal: React.FC = () => {
 
         <div>
           {isEditing ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button 
+                onClick={handleCopyPreviousMonth} 
+                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl transition-colors flex items-center gap-2 border border-indigo-200"
+                title="Puxar as vagas orçadas do mês anterior"
+              >
+                <Copy size={18}/> <span className="hidden sm:inline">Copiar Mês Anterior</span>
+              </button>
               <button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors">Cancelar</button>
               <button onClick={handleSaveBudget} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"><Save size={18}/> Salvar Orçamento</button>
             </div>
@@ -313,7 +365,6 @@ export const QuadroPessoal: React.FC = () => {
       {/* GRID DE SETORES */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {Object.keys(headcountData).sort().map((sector: string) => {
-          // Permite mostrar setores que existem no histórico, mesmo que não estejam mais nas configurações atuais
           const orcado = isEditing ? (budgetDraft[sector] || 0) : (savedBudget[sector] || 0);
           const ativos = headcountData[sector]?.ativos || 0;
           const afastados = headcountData[sector]?.afastados || 0;
@@ -351,9 +402,9 @@ export const QuadroPessoal: React.FC = () => {
                     
                     {/* Tooltip com a lista de nomes */}
                     {ativos > 0 && (
-                      <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-xl shadow-xl z-20 pointer-events-none text-left">
-                         <div className="font-bold mb-1 border-b border-slate-600 pb-1">Colaboradores:</div>
-                         <ul className="max-h-32 overflow-y-auto custom-scrollbar">
+                      <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-xl shadow-xl z-20 pointer-events-none text-left">
+                         <div className="font-bold mb-2 border-b border-slate-600 pb-1 text-indigo-300">Colaboradores Contabilizados:</div>
+                         <ul className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
                            {headcountData[sector].list.filter(e => e.status !== 'Afastado').map((e, i) => (
                               <li key={i} className="truncate">• {e.name}</li>
                            ))}
@@ -363,9 +414,21 @@ export const QuadroPessoal: React.FC = () => {
                   </div>
 
                   {/* AFASTADOS */}
-                  <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100/50 text-center flex flex-col justify-center">
+                  <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100/50 text-center flex flex-col justify-center group relative cursor-help">
                     <span className="text-[9px] font-black uppercase tracking-widest text-amber-500 mb-1">Afast.</span>
                     <span className="text-2xl font-black text-amber-600">{afastados}</span>
+                    
+                    {/* Tooltip com a lista de afastados */}
+                    {afastados > 0 && (
+                      <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-xl shadow-xl z-20 pointer-events-none text-left">
+                         <div className="font-bold mb-2 border-b border-slate-600 pb-1 text-amber-400">Afastados Contabilizados:</div>
+                         <ul className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
+                           {headcountData[sector].list.filter(e => e.status === 'Afastado').map((e, i) => (
+                              <li key={i} className="truncate">• {e.name}</li>
+                           ))}
+                         </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
 
