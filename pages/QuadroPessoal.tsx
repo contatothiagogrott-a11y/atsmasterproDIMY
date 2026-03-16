@@ -1,0 +1,288 @@
+import React, { useState, useMemo } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useData } from '../context/DataContext';
+import { Employee, SettingItem } from '../types';
+import { 
+  Users, Calendar, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet
+} from 'lucide-react';
+
+export const QuadroPessoal: React.FC = () => {
+  const { user, employees = [], settings = [], addSetting, updateSetting } = useData() as any;
+
+  // Apenas MASTER tem acesso
+  if (user?.role !== 'MASTER') {
+    return <Navigate to="/" replace />;
+  }
+
+  // Controle de Mês/Ano selecionado (Ex: '2026-01')
+  const [selectedPeriod, setSelectedPeriod] = useState(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    return `${d.getFullYear()}-${m}`;
+  });
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [budgetDraft, setBudgetDraft] = useState<Record<string, number>>({});
+
+  // Busca os setores cadastrados
+  const sectors = useMemo(() => {
+    return settings.filter((s: SettingItem) => s.type === 'SECTOR').map((s: SettingItem) => s.name).sort();
+  }, [settings]);
+
+  // Busca o orçamento salvo para o período selecionado
+  const currentBudgetSetting = useMemo(() => {
+    return settings.find((s: SettingItem) => s.type === 'HEADCOUNT_BUDGET' && s.name === selectedPeriod);
+  }, [settings, selectedPeriod]);
+
+  // Parse do orçamento salvo
+  const savedBudget: Record<string, number> = useMemo(() => {
+    if (currentBudgetSetting?.value) {
+      try { return JSON.parse(currentBudgetSetting.value); } catch (e) { return {}; }
+    }
+    return {};
+  }, [currentBudgetSetting]);
+
+  // --- MÁQUINA DO TEMPO: Quem estava ativo neste mês? ---
+  const headcountData = useMemo(() => {
+    const [year, month] = selectedPeriod.split('-');
+    // Primeiro e último dia do mês selecionado
+    const startOfMonth = `${year}-${month}-01`;
+    const endOfMonth = new Date(Number(year), Number(month), 0).toISOString().split('T')[0];
+
+    const data: Record<string, { ativos: number, afastados: number, list: Employee[] }> = {};
+    sectors.forEach((s: string) => data[s] = { ativos: 0, afastados: 0, list: [] });
+
+    employees.forEach((emp: Employee) => {
+      // Formatação segura de datas
+      const formatToYMD = (dateVal: any) => {
+        if (!dateVal) return '';
+        let str = String(dateVal).trim().split('T')[0].split(' ')[0];
+        const parts = str.split(/[\/\-]/);
+        if (parts.length === 3) {
+            if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+        return str; 
+      };
+
+      const adDate = formatToYMD(emp.admissionDate);
+      const termDate = formatToYMD(emp.terminationDate);
+
+      // Regras de Existência no Tempo:
+      // 1. Foi admitido DEPOIS do mês acabar? Não conta.
+      if (adDate && adDate > endOfMonth) return;
+      // 2. Foi demitido ANTES do mês começar? Não conta.
+      if (termDate && termDate < startOfMonth) return;
+
+      // Se passou, estava no quadro neste mês.
+      const sector = emp.sector || 'Sem Setor';
+      if (!data[sector]) data[sector] = { ativos: 0, afastados: 0, list: [] };
+
+      // Como saber se estava afastado? 
+      // Por enquanto, usamos o status atual como balizador, mas você pode cruzar com o 'history' futuramente.
+      if (emp.status === 'Afastado') {
+        data[sector].afastados += 1;
+      } else {
+        data[sector].ativos += 1;
+      }
+      data[sector].list.push(emp);
+    });
+
+    return data;
+  }, [employees, selectedPeriod, sectors]);
+
+  // Iniciar edição com os dados atuais
+  const handleEditClick = () => {
+    setBudgetDraft({ ...savedBudget });
+    setIsEditing(true);
+  };
+
+  const handleSaveBudget = async () => {
+    const jsonValue = JSON.stringify(budgetDraft);
+    
+    if (currentBudgetSetting) {
+      await updateSetting({ ...currentBudgetSetting, value: jsonValue });
+    } else {
+      await addSetting({
+        id: crypto.randomUUID(),
+        type: 'HEADCOUNT_BUDGET',
+        name: selectedPeriod,
+        value: jsonValue
+      });
+    }
+    
+    setIsEditing(false);
+  };
+
+  // Totais Gerais
+  const totals = sectors.reduce((acc: any, sector: string) => {
+    acc.orcado += (savedBudget[sector] || 0);
+    acc.ativos += (headcountData[sector]?.ativos || 0);
+    acc.afastados += (headcountData[sector]?.afastados || 0);
+    return acc;
+  }, { orcado: 0, ativos: 0, afastados: 0 });
+
+  return (
+    <div className="space-y-6 pb-12 animate-in fade-in">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+        <div className="flex items-center space-x-3">
+          <div className="p-3 bg-indigo-900 text-white rounded-xl shadow-lg shadow-indigo-200">
+            <Users size={24} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tighter">Quadro de Pessoal (FTE)</h1>
+            <p className="text-slate-500 text-sm font-medium">Orçamento de vagas vs. Realizado mensal</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button 
+            className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
+            onClick={() => alert("No próximo passo, vamos criar a função para ler o Excel de Carga Inicial aqui!")}
+          >
+            <FileSpreadsheet size={18} />
+            Carga Inicial (Excel)
+          </button>
+        </div>
+      </div>
+
+      {/* CONTROLE DE PERÍODO E AÇÕES */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
+            <Calendar size={18} className="text-indigo-600" />
+            <span className="text-sm font-bold text-slate-600">Mês/Ano:</span>
+            <input 
+              type="month" 
+              value={selectedPeriod} 
+              onChange={e => setSelectedPeriod(e.target.value)}
+              className="bg-transparent font-black text-indigo-900 outline-none cursor-pointer"
+            />
+          </div>
+        </div>
+
+        <div>
+          {isEditing ? (
+            <div className="flex gap-2">
+              <button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors">Cancelar</button>
+              <button onClick={handleSaveBudget} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"><Save size={18}/> Salvar Orçamento</button>
+            </div>
+          ) : (
+            <button onClick={handleEditClick} className="px-6 py-2 bg-white border border-slate-200 hover:border-indigo-300 text-indigo-600 font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all">
+              <Edit3 size={18}/> Definir Orçamento Mensal
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* TOTAIS GLOBAIS */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-indigo-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden flex flex-col justify-center">
+            <Users className="absolute -right-4 -bottom-4 opacity-10 size-32"/>
+            <h3 className="font-bold text-indigo-200 uppercase tracking-widest text-[10px] mb-2">Total Orçado</h3>
+            <p className="text-5xl font-black relative z-10">{totals.orcado}</p>
+        </div>
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-center">
+            <h3 className="font-bold text-slate-400 uppercase tracking-widest text-[10px] mb-2">Total Ativos (Trabalhando)</h3>
+            <p className="text-4xl font-black text-slate-800">{totals.ativos}</p>
+        </div>
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-center">
+            <h3 className="font-bold text-amber-500 uppercase tracking-widest text-[10px] mb-2">Total Afastados</h3>
+            <p className="text-4xl font-black text-amber-600">{totals.afastados}</p>
+        </div>
+        <div className={`rounded-3xl p-6 border shadow-sm flex flex-col justify-center ${totals.ativos > totals.orcado ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+            <h3 className={`font-bold uppercase tracking-widest text-[10px] mb-2 ${totals.ativos > totals.orcado ? 'text-red-600' : 'text-emerald-600'}`}>Saldo (Orçado - Ativos)</h3>
+            <div className="flex items-center gap-2">
+              <p className={`text-4xl font-black ${totals.ativos > totals.orcado ? 'text-red-700' : 'text-emerald-700'}`}>
+                {totals.orcado - totals.ativos}
+              </p>
+              {totals.ativos > totals.orcado && <AlertCircle className="text-red-500" size={24} />}
+            </div>
+            <p className={`text-[10px] font-bold mt-1 ${totals.ativos > totals.orcado ? 'text-red-500' : 'text-emerald-600'}`}>
+              {totals.ativos > totals.orcado ? 'Quadro Excedente!' : 'Vagas Disponíveis'}
+            </p>
+        </div>
+      </div>
+
+      {/* GRID DE SETORES */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {sectors.map((sector: string) => {
+          const orcado = isEditing ? (budgetDraft[sector] || 0) : (savedBudget[sector] || 0);
+          const ativos = headcountData[sector]?.ativos || 0;
+          const afastados = headcountData[sector]?.afastados || 0;
+          const saldo = orcado - ativos;
+
+          return (
+            <div key={sector} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md">
+              <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
+                <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shrink-0"><Building2 size={18}/></div>
+                <h3 className="font-black text-slate-700 uppercase tracking-tighter leading-tight">{sector}</h3>
+              </div>
+              
+              <div className="p-5 flex-1 flex flex-col">
+                <div className="grid grid-cols-3 gap-2 mb-6">
+                  
+                  {/* INPUT DE ORÇAMENTO */}
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center flex flex-col justify-center">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Orçadas</span>
+                    {isEditing ? (
+                      <input 
+                        type="number" min="0" 
+                        className="w-full bg-white border border-indigo-300 text-indigo-700 font-black text-xl text-center rounded-lg py-1 outline-none focus:ring-2 focus:ring-indigo-500"
+                        value={budgetDraft[sector] || ''}
+                        onChange={e => setBudgetDraft({...budgetDraft, [sector]: Number(e.target.value)})}
+                      />
+                    ) : (
+                      <span className="text-2xl font-black text-indigo-900">{orcado}</span>
+                    )}
+                  </div>
+
+                  {/* ATIVOS */}
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center flex flex-col justify-center">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Ativos</span>
+                    <span className="text-2xl font-black text-slate-700">{ativos}</span>
+                  </div>
+
+                  {/* AFASTADOS */}
+                  <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100/50 text-center flex flex-col justify-center">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-amber-500 mb-1">Afast.</span>
+                    <span className="text-2xl font-black text-amber-600">{afastados}</span>
+                  </div>
+                </div>
+
+                {/* BARRA DE SALDO */}
+                <div className="mt-auto">
+                  <div className="flex justify-between items-end mb-2">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Saldo do Setor</span>
+                    <div className="flex items-center gap-1">
+                      {saldo < 0 ? (
+                        <span className="text-red-600 font-black flex items-center gap-1"><TrendingUp size={14}/> Excedente: {Math.abs(saldo)}</span>
+                      ) : saldo > 0 ? (
+                        <span className="text-emerald-600 font-black flex items-center gap-1"><TrendingDown size={14}/> Abertas: {saldo}</span>
+                      ) : (
+                        <span className="text-slate-400 font-black">No Limite (0)</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Barra visual de ocupação */}
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                    {orcado > 0 ? (
+                      <div 
+                        className={`h-full transition-all ${saldo < 0 ? 'bg-red-500' : saldo === 0 ? 'bg-blue-500' : 'bg-emerald-500'}`}
+                        style={{ width: `${Math.min((ativos / orcado) * 100, 100)}%` }}
+                      ></div>
+                    ) : (
+                      <div className={`h-full w-full ${ativos > 0 ? 'bg-red-500' : 'bg-slate-200'}`}></div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};

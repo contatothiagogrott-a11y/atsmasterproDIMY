@@ -10,7 +10,7 @@ export interface User {
 }
 
 // ADICIONADO: 'RESOURCE' para gerir os recursos de TI nas configurações
-export type SettingType = 'SECTOR' | 'UNIT' | 'SYSTEM_TEMPLATE' | 'RESOURCE';
+export type SettingType = 'SECTOR' | 'UNIT' | 'SYSTEM_TEMPLATE' | 'RESOURCE' | 'HEADCOUNT_BUDGET';
 
 export interface SettingItem {
   id: string;

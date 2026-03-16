@@ -22,6 +22,7 @@ import { Aniversariantes } from './pages/Aniversariantes';
 import { Integracao } from './pages/Integracao';
 import { Setores } from './pages/Setores';
 import { Desligamentos } from './pages/Desligamentos';
+import { QuadroPessoal } from './pages/QuadroPessoal'; // <--- IMPORTAÇÃO ADICIONADA
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
@@ -45,14 +46,14 @@ const ProtectedRoute = () => {
     return <Navigate to="/" replace />;
   }
 
-  // 2. AUXILIAR DE RH: Liberado para Dashboard, Gestão, Configurações e Desligamentos
+  // 2. AUXILIAR DE RH: Liberado para Dashboard, Gestão, Configurações e Desligamentos (Quadro de pessoal bloqueado)
   const allowedAuxiliarRoutes = ['/', '/absenteismo', '/colaboradores', '/reunioes', '/aniversariantes', '/settings', '/setores', '/desligamentos'];
   if (isAuxiliar && !allowedAuxiliarRoutes.includes(location.pathname)) {
     return <Navigate to="/" replace />;
   }
 
-  // 3. RECRUTADOR: Bloqueado APENAS nas páginas profundas de DP/Gestão
-  const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores', '/setores', '/desligamentos'];
+  // 3. RECRUTADOR: Bloqueado APENAS nas páginas profundas de DP/Gestão e Quadro
+  const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores', '/setores', '/desligamentos', '/quadro']; // <--- ADICIONADO /quadro NO BLOQUEIO
   if (!isMaster && !isAuxiliar && !isRecepcao && forbiddenRecruiterRoutes.includes(location.pathname)) {
     return <Navigate to="/" replace />;
   }
@@ -96,9 +97,8 @@ const App: React.FC = () => {
             <Route path="/reunioes" element={<Reunioes />} />
             <Route path="/aniversariantes" element={<Aniversariantes />} />
             <Route path="/setores" element={<Setores />} />
-            
-            {/* ROTA ADICIONADA AQUI: */}
             <Route path="/desligamentos" element={<Desligamentos />} />
+            <Route path="/quadro" element={<QuadroPessoal />} /> {/* <--- ROTA ADICIONADA */}
 
           </Route>
 

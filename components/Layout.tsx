@@ -143,6 +143,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     </Link>
                   )}
 
+                  {/* NOVO LINK: QUADRO DE PESSOAL (SÓ PARA MASTER) */}
+                  {isMaster && (
+                    <Link to="/quadro" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/quadro') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600 text-sm'}`}>
+                      <Users size={18} />
+                      <span>Quadro de Pessoal (FTE)</span>
+                    </Link>
+                  )}
+
                   {canViewAniversariantes && (
                     <Link to="/aniversariantes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/aniversariantes') ? 'bg-pink-50 text-pink-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-pink-600 text-sm'}`}>
                       <Gift size={18} />
@@ -190,6 +198,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
           )}
 
+          {/* SÓ MOSTRA CONFIGURAÇÕES SE NÃO FOR RECEPÇÃO */}
           {canViewSettings && (
             <>
               <div className="pt-4 pb-1">
