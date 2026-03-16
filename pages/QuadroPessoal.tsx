@@ -26,8 +26,8 @@ export const QuadroPessoal: React.FC = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [budgetDraft, setBudgetDraft] = useState<Record<string, number>>({});
 
-  // Busca os setores cadastrados
-  const sectors = useMemo(() => {
+  // Busca os setores cadastrados OFICIAIS nas Configurações
+  const officialSectors = useMemo(() => {
     return settings.filter((s: SettingItem) => s.type === 'SECTOR').map((s: SettingItem) => s.name).sort();
   }, [settings]);
 
@@ -53,7 +53,13 @@ export const QuadroPessoal: React.FC = () => {
     const closingDate = `${year}-${month}-25`; // Dia do fechamento da folha/quadro
 
     const data: Record<string, { ativos: number, afastados: number, list: Employee[] }> = {};
-    sectors.forEach((s: string) => data[s] = { ativos: 0, afastados: 0, list: [] });
+    
+    // Inicializa com os setores OFICIAIS
+    officialSectors.forEach((s: string) => data[s] = { ativos: 0, afastados: 0, list: [] });
+    
+    // Inicializa o Bucket de Setores Inválidos/Antigos
+    const invalidKey = '⚠️ Setor Inválido ou Antigo';
+    data[invalidKey] = { ativos: 0, afastados: 0, list: [] };
 
     employees.forEach((emp: Employee) => {
       const formatToYMD = (dateVal: any) => {
@@ -96,8 +102,11 @@ export const QuadroPessoal: React.FC = () => {
           }
       }
 
-      // Garante que a chave do setor exista no objeto de dados
-      if (!data[snapshotSector]) data[snapshotSector] = { ativos: 0, afastados: 0, list: [] };
+      // VALIDAÇÃO: O setor do histórico ainda existe nas Configurações?
+      // Se não existir (ex: "Compras"), joga a pessoa pro card de aviso.
+      if (!officialSectors.includes(snapshotSector)) {
+          snapshotSector = invalidKey;
+      }
 
       // Se passou por tudo, está computado no quadro deste mês!
       if (emp.status === 'Afastado') {
@@ -109,7 +118,7 @@ export const QuadroPessoal: React.FC = () => {
     });
 
     return data;
-  }, [employees, selectedPeriod, sectors]);
+  }, [employees, selectedPeriod, officialSectors]);
 
   // --- FUNÇÕES DE ORÇAMENTO ---
   const handleEditClick = () => {
@@ -245,11 +254,20 @@ export const QuadroPessoal: React.FC = () => {
 
   // Totais Gerais
   const totals = Object.keys(headcountData).reduce((acc: any, sector: string) => {
-    acc.orcado += (savedBudget[sector] || 0);
+    // Para setores que não são o alerta de erro, soma o orçado
+    if (sector !== '⚠️ Setor Inválido ou Antigo') {
+       acc.orcado += (savedBudget[sector] || 0);
+    }
     acc.ativos += (headcountData[sector]?.ativos || 0);
     acc.afastados += (headcountData[sector]?.afastados || 0);
     return acc;
   }, { orcado: 0, ativos: 0, afastados: 0 });
+
+  // Lista final de setores para renderizar (Sempre os oficiais + o de alerta se tiver alguém sujo)
+  const sectorsToRender = [...officialSectors];
+  if (headcountData['⚠️ Setor Inválido ou Antigo'].ativos > 0 || headcountData['⚠️ Setor Inválido ou Antigo'].afastados > 0) {
+      sectorsToRender.push('⚠️ Setor Inválido ou Antigo');
+  }
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in">
@@ -364,17 +382,19 @@ export const QuadroPessoal: React.FC = () => {
 
       {/* GRID DE SETORES */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {Object.keys(headcountData).sort().map((sector: string) => {
-          const orcado = isEditing ? (budgetDraft[sector] || 0) : (savedBudget[sector] || 0);
+        {sectorsToRender.map((sector: string) => {
+          const isInvalid = sector === '⚠️ Setor Inválido ou Antigo';
+          const orcado = isEditing && !isInvalid ? (budgetDraft[sector] || 0) : (savedBudget[sector] || 0);
           const ativos = headcountData[sector]?.ativos || 0;
           const afastados = headcountData[sector]?.afastados || 0;
           const saldo = orcado - ativos;
 
           return (
-            <div key={sector} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md">
-              <div className="p-5 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
-                <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shrink-0"><Building2 size={18}/></div>
-                <h3 className="font-black text-slate-700 uppercase tracking-tighter leading-tight">{sector}</h3>
+            <div key={sector} className={`bg-white rounded-3xl border shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md ${isInvalid ? 'border-red-300' : 'border-slate-200'}`}>
+              
+              <div className={`p-5 border-b flex items-center gap-3 ${isInvalid ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                <div className={`p-2 rounded-lg shrink-0 ${isInvalid ? 'bg-red-100 text-red-600' : 'bg-indigo-100 text-indigo-600'}`}><Building2 size={18}/></div>
+                <h3 className={`font-black uppercase tracking-tighter leading-tight ${isInvalid ? 'text-red-700' : 'text-slate-700'}`}>{sector}</h3>
               </div>
               
               <div className="p-5 flex-1 flex flex-col">
@@ -383,7 +403,7 @@ export const QuadroPessoal: React.FC = () => {
                   {/* INPUT DE ORÇAMENTO */}
                   <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center flex flex-col justify-center">
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Orçadas</span>
-                    {isEditing ? (
+                    {isEditing && !isInvalid ? (
                       <input 
                         type="number" min="0" 
                         className="w-full bg-white border border-indigo-300 text-indigo-700 font-black text-xl text-center rounded-lg py-1 outline-none focus:ring-2 focus:ring-indigo-500"
@@ -391,19 +411,19 @@ export const QuadroPessoal: React.FC = () => {
                         onChange={e => setBudgetDraft({...budgetDraft, [sector]: Number(e.target.value)})}
                       />
                     ) : (
-                      <span className="text-2xl font-black text-indigo-900">{orcado}</span>
+                      <span className={`text-2xl font-black ${isInvalid ? 'text-slate-300' : 'text-indigo-900'}`}>{isInvalid ? '-' : orcado}</span>
                     )}
                   </div>
 
                   {/* ATIVOS */}
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center flex flex-col justify-center group relative cursor-help">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Ativos</span>
-                    <span className="text-2xl font-black text-slate-700">{ativos}</span>
+                  <div className={`p-3 rounded-xl border text-center flex flex-col justify-center group relative cursor-help ${isInvalid ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                    <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isInvalid ? 'text-red-400' : 'text-slate-400'}`}>Ativos</span>
+                    <span className={`text-2xl font-black ${isInvalid ? 'text-red-600' : 'text-slate-700'}`}>{ativos}</span>
                     
                     {/* Tooltip com a lista de nomes */}
                     {ativos > 0 && (
-                      <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-xl shadow-xl z-20 pointer-events-none text-left">
-                         <div className="font-bold mb-2 border-b border-slate-600 pb-1 text-indigo-300">Colaboradores Contabilizados:</div>
+                      <div className={`hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 text-white text-xs p-3 rounded-xl shadow-xl z-20 pointer-events-none text-left ${isInvalid ? 'bg-red-900' : 'bg-slate-800'}`}>
+                         <div className={`font-bold mb-2 border-b pb-1 ${isInvalid ? 'text-red-200 border-red-700' : 'text-indigo-300 border-slate-600'}`}>Colaboradores Contabilizados:</div>
                          <ul className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
                            {headcountData[sector].list.filter(e => e.status !== 'Afastado').map((e, i) => (
                               <li key={i} className="truncate">• {e.name}</li>
@@ -433,32 +453,41 @@ export const QuadroPessoal: React.FC = () => {
                 </div>
 
                 {/* BARRA DE SALDO */}
-                <div className="mt-auto">
-                  <div className="flex justify-between items-end mb-2">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Saldo do Setor</span>
-                    <div className="flex items-center gap-1">
-                      {saldo < 0 ? (
-                        <span className="text-red-600 font-black flex items-center gap-1"><TrendingUp size={14}/> Excedente: {Math.abs(saldo)}</span>
-                      ) : saldo > 0 ? (
-                        <span className="text-emerald-600 font-black flex items-center gap-1"><TrendingDown size={14}/> Abertas: {saldo}</span>
+                {!isInvalid && (
+                  <div className="mt-auto">
+                    <div className="flex justify-between items-end mb-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Saldo do Setor</span>
+                      <div className="flex items-center gap-1">
+                        {saldo < 0 ? (
+                          <span className="text-red-600 font-black flex items-center gap-1"><TrendingUp size={14}/> Excedente: {Math.abs(saldo)}</span>
+                        ) : saldo > 0 ? (
+                          <span className="text-emerald-600 font-black flex items-center gap-1"><TrendingDown size={14}/> Abertas: {saldo}</span>
+                        ) : (
+                          <span className="text-slate-400 font-black">No Limite (0)</span>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Barra visual de ocupação */}
+                    <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex">
+                      {orcado > 0 ? (
+                        <div 
+                          className={`h-full transition-all ${saldo < 0 ? 'bg-red-500' : saldo === 0 ? 'bg-blue-500' : 'bg-emerald-500'}`}
+                          style={{ width: `${Math.min((ativos / orcado) * 100, 100)}%` }}
+                        ></div>
                       ) : (
-                        <span className="text-slate-400 font-black">No Limite (0)</span>
+                        <div className={`h-full w-full ${ativos > 0 ? 'bg-red-500' : 'bg-slate-200'}`}></div>
                       )}
                     </div>
                   </div>
-                  
-                  {/* Barra visual de ocupação */}
-                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex">
-                    {orcado > 0 ? (
-                      <div 
-                        className={`h-full transition-all ${saldo < 0 ? 'bg-red-500' : saldo === 0 ? 'bg-blue-500' : 'bg-emerald-500'}`}
-                        style={{ width: `${Math.min((ativos / orcado) * 100, 100)}%` }}
-                      ></div>
-                    ) : (
-                      <div className={`h-full w-full ${ativos > 0 ? 'bg-red-500' : 'bg-slate-200'}`}></div>
-                    )}
+                )}
+
+                {isInvalid && (
+                  <div className="mt-auto bg-red-100 p-2 rounded-lg text-[10px] text-red-800 font-medium">
+                    ⚠️ Acesse a ficha destes colaboradores em "Colaboradores" e atualize o nome do setor no Histórico deles para corrigir este alerta.
                   </div>
-                </div>
+                )}
+
               </div>
             </div>
           );
