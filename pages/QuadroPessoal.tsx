@@ -1,13 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { Employee, SettingItem } from '../types';
 import { 
-  Users, Calendar, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet
+  Users, Calendar, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet, Download, UploadCloud
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export const QuadroPessoal: React.FC = () => {
-  const { user, employees = [], settings = [], addSetting, updateSetting } = useData() as any;
+  const { user, employees = [], updateEmployee, settings = [], addSetting, updateSetting } = useData() as any;
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Apenas MASTER tem acesso
   if (user?.role !== 'MASTER') {
@@ -42,10 +44,9 @@ export const QuadroPessoal: React.FC = () => {
     return {};
   }, [currentBudgetSetting]);
 
-  // --- MÁQUINA DO TEMPO: Quem estava ativo neste mês? ---
+  // --- MÁQUINA DO TEMPO COM LEITURA DE HISTÓRICO ---
   const headcountData = useMemo(() => {
     const [year, month] = selectedPeriod.split('-');
-    // Primeiro e último dia do mês selecionado
     const startOfMonth = `${year}-${month}-01`;
     const endOfMonth = new Date(Number(year), Number(month), 0).toISOString().split('T')[0];
 
@@ -53,7 +54,6 @@ export const QuadroPessoal: React.FC = () => {
     sectors.forEach((s: string) => data[s] = { ativos: 0, afastados: 0, list: [] });
 
     employees.forEach((emp: Employee) => {
-      // Formatação segura de datas
       const formatToYMD = (dateVal: any) => {
         if (!dateVal) return '';
         let str = String(dateVal).trim().split('T')[0].split(' ')[0];
@@ -69,29 +69,44 @@ export const QuadroPessoal: React.FC = () => {
       const termDate = formatToYMD(emp.terminationDate);
 
       // Regras de Existência no Tempo:
-      // 1. Foi admitido DEPOIS do mês acabar? Não conta.
-      if (adDate && adDate > endOfMonth) return;
-      // 2. Foi demitido ANTES do mês começar? Não conta.
-      if (termDate && termDate < startOfMonth) return;
+      if (adDate && adDate > endOfMonth) return; // Foi admitido depois do mês acabar
+      if (termDate && termDate < startOfMonth) return; // Foi demitido antes do mês começar
 
-      // Se passou, estava no quadro neste mês.
-      const sector = emp.sector || 'Sem Setor';
-      if (!data[sector]) data[sector] = { ativos: 0, afastados: 0, list: [] };
+      // --- DESCOBRINDO O SETOR NO PASSADO ---
+      let snapshotSector = emp.sector || 'Sem Setor';
 
-      // Como saber se estava afastado? 
-      // Por enquanto, usamos o status atual como balizador, mas você pode cruzar com o 'history' futuramente.
-      if (emp.status === 'Afastado') {
-        data[sector].afastados += 1;
-      } else {
-        data[sector].ativos += 1;
+      if (emp.history && emp.history.length > 0) {
+          // Filtra históricos até o último dia do mês analisado que contenham a palavra "Setor:"
+          const sectorRecords = emp.history
+              .filter((h: any) => h.date <= endOfMonth)
+              .filter((h: any) => h.description.match(/Setor:\s*([^|]+)/i));
+
+          if (sectorRecords.length > 0) {
+              // Pega o registro mais recente até a data limite
+              sectorRecords.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+              const latestRecord = sectorRecords[sectorRecords.length - 1];
+              const match = latestRecord.description.match(/Setor:\s*([^|]+)/i);
+              if (match) {
+                  snapshotSector = match[1].trim();
+              }
+          }
       }
-      data[sector].list.push(emp);
+
+      // Garante que a chave do setor exista no objeto de dados
+      if (!data[snapshotSector]) data[snapshotSector] = { ativos: 0, afastados: 0, list: [] };
+
+      if (emp.status === 'Afastado') {
+        data[snapshotSector].afastados += 1;
+      } else {
+        data[snapshotSector].ativos += 1;
+      }
+      data[snapshotSector].list.push(emp);
     });
 
     return data;
   }, [employees, selectedPeriod, sectors]);
 
-  // Iniciar edição com os dados atuais
+  // --- FUNÇÕES DE ORÇAMENTO ---
   const handleEditClick = () => {
     setBudgetDraft({ ...savedBudget });
     setIsEditing(true);
@@ -99,23 +114,103 @@ export const QuadroPessoal: React.FC = () => {
 
   const handleSaveBudget = async () => {
     const jsonValue = JSON.stringify(budgetDraft);
-    
     if (currentBudgetSetting) {
       await updateSetting({ ...currentBudgetSetting, value: jsonValue });
     } else {
-      await addSetting({
-        id: crypto.randomUUID(),
-        type: 'HEADCOUNT_BUDGET',
-        name: selectedPeriod,
-        value: jsonValue
-      });
+      await addSetting({ id: crypto.randomUUID(), type: 'HEADCOUNT_BUDGET', name: selectedPeriod, value: jsonValue });
     }
-    
     setIsEditing(false);
   };
 
+  // --- INTELIGÊNCIA DE IMPORTAÇÃO EXCEL ---
+  const handleDownloadTemplate = () => {
+    const worksheet = XLSX.utils.json_to_sheet([
+        { 'Nome': 'João da Silva', 'Data': '01/01/2026', 'Setor': 'RH', 'Cargo': 'Analista de RH' },
+        { 'Nome': 'Maria Souza', 'Data': '15/02/2026', 'Setor': 'Tecnologia', 'Cargo': 'Desenvolvedor' }
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "CargaHistorica");
+    XLSX.writeFile(workbook, "Modelo_Carga_Historica_Setores.xlsx");
+  };
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const data = new Uint8Array(event.target?.result as ArrayBuffer);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+            let updatedCount = 0;
+            let notFound: string[] = [];
+            const empUpdates = new Map<string, Employee>();
+
+            for (const row of jsonData as any[]) {
+                const nome = row['Nome']?.toString().trim();
+                let dataStr = row['Data'];
+                const setor = row['Setor']?.toString().trim();
+                const cargo = row['Cargo']?.toString().trim();
+
+                if (!nome || !dataStr || !setor) continue;
+
+                // Converte Data Excel para ISO YYYY-MM-DD
+                if (typeof dataStr === 'number') {
+                    const jsDate = new Date(Math.round((dataStr - 25569) * 86400 * 1000));
+                    dataStr = jsDate.toISOString().split('T')[0];
+                } else if (dataStr.includes('/')) {
+                    const parts = dataStr.split('/');
+                    dataStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                }
+
+                // Encontra colaborador (no map temporário ou no state global)
+                let emp = empUpdates.get(nome.toLowerCase()) || employees.find((e: Employee) => e.name.toLowerCase() === nome.toLowerCase());
+                if (!emp) {
+                    if (!notFound.includes(nome)) notFound.push(nome);
+                    continue;
+                }
+
+                // Cria o registro no histórico que a máquina do tempo vai ler
+                const historyRecord = {
+                    id: crypto.randomUUID(),
+                    date: dataStr,
+                    type: 'Mudança de Setor' as any,
+                    description: `[CARGA HISTÓRICA] Setor: ${setor} | Cargo: ${cargo || emp.role}`,
+                    createdBy: user?.name || 'Sistema'
+                };
+
+                const updatedHistory = [...(emp.history || []), historyRecord];
+
+                empUpdates.set(nome.toLowerCase(), {
+                    ...emp,
+                    history: updatedHistory
+                });
+            }
+
+            // Salva no banco de dados (Contexto)
+            for (const [_, empToSave] of empUpdates) {
+                await updateEmployee(empToSave);
+                updatedCount++;
+            }
+
+            alert(`Importação concluída com sucesso!\n\n✔️ ${updatedCount} históricos atualizados.\n${notFound.length > 0 ? `❌ Não encontrados na base: ${notFound.join(', ')}` : ''}`);
+
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao processar o arquivo. Verifique se as colunas estão exatas: Nome, Data, Setor, Cargo.");
+        }
+        
+        if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
   // Totais Gerais
-  const totals = sectors.reduce((acc: any, sector: string) => {
+  const totals = Object.keys(headcountData).reduce((acc: any, sector: string) => {
     acc.orcado += (savedBudget[sector] || 0);
     acc.ativos += (headcountData[sector]?.ativos || 0);
     acc.afastados += (headcountData[sector]?.afastados || 0);
@@ -124,6 +219,9 @@ export const QuadroPessoal: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-12 animate-in fade-in">
+      {/* Input de arquivo invisível */}
+      <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleImportExcel} className="hidden" />
+
       {/* HEADER */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
         <div className="flex items-center space-x-3">
@@ -138,11 +236,18 @@ export const QuadroPessoal: React.FC = () => {
 
         <div className="flex flex-wrap gap-2">
           <button 
-            className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
-            onClick={() => alert("No próximo passo, vamos criar a função para ler o Excel de Carga Inicial aqui!")}
+            onClick={handleDownloadTemplate}
+            className="flex items-center gap-2 bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
           >
-            <FileSpreadsheet size={18} />
-            Carga Inicial (Excel)
+            <Download size={18} />
+            Baixar Planilha Modelo
+          </button>
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
+          >
+            <UploadCloud size={18} />
+            Subir Carga Histórica
           </button>
         </div>
       </div>
@@ -207,7 +312,8 @@ export const QuadroPessoal: React.FC = () => {
 
       {/* GRID DE SETORES */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {sectors.map((sector: string) => {
+        {Object.keys(headcountData).sort().map((sector: string) => {
+          // Permite mostrar setores que existem no histórico, mesmo que não estejam mais nas configurações atuais
           const orcado = isEditing ? (budgetDraft[sector] || 0) : (savedBudget[sector] || 0);
           const ativos = headcountData[sector]?.ativos || 0;
           const afastados = headcountData[sector]?.afastados || 0;
@@ -239,9 +345,21 @@ export const QuadroPessoal: React.FC = () => {
                   </div>
 
                   {/* ATIVOS */}
-                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center flex flex-col justify-center">
+                  <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-center flex flex-col justify-center group relative cursor-help">
                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Ativos</span>
                     <span className="text-2xl font-black text-slate-700">{ativos}</span>
+                    
+                    {/* Tooltip com a lista de nomes */}
+                    {ativos > 0 && (
+                      <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-slate-800 text-white text-xs p-3 rounded-xl shadow-xl z-20 pointer-events-none text-left">
+                         <div className="font-bold mb-1 border-b border-slate-600 pb-1">Colaboradores:</div>
+                         <ul className="max-h-32 overflow-y-auto custom-scrollbar">
+                           {headcountData[sector].list.filter(e => e.status !== 'Afastado').map((e, i) => (
+                              <li key={i} className="truncate">• {e.name}</li>
+                           ))}
+                         </ul>
+                      </div>
+                    )}
                   </div>
 
                   {/* AFASTADOS */}
