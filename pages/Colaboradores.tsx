@@ -52,6 +52,7 @@ export const Colaboradores: React.FC = () => {
 
   const [showEventForm, setShowEventForm] = useState(false);
   const [newEvent, setNewEvent] = useState<Partial<EmployeeHistoryRecord>>({
+    id: undefined, // Propriedade adicionada para controlar a edição
     date: new Date().toISOString().split('T')[0],
     type: 'Outros',
     description: ''
@@ -146,7 +147,7 @@ export const Colaboradores: React.FC = () => {
 
   // Botão para forçar Seg a Sex em todos que não tem
   const handleSyncWorkDays = async () => {
-    if (!window.confirm("Iszso irá aplicar o padrão de trabalho de 'Segunda a Sexta' para todos os colaboradores que ainda não têm essa informação configurada. Deseja continuar?")) return;
+    if (!window.confirm("Isso irá aplicar o padrão de trabalho de 'Segunda a Sexta' para todos os colaboradores que ainda não têm essa informação configurada. Deseja continuar?")) return;
     
     let updatedCount = 0;
     for (const emp of employees) {
@@ -253,26 +254,59 @@ export const Colaboradores: React.FC = () => {
     setView('details');
   };
 
+  // --- FUNÇÕES DE HISTÓRICO FUNCIONAL ---
   const handleAddHistoryEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployee || !newEvent.description) return;
 
-    const eventRecord: EmployeeHistoryRecord = {
-      id: crypto.randomUUID(),
-      date: newEvent.date || new Date().toISOString().split('T')[0],
-      type: newEvent.type as EmployeeHistoryType || 'Outros',
-      description: newEvent.description,
-      createdBy: user?.name || 'Sistema'
-    };
+    let updatedHistory;
 
-    const updatedHistory = [...(selectedEmployee.history || []), eventRecord];
+    if (newEvent.id) {
+      // Editando um evento existente
+      updatedHistory = (selectedEmployee.history || []).map(h => 
+        h.id === newEvent.id 
+          ? { ...h, date: newEvent.date!, type: newEvent.type as EmployeeHistoryType, description: newEvent.description! }
+          : h
+      );
+    } else {
+      // Criando um novo evento
+      const eventRecord: EmployeeHistoryRecord = {
+        id: crypto.randomUUID(),
+        date: newEvent.date || new Date().toISOString().split('T')[0],
+        type: newEvent.type as EmployeeHistoryType || 'Outros',
+        description: newEvent.description,
+        createdBy: user?.name || 'Sistema'
+      };
+      updatedHistory = [...(selectedEmployee.history || []), eventRecord];
+    }
+
     const updatedEmployee = { ...selectedEmployee, history: updatedHistory };
-
     await updateEmployee(updatedEmployee); 
     setSelectedEmployee(updatedEmployee);  
     
     setShowEventForm(false); 
-    setNewEvent({ date: new Date().toISOString().split('T')[0], type: 'Outros', description: '' }); 
+    setNewEvent({ id: undefined, date: new Date().toISOString().split('T')[0], type: 'Outros', description: '' }); 
+  };
+
+  const handleEditHistoryEvent = (record: EmployeeHistoryRecord) => {
+    setNewEvent({
+      id: record.id,
+      date: record.date,
+      type: record.type,
+      description: record.description
+    });
+    setShowEventForm(true);
+  };
+
+  const handleDeleteHistoryEvent = async (id: string) => {
+    if (!window.confirm("Deseja realmente excluir este registro do histórico?")) return;
+    if (!selectedEmployee) return;
+
+    const updatedHistory = (selectedEmployee.history || []).filter(h => h.id !== id);
+    const updatedEmployee = { ...selectedEmployee, history: updatedHistory };
+    
+    await updateEmployee(updatedEmployee);
+    setSelectedEmployee(updatedEmployee);
   };
 
   const getContractBadgeColor = (type: string | undefined) => {
@@ -777,7 +811,9 @@ export const Colaboradores: React.FC = () => {
 
               {showEventForm && (
                 <form onSubmit={handleAddHistoryEvent} className="bg-slate-50 p-5 rounded-xl border border-slate-200 mb-8 animate-in fade-in slide-in-from-top-2">
-                  <h4 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wider">Registrar Acontecimento</h4>
+                  <h4 className="font-bold text-slate-700 mb-4 text-sm uppercase tracking-wider">
+                    {newEvent.id ? 'Editar Acontecimento' : 'Registrar Acontecimento'}
+                  </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div className="space-y-1">
                       <label className="text-xs font-bold text-slate-500">Data</label>
@@ -798,7 +834,9 @@ export const Colaboradores: React.FC = () => {
                   </div>
                   <div className="flex justify-end gap-2">
                     <button type="button" onClick={() => setShowEventForm(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-200 rounded-lg transition-colors">Cancelar</button>
-                    <button type="submit" className="px-4 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm">Salvar Registro</button>
+                    <button type="submit" className="px-4 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm">
+                      {newEvent.id ? 'Salvar Alterações' : 'Salvar Registro'}
+                    </button>
                   </div>
                 </form>
               )}
@@ -807,10 +845,22 @@ export const Colaboradores: React.FC = () => {
                 {unifiedHistory.map((item: any, index) => (
                   <div key={index} className="relative pl-8">
                     <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white shadow-sm ${item.isAbsence ? 'bg-red-500' : 'bg-blue-600'}`}></div>
+                    
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-1">
-                      <span className="text-xs font-bold text-slate-400 uppercase">{formatDate(item.date)}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${item.isAbsence ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{item.type || 'Falta'}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-400 uppercase">{formatDate(item.date)}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${item.isAbsence ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{item.type || 'Falta'}</span>
+                      </div>
+                      
+                      {/* BOTOES DE EDICAO PARA EVENTOS MANUAIS */}
+                      {!item.isAbsence && (
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handleEditHistoryEvent(item)} className="text-slate-400 hover:text-blue-600 transition-colors" title="Editar Evento"><Edit2 size={14}/></button>
+                          <button onClick={() => handleDeleteHistoryEvent(item.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Excluir Evento"><Trash2 size={14}/></button>
+                        </div>
+                      )}
                     </div>
+                    
                     <p className="text-slate-700 font-medium">{item.description}</p>
                   </div>
                 ))}
