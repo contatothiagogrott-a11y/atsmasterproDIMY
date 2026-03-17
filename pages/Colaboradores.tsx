@@ -104,6 +104,10 @@ export const Colaboradores: React.FC = () => {
     return dateStr;
   };
 
+  // Verifica se a pessoa que está no formulário está sendo retornada de um afastamento
+  const originalEmpForForm = useMemo(() => employees.find((e: Employee) => e.id === formData.id), [employees, formData.id]);
+  const isReturningFromLeave = originalEmpForForm?.status === 'Afastado' && formData.status === 'Ativo';
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -152,11 +156,16 @@ export const Colaboradores: React.FC = () => {
        });
     }
 
-    // 2. Detecta se está RETORNANDO de afastamento
+    // 2. Detecta se está RETORNANDO de afastamento (Agora com data retroativa dinâmica)
     if (formData.status === 'Ativo' && originalEmp?.status === 'Afastado') {
+       if (!formData.actualReturnDate) {
+          alert("Por favor, informe a Data Efetiva do Retorno do afastamento.");
+          return;
+       }
+
        updatedHistory.push({
           id: crypto.randomUUID(),
-          date: new Date().toISOString().split('T')[0], // Data do retorno é a data em que você fez a alteração
+          date: formData.actualReturnDate, // Usa a data que o RH escolheu na caixinha verde
           type: 'Outros',
           description: `[FIM DE AFASTAMENTO] Colaborador retornou às atividades. (Estava afastado desde ${formatDateToBRLocal((originalEmp as any).leaveStartDate)})`,
           createdBy: user?.name || 'Sistema'
@@ -174,6 +183,9 @@ export const Colaboradores: React.FC = () => {
       createdAt: formData.createdAt || new Date().toISOString(),
       history: updatedHistory
     } as Employee;
+
+    // Limpa a propriedade temporária para não sujar o banco de dados
+    delete (employeeData as any).actualReturnDate;
 
     if (formData.id) {
       await updateEmployee(employeeData);
@@ -275,7 +287,9 @@ export const Colaboradores: React.FC = () => {
       leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn),
       leaveReason: emp.leaveReason || '',
       terminationDate: formatToYMD(emp.terminationDate),
-      terminationReason: mainReason 
+      terminationReason: mainReason,
+      // Prepara o campo de retorno caso o RH mude ele para Ativo agora
+      actualReturnDate: new Date().toISOString().split('T')[0]
     });
     setTerminationObservation(obsText);
     setView('form');
@@ -709,6 +723,23 @@ export const Colaboradores: React.FC = () => {
 
                 </div>
               </div>
+
+              {/* BLOCO DE RETORNO RETROATIVO DE AFASTAMENTO */}
+              {isReturningFromLeave && (
+                <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-4 animate-in fade-in">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-emerald-800">Data Efetiva do Retorno (Retroativa ou Hoje)</label>
+                    <input 
+                       type="date" 
+                       required 
+                       className="w-full border border-emerald-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" 
+                       value={formData.actualReturnDate || ''} 
+                       onChange={e => setFormData({...formData, actualReturnDate: e.target.value})} 
+                    />
+                    <p className="text-xs text-emerald-700 mt-1 font-medium">Esta data será registrada no histórico funcional como o fim do afastamento. Ajuste caso o colaborador tenha retornado em dias anteriores para não impactar o quadro do sistema.</p>
+                  </div>
+                </div>
+              )}
 
               {formData.status === 'Afastado' && (
                 <div className="p-5 bg-amber-50 border border-amber-200 rounded-xl space-y-4 animate-in fade-in">
