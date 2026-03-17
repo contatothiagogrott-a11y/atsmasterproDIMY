@@ -42,7 +42,7 @@ export const QuadroPessoal: React.FC = () => {
     return {};
   }, [currentBudgetSetting]);
 
-  // --- MÁQUINA DO TEMPO COM REGRA DE CICLO DE FOLHA (26 A 25) ---
+  // --- MÁQUINA DO TEMPO: FOTOGRAFIA EXATA DO DIA 25 ---
   const headcountData = useMemo(() => {
     const [yearStr, monthStr] = selectedPeriod.split('-');
     const year = parseInt(yearStr, 10);
@@ -82,11 +82,13 @@ export const QuadroPessoal: React.FC = () => {
       const adDate = formatToYMD(emp.admissionDate);
       const termDate = formatToYMD(emp.terminationDate);
 
-      // REGRA 1: Foi admitido DEPOIS do fechamento atual? (ex: 26/03 já é folha de Abril)
+      // REGRA 1 (ADMISSÃO): Foi admitido DEPOIS do fechamento atual? (ex: 26/03 já é folha de Abril)
+      // Para entrar na foto de Março, a admissão tem que ser menor ou igual a 25/03.
       if (adDate && adDate > endDate) return; 
 
-      // REGRA 2: Foi demitido ANTES da folha atual abrir? (ex: 25/02 já fechou na folha passada)
-      if (termDate && termDate < startDate) return; 
+      // REGRA 2 (DEMISSÃO): Saiu ANTES ou DURANTE a folha atual? (ex: entrou 27/02, saiu 10/03)
+      // Se a data de demissão for menor ou igual a 25/03, a cadeira está vazia no dia da foto!
+      if (termDate && termDate <= endDate) return; 
 
       let snapshotSector = emp.sector || 'Sem Setor';
 
@@ -341,10 +343,10 @@ export const QuadroPessoal: React.FC = () => {
       <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-start gap-3 shadow-sm text-blue-800 mb-2">
         <Info className="mt-0.5 shrink-0" size={20} />
         <div className="text-sm leading-relaxed">
-          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Fechamento DP (Ciclo: 26 a 25)</span>
-          Os números abaixo refletem exatamente o quadro da competência da Folha de Pagamento:<br/>
-          <b>1. Admissão:</b> Contabiliza quem foi admitido até o dia 25 do mês selecionado.<br/>
-          <b>2. Demissão:</b> Ignora quem foi desligado antes do dia 26 do mês anterior.
+          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Fechamento DP (Fotografia: Dia 25)</span>
+          Os números abaixo refletem exatamente o quadro da competência para fins de planejamento e vagas abertas:<br/>
+          <b>1. Admissão:</b> Contabiliza quem foi admitido ATÉ o dia 25 do mês selecionado.<br/>
+          <b>2. Demissão:</b> A cadeira abre (a pessoa sai da contagem) se ela foi desligada ATÉ o dia 25 do mês selecionado.
         </div>
       </div>
 
@@ -562,7 +564,7 @@ export const QuadroPessoal: React.FC = () => {
                   </table>
                </div>
                <div className="p-4 bg-slate-50 rounded-b-3xl border-t border-slate-100 text-center text-xs text-slate-400 font-medium">
-                   Mostrando {modalData.list.length} registros que passaram pela regra de fechamento do dia 25.
+                   Mostrando {modalData.list.length} registros que passaram pela regra de fotografia do dia 25.
                </div>
             </div>
          </div>
