@@ -120,7 +120,7 @@ export const QuadroPessoal: React.FC = () => {
     return data;
   }, [employees, selectedPeriod, officialSectors]);
 
-  // --- FUNÇÕES DE ORÇAMENTO ---
+  // --- FUNÇÕES DE ORÇAMENTO E EXPORTAÇÃO ---
   const handleEditClick = () => {
     setBudgetDraft({ ...savedBudget });
     setIsEditing(true);
@@ -136,7 +136,6 @@ export const QuadroPessoal: React.FC = () => {
     setIsEditing(false);
   };
 
-  // Puxa o orçamento do mês anterior
   const handleCopyPreviousMonth = () => {
     const [yearStr, monthStr] = selectedPeriod.split('-');
     let year = parseInt(yearStr, 10);
@@ -163,6 +162,35 @@ export const QuadroPessoal: React.FC = () => {
     } else {
       alert(`Ainda não existe um orçamento salvo para o mês de ${prevPeriod}.`);
     }
+  };
+
+  const handleExportList = () => {
+    const exportData: any[] = [];
+    
+    Object.keys(headcountData).forEach(sector => {
+      headcountData[sector].list.forEach(emp => {
+        exportData.push({
+          'Nome do Colaborador': emp.name,
+          'Setor': sector, // Setor calculado pela Máquina do Tempo
+          'Cargo': emp.role,
+          'Status no Mês': emp.status
+        });
+      });
+    });
+
+    if (exportData.length === 0) {
+      alert('Nenhum colaborador computado neste mês.');
+      return;
+    }
+
+    // Ordena alfabeticamente
+    exportData.sort((a, b) => a['Nome do Colaborador'].localeCompare(b['Nome do Colaborador']));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Quadro de Pessoal");
+    
+    XLSX.writeFile(workbook, `Quadro_Pessoal_${selectedPeriod}.xlsx`);
   };
 
   // --- INTELIGÊNCIA DE IMPORTAÇÃO EXCEL ---
@@ -287,6 +315,13 @@ export const QuadroPessoal: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <button 
+            onClick={handleExportList}
+            className="flex items-center gap-2 bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
+          >
+            <FileSpreadsheet size={18} />
+            Exportar Lista Nominal
+          </button>
           <button 
             onClick={handleDownloadTemplate}
             className="flex items-center gap-2 bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
