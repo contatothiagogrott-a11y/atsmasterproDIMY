@@ -46,13 +46,13 @@ export const Colaboradores: React.FC = () => {
     dailyWorkload: 8.8,
     probationType: '45+45',
     workSchedule: '', 
-    workDays: [1, 2, 3, 4, 5], // Padrão Seg a Sex
+    workDays: [1, 2, 3, 4, 5], 
     history: []
   });
 
   const [showEventForm, setShowEventForm] = useState(false);
   const [newEvent, setNewEvent] = useState<Partial<EmployeeHistoryRecord>>({
-    id: undefined, // Propriedade adicionada para controlar a edição
+    id: undefined, 
     date: new Date().toISOString().split('T')[0],
     type: 'Outros',
     description: ''
@@ -119,14 +119,25 @@ export const Colaboradores: React.FC = () => {
         }
     }
 
-    // Se a pessoa esvaziou os dias úteis, avisa
     if (!formData.workDays || formData.workDays.length === 0) {
        alert("Selecione pelo menos um dia de trabalho para o colaborador.");
        return;
     }
 
+    // Se mudou o status e não é mais afastado, limpa os dados de afastamento para não gerar confusão futura
+    let cleanLeaveData = { 
+      leaveStartDate: formData.leaveStartDate, 
+      leaveExpectedReturn: formData.leaveExpectedReturn, 
+      leaveReason: formData.leaveReason 
+    };
+    
+    if (formData.status !== 'Afastado') {
+      cleanLeaveData = { leaveStartDate: '', leaveExpectedReturn: '', leaveReason: '' };
+    }
+
     const employeeData = {
       ...formData,
+      ...cleanLeaveData,
       terminationReason: finalTerminationReason,
       id: formData.id || crypto.randomUUID(),
       hasPendingInfo: false,
@@ -141,11 +152,10 @@ export const Colaboradores: React.FC = () => {
     }
     
     setView('list');
-    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', workDays: [1,2,3,4,5], history: [] });
+    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', workDays: [1,2,3,4,5], history: [], leaveStartDate: '', leaveExpectedReturn: '', leaveReason: '' });
     setTerminationObservation('');
   };
 
-  // Botão para forçar Seg a Sex em todos que não tem
   const handleSyncWorkDays = async () => {
     if (!window.confirm("Isso irá aplicar o padrão de trabalho de 'Segunda a Sexta' para todos os colaboradores que ainda não têm essa informação configurada. Deseja continuar?")) return;
     
@@ -228,10 +238,12 @@ export const Colaboradores: React.FC = () => {
       dailyWorkload: emp.dailyWorkload || 8.8, 
       probationType: emp.probationType || '45+45',
       workSchedule: (emp as any).workSchedule || '',
-      workDays: emp.workDays || [1, 2, 3, 4, 5], // Padrão se não tiver
+      workDays: emp.workDays || [1, 2, 3, 4, 5], 
       birthDate: formatToYMD(emp.birthDate),
       admissionDate: formatToYMD(emp.admissionDate),
+      leaveStartDate: formatToYMD((emp as any).leaveStartDate),
       leaveExpectedReturn: formatToYMD(emp.leaveExpectedReturn),
+      leaveReason: emp.leaveReason || '',
       terminationDate: formatToYMD(emp.terminationDate),
       terminationReason: mainReason 
     });
@@ -254,7 +266,6 @@ export const Colaboradores: React.FC = () => {
     setView('details');
   };
 
-  // --- FUNÇÕES DE HISTÓRICO FUNCIONAL ---
   const handleAddHistoryEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployee || !newEvent.description) return;
@@ -262,14 +273,12 @@ export const Colaboradores: React.FC = () => {
     let updatedHistory;
 
     if (newEvent.id) {
-      // Editando um evento existente
       updatedHistory = (selectedEmployee.history || []).map(h => 
         h.id === newEvent.id 
           ? { ...h, date: newEvent.date!, type: newEvent.type as EmployeeHistoryType, description: newEvent.description! }
           : h
       );
     } else {
-      // Criando um novo evento
       const eventRecord: EmployeeHistoryRecord = {
         id: crypto.randomUUID(),
         date: newEvent.date || new Date().toISOString().split('T')[0],
@@ -346,7 +355,7 @@ export const Colaboradores: React.FC = () => {
             </button>
             <button 
                 onClick={() => { 
-                    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', workDays: [1,2,3,4,5], history: [] }); 
+                    setFormData({ status: 'Ativo', contractType: 'CLT', dailyWorkload: 8.8, probationType: '45+45', workSchedule: '', workDays: [1,2,3,4,5], history: [], leaveStartDate: '', leaveExpectedReturn: '', leaveReason: '' }); 
                     setTerminationObservation('');
                     setView('form'); 
                 }}
@@ -374,7 +383,6 @@ export const Colaboradores: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              {/* FILTRO DE HORÁRIO */}
               <div className="flex items-center gap-2 bg-slate-50 px-3 rounded-lg border border-slate-200 hidden xl:flex">
                 <Clock size={16} className="text-slate-400" />
                 <select 
@@ -648,7 +656,7 @@ export const Colaboradores: React.FC = () => {
                     </select>
                   </div>
 
-                  {/* NOVO CAMPO: DIAS DE TRABALHO (CHECKBOXES) */}
+                  {/* CAMPO: DIAS DE TRABALHO */}
                   <div className="space-y-2 md:col-span-2 mt-2">
                     <label className="text-sm font-bold text-slate-700">Dias de Trabalho (Ignora nos Atestados)</label>
                     <div className="flex gap-1">
@@ -673,14 +681,20 @@ export const Colaboradores: React.FC = () => {
               </div>
 
               {formData.status === 'Afastado' && (
-                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="p-5 bg-amber-50 border border-amber-200 rounded-xl space-y-4 animate-in fade-in">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-amber-800">Data de Início (Afastamento)</label>
+                      <input type="date" required className="w-full border border-amber-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white" value={formData.leaveStartDate || ''} onChange={e => setFormData({...formData, leaveStartDate: e.target.value})} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-bold text-amber-800">Previsão de Retorno (Opcional)</label>
+                      <input type="date" className="w-full border border-amber-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white" value={formData.leaveExpectedReturn || ''} onChange={e => setFormData({...formData, leaveExpectedReturn: e.target.value})} />
+                    </div>
+                  </div>
+                  <div className="space-y-2 border-t border-amber-200 pt-3">
                     <label className="text-sm font-bold text-amber-800">Motivo do Afastamento</label>
                     <input className="w-full border border-amber-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white" placeholder="Ex: Licença Maternidade, INSS..." value={formData.leaveReason || ''} onChange={e => setFormData({...formData, leaveReason: e.target.value})} />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-amber-800">Previsão de Retorno</label>
-                    <input type="date" className="w-full border border-amber-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white" value={formData.leaveExpectedReturn || ''} onChange={e => setFormData({...formData, leaveExpectedReturn: e.target.value})} />
                   </div>
                 </div>
               )}
@@ -771,6 +785,19 @@ export const Colaboradores: React.FC = () => {
                 <div className="flex justify-between"><span className="text-slate-400">Nascimento:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.birthDate)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Admissão:</span> <span className="font-bold text-slate-700">{formatDate(selectedEmployee.admissionDate)}</span></div>
                 
+                {/* BLOCO: AFASTADO */}
+                {selectedEmployee.status === 'Afastado' && (
+                  <>
+                    <div className="flex justify-between border-t border-amber-100 pt-3"><span className="text-amber-500">Início Afastamento:</span> <span className="font-bold text-amber-600">{formatDate((selectedEmployee as any).leaveStartDate)}</span></div>
+                    <div className="flex justify-between"><span className="text-amber-500">Previsão Retorno:</span> <span className="font-bold text-amber-600">{selectedEmployee.leaveExpectedReturn ? formatDate(selectedEmployee.leaveExpectedReturn) : 'Sem previsão'}</span></div>
+                    <div className="flex flex-col gap-1 border-t border-amber-50 pt-2">
+                       <span className="text-amber-500 text-xs">Motivo / CID:</span> 
+                       <span className="font-bold text-amber-700 leading-tight bg-amber-50 p-2 rounded-lg">{selectedEmployee.leaveReason || 'Não informado'}</span>
+                    </div>
+                  </>
+                )}
+
+                {/* BLOCO: INATIVO */}
                 {selectedEmployee.status === 'Inativo' && (
                   <>
                     <div className="flex justify-between border-t border-red-100 pt-3"><span className="text-red-400">Desligamento:</span> <span className="font-bold text-red-600">{formatDate((selectedEmployee as any).terminationDate)}</span></div>
