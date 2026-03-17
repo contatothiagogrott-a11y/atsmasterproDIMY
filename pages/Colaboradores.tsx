@@ -51,11 +51,13 @@ export const Colaboradores: React.FC = () => {
   });
 
   const [showEventForm, setShowEventForm] = useState(false);
-  const [newEvent, setNewEvent] = useState<Partial<EmployeeHistoryRecord>>({
+  const [newEvent, setNewEvent] = useState<Partial<EmployeeHistoryRecord> & { endDate?: string, leaveReason?: string }>({
     id: undefined, 
     date: new Date().toISOString().split('T')[0],
     type: 'Outros',
-    description: ''
+    description: '',
+    endDate: '',
+    leaveReason: ''
   });
 
   const filteredEmployees = useMemo(() => {
@@ -156,21 +158,22 @@ export const Colaboradores: React.FC = () => {
        });
     }
 
-    // 2. Detecta se está RETORNANDO de afastamento (Agora com data retroativa dinâmica)
+    // 2. Detecta se está RETORNANDO de afastamento (Com caixinha amarela mantida para correção)
     if (formData.status === 'Ativo' && originalEmp?.status === 'Afastado') {
        if (!formData.actualReturnDate) {
-          alert("Por favor, informe a Data Efetiva do Retorno do afastamento.");
+          alert("Por favor, informe a Data Efetiva do Retorno do afastamento na caixinha verde.");
           return;
        }
 
+       // Salva a data retroativa preenchida no input
        updatedHistory.push({
           id: crypto.randomUUID(),
-          date: formData.actualReturnDate, // Usa a data que o RH escolheu na caixinha verde
+          date: formData.actualReturnDate, // DATA RETROATIVA VEM DAQUI
           type: 'Outros',
-          description: `[FIM DE AFASTAMENTO] Colaborador retornou às atividades. (Estava afastado desde ${formatDateToBRLocal((originalEmp as any).leaveStartDate)})`,
+          description: `[FIM DE AFASTAMENTO] Colaborador retornou às atividades. (Afastamento de ${formatDateToBRLocal(formData.leaveStartDate)} até ${formatDateToBRLocal(formData.actualReturnDate)} - Motivo: ${formData.leaveReason})`,
           createdBy: user?.name || 'Sistema'
        });
-       // Limpa a ficha cadastral
+       
        cleanLeaveData = { leaveStartDate: '', leaveExpectedReturn: '', leaveReason: '' };
     }
 
@@ -184,7 +187,6 @@ export const Colaboradores: React.FC = () => {
       history: updatedHistory
     } as Employee;
 
-    // Limpa a propriedade temporária para não sujar o banco de dados
     delete (employeeData as any).actualReturnDate;
 
     if (formData.id) {
@@ -288,7 +290,6 @@ export const Colaboradores: React.FC = () => {
       leaveReason: emp.leaveReason || '',
       terminationDate: formatToYMD(emp.terminationDate),
       terminationReason: mainReason,
-      // Prepara o campo de retorno caso o RH mude ele para Ativo agora
       actualReturnDate: new Date().toISOString().split('T')[0]
     });
     setTerminationObservation(obsText);
@@ -312,25 +313,47 @@ export const Colaboradores: React.FC = () => {
 
   const handleAddHistoryEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEmployee || !newEvent.description) return;
+    if (!selectedEmployee) return;
 
-    let updatedHistory;
+    let updatedHistory = [...(selectedEmployee.history || [])];
 
-    if (newEvent.id) {
-      updatedHistory = (selectedEmployee.history || []).map(h => 
-        h.id === newEvent.id 
-          ? { ...h, date: newEvent.date!, type: newEvent.type as EmployeeHistoryType, description: newEvent.description! }
-          : h
-      );
+    if (newEvent.type === 'Afastamento Retroativo') {
+       if (!newEvent.date || !newEvent.endDate || !newEvent.leaveReason) {
+          alert("Preencha todas as datas e o motivo para o afastamento retroativo.");
+          return;
+       }
+       updatedHistory.push({
+          id: crypto.randomUUID(),
+          date: newEvent.date,
+          type: 'Outros',
+          description: `[INÍCIO DE AFASTAMENTO] Motivo: ${newEvent.leaveReason} | Lançado retroativamente`,
+          createdBy: user?.name || 'Sistema'
+       });
+       updatedHistory.push({
+          id: crypto.randomUUID(),
+          date: newEvent.endDate,
+          type: 'Outros',
+          description: `[FIM DE AFASTAMENTO] Colaborador retornou às atividades. (Afastamento concluído)`,
+          createdBy: user?.name || 'Sistema'
+       });
     } else {
-      const eventRecord: EmployeeHistoryRecord = {
-        id: crypto.randomUUID(),
-        date: newEvent.date || new Date().toISOString().split('T')[0],
-        type: newEvent.type as EmployeeHistoryType || 'Outros',
-        description: newEvent.description,
-        createdBy: user?.name || 'Sistema'
-      };
-      updatedHistory = [...(selectedEmployee.history || []), eventRecord];
+       if (!newEvent.description) return;
+
+       if (newEvent.id) {
+         updatedHistory = updatedHistory.map(h => 
+           h.id === newEvent.id 
+             ? { ...h, date: newEvent.date!, type: newEvent.type as EmployeeHistoryType, description: newEvent.description! }
+             : h
+         );
+       } else {
+         updatedHistory.push({
+           id: crypto.randomUUID(),
+           date: newEvent.date || new Date().toISOString().split('T')[0],
+           type: newEvent.type as EmployeeHistoryType || 'Outros',
+           description: newEvent.description,
+           createdBy: user?.name || 'Sistema'
+         });
+       }
     }
 
     const updatedEmployee = { ...selectedEmployee, history: updatedHistory };
@@ -338,7 +361,7 @@ export const Colaboradores: React.FC = () => {
     setSelectedEmployee(updatedEmployee);  
     
     setShowEventForm(false); 
-    setNewEvent({ id: undefined, date: new Date().toISOString().split('T')[0], type: 'Outros', description: '' }); 
+    setNewEvent({ id: undefined, date: new Date().toISOString().split('T')[0], type: 'Outros', description: '', endDate: '', leaveReason: '' }); 
   };
 
   const handleEditHistoryEvent = (record: EmployeeHistoryRecord) => {
@@ -724,24 +747,8 @@ export const Colaboradores: React.FC = () => {
                 </div>
               </div>
 
-              {/* BLOCO DE RETORNO RETROATIVO DE AFASTAMENTO */}
-              {isReturningFromLeave && (
-                <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-4 animate-in fade-in">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-emerald-800">Data Efetiva do Retorno (Retroativa ou Hoje)</label>
-                    <input 
-                       type="date" 
-                       required 
-                       className="w-full border border-emerald-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" 
-                       value={formData.actualReturnDate || ''} 
-                       onChange={e => setFormData({...formData, actualReturnDate: e.target.value})} 
-                    />
-                    <p className="text-xs text-emerald-700 mt-1 font-medium">Esta data será registrada no histórico funcional como o fim do afastamento. Ajuste caso o colaborador tenha retornado em dias anteriores para não impactar o quadro do sistema.</p>
-                  </div>
-                </div>
-              )}
-
-              {formData.status === 'Afastado' && (
+              {/* BLOCO: AFASTAMENTO (Aparece se está afastando agora OU se está retornando para permitir edição do passado) */}
+              {(formData.status === 'Afastado' || isReturningFromLeave) && (
                 <div className="p-5 bg-amber-50 border border-amber-200 rounded-xl space-y-4 animate-in fade-in">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -756,6 +763,23 @@ export const Colaboradores: React.FC = () => {
                   <div className="space-y-2 border-t border-amber-200 pt-3">
                     <label className="text-sm font-bold text-amber-800">Motivo do Afastamento</label>
                     <input required className="w-full border border-amber-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white" placeholder="Ex: Licença Maternidade, INSS..." value={formData.leaveReason || ''} onChange={e => setFormData({...formData, leaveReason: e.target.value})} />
+                  </div>
+                </div>
+              )}
+
+              {/* BLOCO DE RETORNO RETROATIVO DE AFASTAMENTO */}
+              {isReturningFromLeave && (
+                <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-xl space-y-4 animate-in fade-in">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-emerald-800">Data Efetiva do Retorno (Retroativa ou Hoje)</label>
+                    <input 
+                       type="date" 
+                       required 
+                       className="w-full border border-emerald-300 p-3 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 bg-white" 
+                       value={formData.actualReturnDate || ''} 
+                       onChange={e => setFormData({...formData, actualReturnDate: e.target.value})} 
+                    />
+                    <p className="text-xs text-emerald-700 mt-1 font-medium">Esta data será registrada no histórico funcional como o fim do afastamento. Você pode ajustar a data de início na caixa amarela acima, caso ela estivesse errada.</p>
                   </div>
                 </div>
               )}
@@ -904,7 +928,7 @@ export const Colaboradores: React.FC = () => {
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-500">Data</label>
+                      <label className="text-xs font-bold text-slate-500">Data (Início)</label>
                       <input type="date" required className="w-full border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} />
                     </div>
                     <div className="space-y-1 md:col-span-2">
@@ -912,13 +936,30 @@ export const Colaboradores: React.FC = () => {
                       <select required className="w-full border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value as EmployeeHistoryType})}>
                         <option value="Promoção">Promoção / Mudança de Cargo</option>
                         <option value="Mudança de Setor">Mudança de Setor / Unidade</option>
-                        <option value="Outros">Outros (Afastamentos, Advertências, Feedbacks...)</option>
+                        <option value="Afastamento Retroativo">Afastamento Retroativo (Já Concluído)</option>
+                        <option value="Outros">Outros (Conversão PJ, Feedback, etc)</option>
                       </select>
                     </div>
-                    <div className="space-y-1 md:col-span-3">
-                      <label className="text-xs font-bold text-slate-500">Descrição Detalhada</label>
-                      <input type="text" required placeholder="Ex: Colaborador foi efetivado para PJ com salário de X..." className="w-full border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} />
-                    </div>
+
+                    {/* CAMPOS EXTRAS PARA AFASTAMENTO RETROATIVO */}
+                    {newEvent.type === 'Afastamento Retroativo' ? (
+                      <>
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-500">Data Final (Retorno)</label>
+                          <input type="date" required className="w-full border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={newEvent.endDate || ''} onChange={e => setNewEvent({...newEvent, endDate: e.target.value})} />
+                        </div>
+                        <div className="space-y-1 md:col-span-2">
+                          <label className="text-xs font-bold text-slate-500">Motivo do Afastamento (CID, etc)</label>
+                          <input type="text" required placeholder="Ex: Licença Médica..." className="w-full border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={newEvent.leaveReason || ''} onChange={e => setNewEvent({...newEvent, leaveReason: e.target.value})} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-1 md:col-span-3">
+                        <label className="text-xs font-bold text-slate-500">Descrição Detalhada</label>
+                        <input type="text" required placeholder="Ex: Colaborador foi efetivado para PJ com salário de X..." className="w-full border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={newEvent.description} onChange={e => setNewEvent({...newEvent, description: e.target.value})} />
+                      </div>
+                    )}
+
                   </div>
                   <div className="flex justify-end gap-2">
                     <button type="button" onClick={() => setShowEventForm(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:bg-slate-200 rounded-lg transition-colors">Cancelar</button>
