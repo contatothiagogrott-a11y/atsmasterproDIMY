@@ -25,7 +25,7 @@ export const QuadroPessoal: React.FC = () => {
   const [budgetDraft, setBudgetDraft] = useState<Record<string, number>>({});
   
   // ESTADO PARA O MODAL DE LISTAGEM NOMINAL
-  const [modalData, setModalData] = useState<{ sector: string, type: 'ativos' | 'afastados', list: Employee[] } | null>(null);
+  const [modalData, setModalData] = useState<{ sector: string, type: 'ativos' | 'afastados', list: any[] } | null>(null);
 
   const officialSectors = useMemo(() => {
     return settings.filter((s: SettingItem) => s.type === 'SECTOR').map((s: SettingItem) => s.name).sort();
@@ -42,25 +42,16 @@ export const QuadroPessoal: React.FC = () => {
     return {};
   }, [currentBudgetSetting]);
 
-  // --- MÁQUINA DO TEMPO: FOTOGRAFIA EXATA DO DIA 25 ---
+  // --- MÁQUINA DO TEMPO: FOTOGRAFIA EXATA DO DIA 25 (SETOR E STATUS) ---
   const headcountData = useMemo(() => {
     const [yearStr, monthStr] = selectedPeriod.split('-');
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
     
-    // Calcula o Mês Anterior para o dia 26
-    let prevMonth = month - 1;
-    let prevYear = year;
-    if (prevMonth === 0) {
-      prevMonth = 12;
-      prevYear = year - 1;
-    }
+    // A Fotografia Oficial do Quadro acontece no dia 25 do mês selecionado
+    const cutoffDate = `${year}-${String(month).padStart(2, '0')}-25`; 
 
-    // Janela de Competência Oficial
-    const startDate = `${prevYear}-${String(prevMonth).padStart(2, '0')}-26`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-25`; 
-
-    const data: Record<string, { ativos: number, afastados: number, list: Employee[] }> = {};
+    const data: Record<string, { ativos: number, afastados: number, list: any[] }> = {};
     
     officialSectors.forEach((s: string) => data[s] = { ativos: 0, afastados: 0, list: [] });
     
@@ -82,41 +73,57 @@ export const QuadroPessoal: React.FC = () => {
       const adDate = formatToYMD(emp.admissionDate);
       const termDate = formatToYMD(emp.terminationDate);
 
-      // REGRA 1 (ADMISSÃO): Foi admitido DEPOIS do fechamento atual? (ex: 26/03 já é folha de Abril)
-      // Para entrar na foto de Março, a admissão tem que ser menor ou igual a 25/03.
-      if (adDate && adDate > endDate) return; 
+      // REGRA 1 (ADMISSÃO): Foi admitido DEPOIS da data de corte? 
+      if (adDate && adDate > cutoffDate) return; 
 
-      // REGRA 2 (DEMISSÃO): Saiu ANTES ou DURANTE a folha atual? (ex: entrou 27/02, saiu 10/03)
-      // Se a data de demissão for menor ou igual a 25/03, a cadeira está vazia no dia da foto!
-      if (termDate && termDate <= endDate) return; 
+      // REGRA 2 (DEMISSÃO): Foi demitido ANTES da data de corte? 
+      if (termDate && termDate < cutoffDate) return; 
 
+      // INICIA A MÁQUINA DO TEMPO (Assumimos o estado atual, e depois reescrevemos com o passado)
       let snapshotSector = emp.sector || 'Sem Setor';
-
-      if (emp.history && emp.history.length > 0) {
-          const sectorRecords = emp.history
-              .filter((h: any) => h.date <= endDate)
-              .filter((h: any) => h.description.match(/Setor:\s*([^|]+)/i));
-
-          if (sectorRecords.length > 0) {
-              sectorRecords.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-              const latestRecord = sectorRecords[sectorRecords.length - 1];
-              const match = latestRecord.description.match(/Setor:\s*([^|]+)/i);
-              if (match) {
-                  snapshotSector = match[1].trim();
-              }
-          }
+      let snapshotStatus = 'Ativo'; 
+      
+      // Fallback para dados legados (antes da atualização do histórico)
+      if (emp.status === 'Afastado' && (emp as any).leaveStartDate && formatToYMD((emp as any).leaveStartDate) <= cutoffDate) {
+          snapshotStatus = 'Afastado';
       }
 
+      if (emp.history && emp.history.length > 0) {
+          // Filtra todo o histórico ATÉ a data da fotografia e coloca em ordem cronológica
+          const pastEvents = emp.history
+              .filter((h: any) => h.date <= cutoffDate)
+              .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+          pastEvents.forEach((h: any) => {
+              // Rastreador de Setor no tempo
+              const sectorMatch = h.description.match(/Setor:\s*([^|]+)/i);
+              if (sectorMatch) {
+                  snapshotSector = sectorMatch[1].trim();
+              }
+
+              // Rastreador de Afastamento no tempo
+              if (h.description.includes('[INÍCIO DE AFASTAMENTO]')) {
+                  snapshotStatus = 'Afastado';
+              } else if (h.description.includes('[FIM DE AFASTAMENTO]')) {
+                  snapshotStatus = 'Ativo';
+              }
+          });
+      }
+
+      // Validação de Integridade do Setor
       if (!officialSectors.includes(snapshotSector)) {
           snapshotSector = invalidKey;
       }
 
-      if (emp.status === 'Afastado') {
+      // Salva o colaborador na lista com o status QUE ELE TINHA naquela época
+      const empSnapshot = { ...emp, snapshotStatus };
+
+      if (snapshotStatus === 'Afastado') {
         data[snapshotSector].afastados += 1;
       } else {
         data[snapshotSector].ativos += 1;
       }
-      data[snapshotSector].list.push(emp);
+      data[snapshotSector].list.push(empSnapshot);
     });
 
     return data;
@@ -175,8 +182,9 @@ export const QuadroPessoal: React.FC = () => {
           'Nome do Colaborador': emp.name,
           'Setor (Data Corte)': sector, 
           'Cargo Atual': emp.role,
-          'Status no Mês': emp.status === 'Afastado' ? 'Afastado' : 'Ativo',
-          'Data de Admissão': formatDateToBR(emp.admissionDate)
+          'Status na Data de Corte': emp.snapshotStatus === 'Afastado' ? 'Afastado' : 'Ativo',
+          'Data de Admissão': formatDateToBR(emp.admissionDate),
+          'Data de Desligamento': emp.terminationDate ? formatDateToBR(emp.terminationDate) : '-'
         });
       });
     });
@@ -344,9 +352,9 @@ export const QuadroPessoal: React.FC = () => {
         <Info className="mt-0.5 shrink-0" size={20} />
         <div className="text-sm leading-relaxed">
           <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Fechamento DP (Fotografia: Dia 25)</span>
-          Os números abaixo refletem exatamente o quadro da competência para fins de planejamento e vagas abertas:<br/>
+          Os números abaixo refletem exatamente a cadeira ocupada na data de corte (dia 25):<br/>
           <b>1. Admissão:</b> Contabiliza quem foi admitido ATÉ o dia 25 do mês selecionado.<br/>
-          <b>2. Demissão:</b> A cadeira abre (a pessoa sai da contagem) se ela foi desligada ATÉ o dia 25 do mês selecionado.
+          <b>2. Demissão:</b> A pessoa NÃO entra na contagem se foi desligada ANTES do dia 25 do mês selecionado.
         </div>
       </div>
 
@@ -457,7 +465,7 @@ export const QuadroPessoal: React.FC = () => {
                             setModalData({ 
                                 sector, 
                                 type: 'ativos', 
-                                list: headcountData[sector].list.filter(e => e.status !== 'Afastado') 
+                                list: headcountData[sector].list.filter(e => e.snapshotStatus !== 'Afastado') 
                             });
                         }
                     }}
@@ -474,7 +482,7 @@ export const QuadroPessoal: React.FC = () => {
                             setModalData({ 
                                 sector, 
                                 type: 'afastados', 
-                                list: headcountData[sector].list.filter(e => e.status === 'Afastado') 
+                                list: headcountData[sector].list.filter(e => e.snapshotStatus === 'Afastado') 
                             });
                         }
                     }}
