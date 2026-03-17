@@ -42,12 +42,23 @@ export const QuadroPessoal: React.FC = () => {
     return {};
   }, [currentBudgetSetting]);
 
-  // --- MÁQUINA DO TEMPO COM REGRAS DE FECHAMENTO (DIA 25) ---
+  // --- MÁQUINA DO TEMPO COM REGRA DE CICLO DE FOLHA (26 A 25) ---
   const headcountData = useMemo(() => {
-    const [year, month] = selectedPeriod.split('-');
+    const [yearStr, monthStr] = selectedPeriod.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
     
-    const startOfMonth = `${year}-${month}-01`;
-    const closingDate = `${year}-${month}-25`; 
+    // Calcula o Mês Anterior para o dia 26
+    let prevMonth = month - 1;
+    let prevYear = year;
+    if (prevMonth === 0) {
+      prevMonth = 12;
+      prevYear = year - 1;
+    }
+
+    // Janela de Competência Oficial
+    const startDate = `${prevYear}-${String(prevMonth).padStart(2, '0')}-26`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-25`; 
 
     const data: Record<string, { ativos: number, afastados: number, list: Employee[] }> = {};
     
@@ -71,18 +82,17 @@ export const QuadroPessoal: React.FC = () => {
       const adDate = formatToYMD(emp.admissionDate);
       const termDate = formatToYMD(emp.terminationDate);
 
-      // REGRA 1: Se entrou dentro do mês (ou no futuro), não conta. 
-      // Tem que ter entrado até o último dia do mês anterior.
-      if (adDate && adDate >= startOfMonth) return; 
+      // REGRA 1: Foi admitido DEPOIS do fechamento atual? (ex: 26/03 já é folha de Abril)
+      if (adDate && adDate > endDate) return; 
 
-      // REGRA 2: Se saiu antes do dia 25 do mês analisado, não conta.
-      if (termDate && termDate < closingDate) return; 
+      // REGRA 2: Foi demitido ANTES da folha atual abrir? (ex: 25/02 já fechou na folha passada)
+      if (termDate && termDate < startDate) return; 
 
       let snapshotSector = emp.sector || 'Sem Setor';
 
       if (emp.history && emp.history.length > 0) {
           const sectorRecords = emp.history
-              .filter((h: any) => h.date <= closingDate)
+              .filter((h: any) => h.date <= endDate)
               .filter((h: any) => h.description.match(/Setor:\s*([^|]+)/i));
 
           if (sectorRecords.length > 0) {
@@ -331,10 +341,10 @@ export const QuadroPessoal: React.FC = () => {
       <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-start gap-3 shadow-sm text-blue-800 mb-2">
         <Info className="mt-0.5 shrink-0" size={20} />
         <div className="text-sm leading-relaxed">
-          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Fechamento DP (Corte: Dia 25)</span>
-          Os números abaixo refletem o quadro real do mês considerando: <br/>
-          <b>1.</b> Só contam pessoas admitidas <i>antes do 1º dia</i> do mês selecionado. (Contratações do próprio mês não contam).<br/>
-          <b>2.</b> Só contam pessoas que trabalharam <i>pelo menos até o dia 25</i> (Demissões antes do dia 25 são excluídas da contagem).
+          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Fechamento DP (Ciclo: 26 a 25)</span>
+          Os números abaixo refletem exatamente o quadro da competência da Folha de Pagamento:<br/>
+          <b>1. Admissão:</b> Contabiliza quem foi admitido até o dia 25 do mês selecionado.<br/>
+          <b>2. Demissão:</b> Ignora quem foi desligado antes do dia 26 do mês anterior.
         </div>
       </div>
 
