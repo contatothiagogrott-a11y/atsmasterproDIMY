@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { Employee, SettingItem } from '../types';
 import { 
-  Users, Calendar, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet, Download, UploadCloud, Copy, Info
+  Users, Calendar, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet, Download, UploadCloud, Copy, Info, X, Search
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -11,12 +11,10 @@ export const QuadroPessoal: React.FC = () => {
   const { user, employees = [], updateEmployee, settings = [], addSetting, updateSetting } = useData() as any;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Apenas MASTER tem acesso
   if (user?.role !== 'MASTER') {
     return <Navigate to="/" replace />;
   }
 
-  // Controle de Mês/Ano selecionado (Ex: '2026-01')
   const [selectedPeriod, setSelectedPeriod] = useState(() => {
     const d = new Date();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -25,18 +23,18 @@ export const QuadroPessoal: React.FC = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [budgetDraft, setBudgetDraft] = useState<Record<string, number>>({});
+  
+  // ESTADO PARA O MODAL DE LISTAGEM NOMINAL
+  const [modalData, setModalData] = useState<{ sector: string, type: 'ativos' | 'afastados', list: Employee[] } | null>(null);
 
-  // Busca os setores cadastrados OFICIAIS nas Configurações
   const officialSectors = useMemo(() => {
     return settings.filter((s: SettingItem) => s.type === 'SECTOR').map((s: SettingItem) => s.name).sort();
   }, [settings]);
 
-  // Busca o orçamento salvo para o período selecionado
   const currentBudgetSetting = useMemo(() => {
     return settings.find((s: SettingItem) => s.type === 'HEADCOUNT_BUDGET' && s.name === selectedPeriod);
   }, [settings, selectedPeriod]);
 
-  // Parse do orçamento salvo
   const savedBudget: Record<string, number> = useMemo(() => {
     if (currentBudgetSetting?.value) {
       try { return JSON.parse(currentBudgetSetting.value); } catch (e) { return {}; }
@@ -48,16 +46,13 @@ export const QuadroPessoal: React.FC = () => {
   const headcountData = useMemo(() => {
     const [year, month] = selectedPeriod.split('-');
     
-    // Datas Chave para as regras de negócio do DP
     const startOfMonth = `${year}-${month}-01`;
-    const closingDate = `${year}-${month}-25`; // Dia do fechamento da folha/quadro
+    const closingDate = `${year}-${month}-25`; 
 
     const data: Record<string, { ativos: number, afastados: number, list: Employee[] }> = {};
     
-    // Inicializa com os setores OFICIAIS
     officialSectors.forEach((s: string) => data[s] = { ativos: 0, afastados: 0, list: [] });
     
-    // Inicializa o Bucket de Setores Inválidos/Antigos
     const invalidKey = '⚠️ Setor Inválido ou Antigo';
     data[invalidKey] = { ativos: 0, afastados: 0, list: [] };
 
@@ -76,23 +71,21 @@ export const QuadroPessoal: React.FC = () => {
       const adDate = formatToYMD(emp.admissionDate);
       const termDate = formatToYMD(emp.terminationDate);
 
-      // REGRA 1: Se entrou dentro do mês, não conta (Tem que ser menor que o dia 01)
+      // REGRA 1: Se entrou dentro do mês (ou no futuro), não conta. 
+      // Tem que ter entrado até o último dia do mês anterior.
       if (adDate && adDate >= startOfMonth) return; 
 
-      // REGRA 2: Se saiu antes de fechar o mês, não conta (Tem que ter ficado até pelo menos dia 25)
+      // REGRA 2: Se saiu antes do dia 25 do mês analisado, não conta.
       if (termDate && termDate < closingDate) return; 
 
-      // --- DESCOBRINDO O SETOR NA DATA DE FECHAMENTO (DIA 25) ---
       let snapshotSector = emp.sector || 'Sem Setor';
 
       if (emp.history && emp.history.length > 0) {
-          // Filtra históricos até a data de fechamento que contenham a palavra "Setor:"
           const sectorRecords = emp.history
               .filter((h: any) => h.date <= closingDate)
               .filter((h: any) => h.description.match(/Setor:\s*([^|]+)/i));
 
           if (sectorRecords.length > 0) {
-              // Pega o registro mais recente até a data limite
               sectorRecords.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
               const latestRecord = sectorRecords[sectorRecords.length - 1];
               const match = latestRecord.description.match(/Setor:\s*([^|]+)/i);
@@ -102,13 +95,10 @@ export const QuadroPessoal: React.FC = () => {
           }
       }
 
-      // VALIDAÇÃO: O setor do histórico ainda existe nas Configurações?
-      // Se não existir (ex: "Compras"), joga a pessoa pro card de aviso.
       if (!officialSectors.includes(snapshotSector)) {
           snapshotSector = invalidKey;
       }
 
-      // Se passou por tudo, está computado no quadro deste mês!
       if (emp.status === 'Afastado') {
         data[snapshotSector].afastados += 1;
       } else {
@@ -171,19 +161,19 @@ export const QuadroPessoal: React.FC = () => {
       headcountData[sector].list.forEach(emp => {
         exportData.push({
           'Nome do Colaborador': emp.name,
-          'Setor': sector, // Setor calculado pela Máquina do Tempo
-          'Cargo': emp.role,
-          'Status no Mês': emp.status
+          'Setor (Data Corte)': sector, 
+          'Cargo Atual': emp.role,
+          'Status no Mês': emp.status === 'Afastado' ? 'Afastado' : 'Ativo',
+          'Data de Admissão': formatDateToBR(emp.admissionDate)
         });
       });
     });
 
     if (exportData.length === 0) {
-      alert('Nenhum colaborador computado neste mês.');
+      alert('Nenhum colaborador computado neste mês com os filtros atuais.');
       return;
     }
 
-    // Ordena alfabeticamente
     exportData.sort((a, b) => a['Nome do Colaborador'].localeCompare(b['Nome do Colaborador']));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -193,7 +183,6 @@ export const QuadroPessoal: React.FC = () => {
     XLSX.writeFile(workbook, `Quadro_Pessoal_${selectedPeriod}.xlsx`);
   };
 
-  // --- INTELIGÊNCIA DE IMPORTAÇÃO EXCEL ---
   const handleDownloadTemplate = () => {
     const worksheet = XLSX.utils.json_to_sheet([
         { 'Nome': 'João da Silva', 'Data': '01/01/2026', 'Setor': 'RH', 'Cargo': 'Analista de RH' },
@@ -229,7 +218,6 @@ export const QuadroPessoal: React.FC = () => {
 
                 if (!nome || !dataStr || !setor) continue;
 
-                // Converte Data Excel para ISO YYYY-MM-DD
                 if (typeof dataStr === 'number') {
                     const jsDate = new Date(Math.round((dataStr - 25569) * 86400 * 1000));
                     dataStr = jsDate.toISOString().split('T')[0];
@@ -238,14 +226,12 @@ export const QuadroPessoal: React.FC = () => {
                     dataStr = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
                 }
 
-                // Encontra colaborador (no map temporário ou no state global)
                 let emp = empUpdates.get(nome.toLowerCase()) || employees.find((e: Employee) => e.name.toLowerCase() === nome.toLowerCase());
                 if (!emp) {
                     if (!notFound.includes(nome)) notFound.push(nome);
                     continue;
                 }
 
-                // Cria o registro no histórico que a máquina do tempo vai ler
                 const historyRecord = {
                     id: crypto.randomUUID(),
                     date: dataStr,
@@ -262,7 +248,6 @@ export const QuadroPessoal: React.FC = () => {
                 });
             }
 
-            // Salva no banco de dados (Contexto)
             for (const [_, empToSave] of empUpdates) {
                 await updateEmployee(empToSave);
                 updatedCount++;
@@ -280,9 +265,14 @@ export const QuadroPessoal: React.FC = () => {
     reader.readAsArrayBuffer(file);
   };
 
-  // Totais Gerais
+  const formatDateToBR = (dateStr: string) => {
+    if (!dateStr) return '-';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateStr;
+  };
+
   const totals = Object.keys(headcountData).reduce((acc: any, sector: string) => {
-    // Para setores que não são o alerta de erro, soma o orçado
     if (sector !== '⚠️ Setor Inválido ou Antigo') {
        acc.orcado += (savedBudget[sector] || 0);
     }
@@ -291,15 +281,13 @@ export const QuadroPessoal: React.FC = () => {
     return acc;
   }, { orcado: 0, ativos: 0, afastados: 0 });
 
-  // Lista final de setores para renderizar (Sempre os oficiais + o de alerta se tiver alguém sujo)
   const sectorsToRender = [...officialSectors];
   if (headcountData['⚠️ Setor Inválido ou Antigo'].ativos > 0 || headcountData['⚠️ Setor Inválido ou Antigo'].afastados > 0) {
       sectorsToRender.push('⚠️ Setor Inválido ou Antigo');
   }
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in">
-      {/* Input de arquivo invisível */}
+    <div className="space-y-6 pb-12 animate-in fade-in relative">
       <input type="file" accept=".xlsx, .xls" ref={fileInputRef} onChange={handleImportExcel} className="hidden" />
 
       {/* HEADER */}
@@ -344,9 +332,9 @@ export const QuadroPessoal: React.FC = () => {
         <Info className="mt-0.5 shrink-0" size={20} />
         <div className="text-sm leading-relaxed">
           <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Fechamento DP (Corte: Dia 25)</span>
-          Os números de "Ativos" abaixo refletem o quadro real do mês considerando: <br/>
-          <b>1.</b> Só contam pessoas admitidas <i>antes</i> do dia 1º deste mês.<br/>
-          <b>2.</b> Só contam pessoas que trabalharam <i>pelo menos até o dia 25</i> (data de fechamento).
+          Os números abaixo refletem o quadro real do mês considerando: <br/>
+          <b>1.</b> Só contam pessoas admitidas <i>antes do 1º dia</i> do mês selecionado. (Contratações do próprio mês não contam).<br/>
+          <b>2.</b> Só contam pessoas que trabalharam <i>pelo menos até o dia 25</i> (Demissões antes do dia 25 são excluídas da contagem).
         </div>
       </div>
 
@@ -450,40 +438,38 @@ export const QuadroPessoal: React.FC = () => {
                     )}
                   </div>
 
-                  {/* ATIVOS */}
-                  <div className={`p-3 rounded-xl border text-center flex flex-col justify-center group relative cursor-help ${isInvalid ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
-                    <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isInvalid ? 'text-red-400' : 'text-slate-400'}`}>Ativos</span>
+                  {/* ATIVOS (CLICÁVEL) */}
+                  <div 
+                    onClick={() => {
+                        if (ativos > 0) {
+                            setModalData({ 
+                                sector, 
+                                type: 'ativos', 
+                                list: headcountData[sector].list.filter(e => e.status !== 'Afastado') 
+                            });
+                        }
+                    }}
+                    className={`p-3 rounded-xl border text-center flex flex-col justify-center transition-colors ${ativos > 0 ? 'cursor-pointer hover:bg-indigo-50 hover:border-indigo-200' : 'opacity-50'} ${isInvalid ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <span className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isInvalid ? 'text-red-400' : 'text-slate-400'}`}>Ativos <Search size={10} className="inline ml-0.5 opacity-50"/></span>
                     <span className={`text-2xl font-black ${isInvalid ? 'text-red-600' : 'text-slate-700'}`}>{ativos}</span>
-                    
-                    {/* Tooltip com a lista de nomes */}
-                    {ativos > 0 && (
-                      <div className={`hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 text-white text-xs p-3 rounded-xl shadow-xl z-20 pointer-events-none text-left ${isInvalid ? 'bg-red-900' : 'bg-slate-800'}`}>
-                         <div className={`font-bold mb-2 border-b pb-1 ${isInvalid ? 'text-red-200 border-red-700' : 'text-indigo-300 border-slate-600'}`}>Colaboradores Contabilizados:</div>
-                         <ul className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
-                           {headcountData[sector].list.filter(e => e.status !== 'Afastado').map((e, i) => (
-                              <li key={i} className="truncate">• {e.name}</li>
-                           ))}
-                         </ul>
-                      </div>
-                    )}
                   </div>
 
-                  {/* AFASTADOS */}
-                  <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-100/50 text-center flex flex-col justify-center group relative cursor-help">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-amber-500 mb-1">Afast.</span>
+                  {/* AFASTADOS (CLICÁVEL) */}
+                  <div 
+                    onClick={() => {
+                        if (afastados > 0) {
+                            setModalData({ 
+                                sector, 
+                                type: 'afastados', 
+                                list: headcountData[sector].list.filter(e => e.status === 'Afastado') 
+                            });
+                        }
+                    }}
+                    className={`p-3 rounded-xl border text-center flex flex-col justify-center transition-colors ${afastados > 0 ? 'bg-amber-50 border-amber-200 cursor-pointer hover:bg-amber-100' : 'bg-slate-50 border-slate-100 opacity-50'}`}
+                  >
+                    <span className="text-[9px] font-black uppercase tracking-widest text-amber-500 mb-1">Afast. <Search size={10} className="inline ml-0.5 opacity-50"/></span>
                     <span className="text-2xl font-black text-amber-600">{afastados}</span>
-                    
-                    {/* Tooltip com a lista de afastados */}
-                    {afastados > 0 && (
-                      <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-slate-800 text-white text-xs p-3 rounded-xl shadow-xl z-20 pointer-events-none text-left">
-                         <div className="font-bold mb-2 border-b border-slate-600 pb-1 text-amber-400">Afastados Contabilizados:</div>
-                         <ul className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
-                           {headcountData[sector].list.filter(e => e.status === 'Afastado').map((e, i) => (
-                              <li key={i} className="truncate">• {e.name}</li>
-                           ))}
-                         </ul>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -503,7 +489,6 @@ export const QuadroPessoal: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* Barra visual de ocupação */}
                     <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden flex">
                       {orcado > 0 ? (
                         <div 
@@ -528,6 +513,51 @@ export const QuadroPessoal: React.FC = () => {
           );
         })}
       </div>
+
+      {/* MODAL DE LISTAGEM NOMINAL */}
+      {modalData && (
+         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[100] p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[85vh]">
+               <div className="p-6 border-b border-slate-100 bg-slate-50 rounded-t-3xl flex justify-between items-center shrink-0">
+                  <div>
+                     <h3 className="font-black text-slate-800 uppercase tracking-tighter text-lg flex items-center gap-2">
+                        <Users className="text-indigo-600"/> 
+                        {modalData.type === 'ativos' ? 'Colaboradores Ativos' : 'Colaboradores Afastados'}
+                     </h3>
+                     <p className="text-xs text-slate-500 font-bold mt-1">
+                        Setor Computado: <span className="text-indigo-600">{modalData.sector}</span>
+                     </p>
+                  </div>
+                  <button onClick={() => setModalData(null)} className="p-2 hover:bg-white rounded-full text-slate-400 hover:text-indigo-600 transition-colors"><X size={24} /></button>
+               </div>
+               
+               <div className="p-0 overflow-y-auto custom-scrollbar">
+                  <table className="w-full text-left text-sm">
+                     <thead className="bg-white border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px] sticky top-0">
+                        <tr>
+                           <th className="p-4 pl-6">Nome</th>
+                           <th className="p-4">Cargo na Ficha Atual</th>
+                           <th className="p-4 text-center">Admissão</th>
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-50">
+                        {modalData.list.sort((a,b) => a.name.localeCompare(b.name)).map(emp => (
+                           <tr key={emp.id} className="hover:bg-indigo-50/30 transition-colors">
+                              <td className="p-4 pl-6 font-bold text-slate-800">{emp.name}</td>
+                              <td className="p-4 text-xs text-slate-600">{emp.role}</td>
+                              <td className="p-4 text-center font-bold text-slate-500 text-xs">{formatDateToBR(emp.admissionDate)}</td>
+                           </tr>
+                        ))}
+                     </tbody>
+                  </table>
+               </div>
+               <div className="p-4 bg-slate-50 rounded-b-3xl border-t border-slate-100 text-center text-xs text-slate-400 font-medium">
+                   Mostrando {modalData.list.length} registros que passaram pela regra de fechamento do dia 25.
+               </div>
+            </div>
+         </div>
+      )}
+
     </div>
   );
 };
