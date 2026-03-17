@@ -97,6 +97,13 @@ export const Colaboradores: React.FC = () => {
     );
   }, [selectedEmployee, absences]);
 
+  const formatDateToBRLocal = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateStr;
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -124,15 +131,38 @@ export const Colaboradores: React.FC = () => {
        return;
     }
 
-    // Se mudou o status e não é mais afastado, limpa os dados de afastamento para não gerar confusão futura
+    // --- LÓGICA DE AFASTAMENTO NO HISTÓRICO ---
+    const originalEmp = employees.find((emp: Employee) => emp.id === formData.id);
+    let updatedHistory = [...(formData.history || [])];
+    
     let cleanLeaveData = { 
       leaveStartDate: formData.leaveStartDate, 
       leaveExpectedReturn: formData.leaveExpectedReturn, 
       leaveReason: formData.leaveReason 
     };
-    
-    if (formData.status !== 'Afastado') {
-      cleanLeaveData = { leaveStartDate: '', leaveExpectedReturn: '', leaveReason: '' };
+
+    // 1. Detecta se está SENDO afastado agora
+    if (formData.status === 'Afastado' && originalEmp?.status !== 'Afastado') {
+       updatedHistory.push({
+          id: crypto.randomUUID(),
+          date: formData.leaveStartDate || new Date().toISOString().split('T')[0],
+          type: 'Outros',
+          description: `[INÍCIO DE AFASTAMENTO] Motivo: ${formData.leaveReason || 'Não informado'} | Retorno Previsto: ${formData.leaveExpectedReturn ? formatDateToBRLocal(formData.leaveExpectedReturn) : 'Indeterminado'}`,
+          createdBy: user?.name || 'Sistema'
+       });
+    }
+
+    // 2. Detecta se está RETORNANDO de afastamento
+    if (formData.status === 'Ativo' && originalEmp?.status === 'Afastado') {
+       updatedHistory.push({
+          id: crypto.randomUUID(),
+          date: new Date().toISOString().split('T')[0], // Data do retorno é a data em que você fez a alteração
+          type: 'Outros',
+          description: `[FIM DE AFASTAMENTO] Colaborador retornou às atividades. (Estava afastado desde ${formatDateToBRLocal((originalEmp as any).leaveStartDate)})`,
+          createdBy: user?.name || 'Sistema'
+       });
+       // Limpa a ficha cadastral
+       cleanLeaveData = { leaveStartDate: '', leaveExpectedReturn: '', leaveReason: '' };
     }
 
     const employeeData = {
@@ -142,7 +172,7 @@ export const Colaboradores: React.FC = () => {
       id: formData.id || crypto.randomUUID(),
       hasPendingInfo: false,
       createdAt: formData.createdAt || new Date().toISOString(),
-      history: formData.history || []
+      history: updatedHistory
     } as Employee;
 
     if (formData.id) {
@@ -694,7 +724,7 @@ export const Colaboradores: React.FC = () => {
                   </div>
                   <div className="space-y-2 border-t border-amber-200 pt-3">
                     <label className="text-sm font-bold text-amber-800">Motivo do Afastamento</label>
-                    <input className="w-full border border-amber-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white" placeholder="Ex: Licença Maternidade, INSS..." value={formData.leaveReason || ''} onChange={e => setFormData({...formData, leaveReason: e.target.value})} />
+                    <input required className="w-full border border-amber-300 p-2.5 rounded-lg outline-none focus:ring-2 focus:ring-amber-500 bg-white" placeholder="Ex: Licença Maternidade, INSS..." value={formData.leaveReason || ''} onChange={e => setFormData({...formData, leaveReason: e.target.value})} />
                   </div>
                 </div>
               )}
@@ -851,7 +881,7 @@ export const Colaboradores: React.FC = () => {
                       <select required className="w-full border border-slate-300 p-2.5 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value as EmployeeHistoryType})}>
                         <option value="Promoção">Promoção / Mudança de Cargo</option>
                         <option value="Mudança de Setor">Mudança de Setor / Unidade</option>
-                        <option value="Outros">Outros (Conversão PJ, Feedback, etc)</option>
+                        <option value="Outros">Outros (Afastamentos, Advertências, Feedbacks...)</option>
                       </select>
                     </div>
                     <div className="space-y-1 md:col-span-3">
