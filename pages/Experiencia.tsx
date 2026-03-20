@@ -41,7 +41,7 @@ export const Experiencia: React.FC = () => {
   // --- ESTADO DO DRILL DOWN (MODAL DE LISTAGEM DE QUEM VOTOU) ---
   const [drillDownTarget, setDrillDownTarget] = useState<string | null>(null);
 
-  // --- LÓGICA DE PRAZOS ---
+  // --- LÓGICA DE PRAZOS (COM EXPIRAÇÃO DE 14 DIAS) ---
   const probationList = useMemo(() => {
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -62,21 +62,18 @@ export const Experiencia: React.FC = () => {
         let currentPeriod = '';
         let daysLeft = 0;
         let urgency = 'ok';
-
-        // Lógica: se o prazo já passou (diff negativo) mas a entrevista ainda não foi feita, 
-        // ele DEVE continuar aparecendo no período vencido como URGÊNCIA MÁXIMA.
         
         const hasInterview1 = emp.experienceInterviews?.some(i => i.period === '1º Período');
         const hasInterview2 = emp.experienceInterviews?.some(i => i.period === '2º Período');
 
-        if (!hasInterview1 && diff1 <= 7) {
+        // LÓGICA DE PRAZOS COM EXPIRAÇÃO (Max 14 dias de atraso permitidos na visualização)
+        if (!hasInterview1 && diff1 <= 7 && diff1 >= -14) {
           currentPeriod = '1º Período';
           daysLeft = diff1;
-        } else if (!hasInterview2 && diff2 <= 7) {
+        } else if (!hasInterview2 && diff2 <= 7 && diff2 >= -14) {
           currentPeriod = '2º Período';
           daysLeft = diff2;
         } else if (diff2 >= 0) {
-           // Está no segundo período, mas ainda longe de vencer (não é urgência ainda)
            currentPeriod = '2º Período';
            daysLeft = diff2;
         } else {
@@ -92,8 +89,9 @@ export const Experiencia: React.FC = () => {
 
         return { ...emp, currentPeriod, daysLeft, urgency, endPeriod1, endPeriod2, alreadyInterviewed };
       })
-      .filter(emp => emp.currentPeriod !== 'Efetivado' && !emp.alreadyInterviewed) // Remove efetivados e quem já fez a entrevista atual
-      .sort((a, b) => a.daysLeft - b.daysLeft); // Os mais atrasados primeiro
+      // Filtra Efetivados, quem já fez, e agora também remove quem perdeu o prazo máximo de 14 dias (ficou "órfão" na verificação de período)
+      .filter(emp => emp.currentPeriod !== 'Efetivado' && emp.currentPeriod !== '' && !emp.alreadyInterviewed) 
+      .sort((a, b) => a.daysLeft - b.daysLeft); 
   }, [employees]);
 
   // --- LÓGICA: EXTRAIR E FILTRAR ---
