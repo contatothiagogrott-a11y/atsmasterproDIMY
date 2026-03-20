@@ -15,7 +15,7 @@ export const QuadroPessoal: React.FC = () => {
     return <Navigate to="/" replace />;
   }
 
-  // --- NOVOS ESTADOS DE PERÍODO CUSTOMIZÁVEL ---
+  // --- ESTADOS DE PERÍODO CUSTOMIZÁVEL ---
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
@@ -34,7 +34,7 @@ export const QuadroPessoal: React.FC = () => {
     return settings.filter((s: SettingItem) => s.type === 'SECTOR').map((s: SettingItem) => s.name).sort();
   }, [settings]);
 
-  // A chave de salvamento do orçamento agora é baseada no mês/ano da Data Final para simplificar
+  // A chave de salvamento do orçamento baseada no mês/ano da Data Final
   const budgetKey = useMemo(() => endDate.substring(0, 7), [endDate]); 
 
   const currentBudgetSetting = useMemo(() => {
@@ -48,7 +48,7 @@ export const QuadroPessoal: React.FC = () => {
     return {};
   }, [currentBudgetSetting]);
 
-  // --- MÁQUINA DO TEMPO: PERÍODO CUSTOMIZADO ---
+  // --- MÁQUINA DO TEMPO: FOTOGRAFIA NA DATA FINAL ---
   const headcountData = useMemo(() => {
     const data: Record<string, { ativos: number, afastados: number, list: any[] }> = {};
     
@@ -75,9 +75,9 @@ export const QuadroPessoal: React.FC = () => {
       // REGRA 1 (ADMISSÃO): Foi admitido DEPOIS da Data Final selecionada? 
       if (adDate && adDate > endDate) return; 
 
-      // REGRA 2 (DEMISSÃO): Foi demitido ANTES da Data Inicial selecionada?
-      // Se ele trabalhou pelo menos 1 dia no período selecionado, ele entra na conta.
-      if (termDate && termDate < startDate) return; 
+      // REGRA 2 (DEMISSÃO): Foi demitido ANTES da Data Final?
+      // O quadro FTE tira a fotografia do último dia do período. Se a pessoa saiu antes, a cadeira abriu!
+      if (termDate && termDate < endDate) return; 
 
       let snapshotSector = emp.sector || 'Sem Setor';
       let snapshotStatus = 'Ativo'; 
@@ -120,7 +120,7 @@ export const QuadroPessoal: React.FC = () => {
     });
 
     return data;
-  }, [employees, startDate, endDate, officialSectors]);
+  }, [employees, endDate, officialSectors]);
 
   const handleEditClick = () => {
     setBudgetDraft({ ...savedBudget });
@@ -135,6 +135,34 @@ export const QuadroPessoal: React.FC = () => {
       await addSetting({ id: crypto.randomUUID(), type: 'HEADCOUNT_BUDGET', name: budgetKey, value: jsonValue });
     }
     setIsEditing(false);
+  };
+
+  const handleCopyPreviousMonth = () => {
+    const [yearStr, monthStr] = budgetKey.split('-');
+    let year = parseInt(yearStr, 10);
+    let month = parseInt(monthStr, 10);
+
+    if (month === 1) {
+      month = 12;
+      year -= 1;
+    } else {
+      month -= 1;
+    }
+
+    const prevPeriod = `${year}-${String(month).padStart(2, '0')}`;
+    const prevSetting = settings.find((s: SettingItem) => s.type === 'HEADCOUNT_BUDGET' && s.name === prevPeriod);
+    
+    if (prevSetting && prevSetting.value) {
+      try {
+        const prevBudget = JSON.parse(prevSetting.value);
+        setBudgetDraft(prevBudget);
+        alert(`Orçamento de ${prevPeriod} copiado com sucesso! Verifique os números e clique em "Salvar Orçamento".`);
+      } catch (e) {
+        alert("Erro ao ler o orçamento do mês anterior.");
+      }
+    } else {
+      alert(`Ainda não existe um orçamento salvo para o mês de ${prevPeriod}.`);
+    }
   };
 
   const handleExportList = () => {
@@ -315,10 +343,10 @@ export const QuadroPessoal: React.FC = () => {
       <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-start gap-3 shadow-sm text-blue-800 mb-2">
         <Info className="mt-0.5 shrink-0" size={20} />
         <div className="text-sm leading-relaxed">
-          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Exibição</span>
-          Os números abaixo refletem quem esteve com a cadeira ocupada no período selecionado.<br/>
+          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Exibição (Fotografia da Data Final)</span>
+          Os números abaixo refletem quem estava ocupando a vaga no último dia do período selecionado.<br/>
           <b>1. Admissão:</b> Contabiliza quem foi admitido ATÉ a <i>Data Final</i>.<br/>
-          <b>2. Demissão:</b> A pessoa sai da conta apenas se foi desligada ANTES da <i>Data Inicial</i> (se trabalhou 1 dia no período, ela entra na foto).
+          <b>2. Demissão:</b> A pessoa não entra na conta se foi desligada ANTES da <i>Data Final</i> (pois a cadeira dela já está vazia).
         </div>
       </div>
 
@@ -540,7 +568,7 @@ export const QuadroPessoal: React.FC = () => {
                   </table>
                </div>
                <div className="p-4 bg-slate-50 rounded-b-3xl border-t border-slate-100 text-center text-xs text-slate-400 font-medium">
-                   Mostrando {modalData.list.length} registros que passaram pela regra de filtro do período.
+                   Mostrando {modalData.list.length} registros computados até a Data Final selecionada.
                </div>
             </div>
          </div>
