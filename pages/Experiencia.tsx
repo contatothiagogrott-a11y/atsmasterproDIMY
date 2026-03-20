@@ -63,17 +63,28 @@ export const Experiencia: React.FC = () => {
         let daysLeft = 0;
         let urgency = 'ok';
 
-        if (diff1 >= 0) {
+        // Lógica: se o prazo já passou (diff negativo) mas a entrevista ainda não foi feita, 
+        // ele DEVE continuar aparecendo no período vencido como URGÊNCIA MÁXIMA.
+        
+        const hasInterview1 = emp.experienceInterviews?.some(i => i.period === '1º Período');
+        const hasInterview2 = emp.experienceInterviews?.some(i => i.period === '2º Período');
+
+        if (!hasInterview1 && diff1 <= 7) {
           currentPeriod = '1º Período';
           daysLeft = diff1;
-        } else if (diff2 >= 0) {
+        } else if (!hasInterview2 && diff2 <= 7) {
           currentPeriod = '2º Período';
           daysLeft = diff2;
+        } else if (diff2 >= 0) {
+           // Está no segundo período, mas ainda longe de vencer (não é urgência ainda)
+           currentPeriod = '2º Período';
+           daysLeft = diff2;
         } else {
-          currentPeriod = 'Efetivado';
-          daysLeft = diff2; 
+           currentPeriod = 'Efetivado';
+           daysLeft = diff2;
         }
 
+        // Define a cor/urgência
         if (daysLeft <= 7 && daysLeft >= 0) urgency = 'warning';
         if (daysLeft < 0) urgency = 'danger';
 
@@ -81,8 +92,8 @@ export const Experiencia: React.FC = () => {
 
         return { ...emp, currentPeriod, daysLeft, urgency, endPeriod1, endPeriod2, alreadyInterviewed };
       })
-      .filter(emp => emp.currentPeriod !== 'Efetivado') 
-      .sort((a, b) => a.daysLeft - b.daysLeft); 
+      .filter(emp => emp.currentPeriod !== 'Efetivado' && !emp.alreadyInterviewed) // Remove efetivados e quem já fez a entrevista atual
+      .sort((a, b) => a.daysLeft - b.daysLeft); // Os mais atrasados primeiro
   }, [employees]);
 
   // --- LÓGICA: EXTRAIR E FILTRAR ---
@@ -438,9 +449,13 @@ export const Experiencia: React.FC = () => {
                     </td>
                     <td className="p-4 text-center">
                       {emp.daysLeft < 0 ? (
-                        <span className="flex items-center justify-center gap-1 text-red-600 font-bold text-sm"><AlertCircle size={16} /> Vencido há {Math.abs(emp.daysLeft)} dias</span>
+                        <span className="flex items-center justify-center gap-1 text-red-600 font-bold text-sm">
+                           <AlertCircle size={16} /> Vencido há {Math.abs(emp.daysLeft)} dias
+                        </span>
                       ) : emp.daysLeft <= 7 ? (
-                        <span className="flex items-center justify-center gap-1 text-amber-600 font-bold text-sm animate-pulse"><AlertCircle size={16} /> Faltam {emp.daysLeft} dias</span>
+                        <span className="flex items-center justify-center gap-1 text-amber-600 font-bold text-sm animate-pulse">
+                           <AlertCircle size={16} /> Faltam {emp.daysLeft} dias
+                        </span>
                       ) : (
                         <span className="text-slate-600 font-medium text-sm">Faltam {emp.daysLeft} dias</span>
                       )}

@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { Employee, SettingItem } from '../types';
 import { 
-  Users, Calendar, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet, Download, UploadCloud, Copy, Info, X, Search
+  Users, Save, Edit3, Building2, TrendingDown, TrendingUp, AlertCircle, FileSpreadsheet, Download, UploadCloud, Copy, Info, X, Search, CalendarDays
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -15,25 +15,31 @@ export const QuadroPessoal: React.FC = () => {
     return <Navigate to="/" replace />;
   }
 
-  const [selectedPeriod, setSelectedPeriod] = useState(() => {
+  // --- NOVOS ESTADOS DE PERÍODO CUSTOMIZÁVEL ---
+  const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    return `${d.getFullYear()}-${m}`;
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+  });
+  
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0];
   });
 
   const [isEditing, setIsEditing] = useState(false);
   const [budgetDraft, setBudgetDraft] = useState<Record<string, number>>({});
-  
-  // ESTADO PARA O MODAL DE LISTAGEM NOMINAL
   const [modalData, setModalData] = useState<{ sector: string, type: 'ativos' | 'afastados', list: any[] } | null>(null);
 
   const officialSectors = useMemo(() => {
     return settings.filter((s: SettingItem) => s.type === 'SECTOR').map((s: SettingItem) => s.name).sort();
   }, [settings]);
 
+  // A chave de salvamento do orçamento agora é baseada no mês/ano da Data Final para simplificar
+  const budgetKey = useMemo(() => endDate.substring(0, 7), [endDate]); 
+
   const currentBudgetSetting = useMemo(() => {
-    return settings.find((s: SettingItem) => s.type === 'HEADCOUNT_BUDGET' && s.name === selectedPeriod);
-  }, [settings, selectedPeriod]);
+    return settings.find((s: SettingItem) => s.type === 'HEADCOUNT_BUDGET' && s.name === budgetKey);
+  }, [settings, budgetKey]);
 
   const savedBudget: Record<string, number> = useMemo(() => {
     if (currentBudgetSetting?.value) {
@@ -42,15 +48,8 @@ export const QuadroPessoal: React.FC = () => {
     return {};
   }, [currentBudgetSetting]);
 
-  // --- MÁQUINA DO TEMPO: FOTOGRAFIA EXATA DO DIA 25 (SETOR E STATUS) ---
+  // --- MÁQUINA DO TEMPO: PERÍODO CUSTOMIZADO ---
   const headcountData = useMemo(() => {
-    const [yearStr, monthStr] = selectedPeriod.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10);
-    
-    // A Fotografia Oficial do Quadro acontece no dia 25 do mês selecionado
-    const cutoffDate = `${year}-${String(month).padStart(2, '0')}-25`; 
-
     const data: Record<string, { ativos: number, afastados: number, list: any[] }> = {};
     
     officialSectors.forEach((s: string) => data[s] = { ativos: 0, afastados: 0, list: [] });
@@ -73,35 +72,31 @@ export const QuadroPessoal: React.FC = () => {
       const adDate = formatToYMD(emp.admissionDate);
       const termDate = formatToYMD(emp.terminationDate);
 
-      // REGRA 1 (ADMISSÃO): Foi admitido DEPOIS da data de corte? 
-      if (adDate && adDate > cutoffDate) return; 
+      // REGRA 1 (ADMISSÃO): Foi admitido DEPOIS da Data Final selecionada? 
+      if (adDate && adDate > endDate) return; 
 
-      // REGRA 2 (DEMISSÃO): Foi demitido ANTES da data de corte? 
-      if (termDate && termDate < cutoffDate) return; 
+      // REGRA 2 (DEMISSÃO): Foi demitido ANTES da Data Inicial selecionada?
+      // Se ele trabalhou pelo menos 1 dia no período selecionado, ele entra na conta.
+      if (termDate && termDate < startDate) return; 
 
-      // INICIA A MÁQUINA DO TEMPO (Assumimos o estado atual, e depois reescrevemos com o passado)
       let snapshotSector = emp.sector || 'Sem Setor';
       let snapshotStatus = 'Ativo'; 
       
-      // Fallback para dados legados (antes da atualização do histórico)
-      if (emp.status === 'Afastado' && (emp as any).leaveStartDate && formatToYMD((emp as any).leaveStartDate) <= cutoffDate) {
+      if (emp.status === 'Afastado' && (emp as any).leaveStartDate && formatToYMD((emp as any).leaveStartDate) <= endDate) {
           snapshotStatus = 'Afastado';
       }
 
       if (emp.history && emp.history.length > 0) {
-          // Filtra todo o histórico ATÉ a data da fotografia e coloca em ordem cronológica
+          // Filtra o histórico ATÉ a Data Final do período
           const pastEvents = emp.history
-              .filter((h: any) => h.date <= cutoffDate)
+              .filter((h: any) => h.date <= endDate)
               .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
           pastEvents.forEach((h: any) => {
-              // Rastreador de Setor no tempo
               const sectorMatch = h.description.match(/Setor:\s*([^|]+)/i);
               if (sectorMatch) {
                   snapshotSector = sectorMatch[1].trim();
               }
-
-              // Rastreador de Afastamento no tempo
               if (h.description.includes('[INÍCIO DE AFASTAMENTO]')) {
                   snapshotStatus = 'Afastado';
               } else if (h.description.includes('[FIM DE AFASTAMENTO]')) {
@@ -110,12 +105,10 @@ export const QuadroPessoal: React.FC = () => {
           });
       }
 
-      // Validação de Integridade do Setor
       if (!officialSectors.includes(snapshotSector)) {
           snapshotSector = invalidKey;
       }
 
-      // Salva o colaborador na lista com o status QUE ELE TINHA naquela época
       const empSnapshot = { ...emp, snapshotStatus };
 
       if (snapshotStatus === 'Afastado') {
@@ -127,9 +120,8 @@ export const QuadroPessoal: React.FC = () => {
     });
 
     return data;
-  }, [employees, selectedPeriod, officialSectors]);
+  }, [employees, startDate, endDate, officialSectors]);
 
-  // --- FUNÇÕES DE ORÇAMENTO E EXPORTAÇÃO ---
   const handleEditClick = () => {
     setBudgetDraft({ ...savedBudget });
     setIsEditing(true);
@@ -140,37 +132,9 @@ export const QuadroPessoal: React.FC = () => {
     if (currentBudgetSetting) {
       await updateSetting({ ...currentBudgetSetting, value: jsonValue });
     } else {
-      await addSetting({ id: crypto.randomUUID(), type: 'HEADCOUNT_BUDGET', name: selectedPeriod, value: jsonValue });
+      await addSetting({ id: crypto.randomUUID(), type: 'HEADCOUNT_BUDGET', name: budgetKey, value: jsonValue });
     }
     setIsEditing(false);
-  };
-
-  const handleCopyPreviousMonth = () => {
-    const [yearStr, monthStr] = selectedPeriod.split('-');
-    let year = parseInt(yearStr, 10);
-    let month = parseInt(monthStr, 10);
-
-    if (month === 1) {
-      month = 12;
-      year -= 1;
-    } else {
-      month -= 1;
-    }
-
-    const prevPeriod = `${year}-${String(month).padStart(2, '0')}`;
-    const prevSetting = settings.find((s: SettingItem) => s.type === 'HEADCOUNT_BUDGET' && s.name === prevPeriod);
-    
-    if (prevSetting && prevSetting.value) {
-      try {
-        const prevBudget = JSON.parse(prevSetting.value);
-        setBudgetDraft(prevBudget);
-        alert(`Orçamento de ${prevPeriod} copiado com sucesso! Verifique os números e clique em "Salvar Orçamento".`);
-      } catch (e) {
-        alert("Erro ao ler o orçamento do mês anterior.");
-      }
-    } else {
-      alert(`Ainda não existe um orçamento salvo para o mês de ${prevPeriod}.`);
-    }
   };
 
   const handleExportList = () => {
@@ -180,9 +144,9 @@ export const QuadroPessoal: React.FC = () => {
       headcountData[sector].list.forEach(emp => {
         exportData.push({
           'Nome do Colaborador': emp.name,
-          'Setor (Data Corte)': sector, 
+          'Setor no Período': sector, 
           'Cargo Atual': emp.role,
-          'Status na Data de Corte': emp.snapshotStatus === 'Afastado' ? 'Afastado' : 'Ativo',
+          'Status no Período': emp.snapshotStatus === 'Afastado' ? 'Afastado' : 'Ativo',
           'Data de Admissão': formatDateToBR(emp.admissionDate),
           'Data de Desligamento': emp.terminationDate ? formatDateToBR(emp.terminationDate) : '-'
         });
@@ -190,7 +154,7 @@ export const QuadroPessoal: React.FC = () => {
     });
 
     if (exportData.length === 0) {
-      alert('Nenhum colaborador computado neste mês com os filtros atuais.');
+      alert('Nenhum colaborador computado neste período com os filtros atuais.');
       return;
     }
 
@@ -200,7 +164,7 @@ export const QuadroPessoal: React.FC = () => {
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Quadro de Pessoal");
     
-    XLSX.writeFile(workbook, `Quadro_Pessoal_${selectedPeriod}.xlsx`);
+    XLSX.writeFile(workbook, `Quadro_Pessoal_${startDate}_ate_${endDate}.xlsx`);
   };
 
   const handleDownloadTemplate = () => {
@@ -317,8 +281,8 @@ export const QuadroPessoal: React.FC = () => {
             <Users size={24} />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-slate-800 tracking-tighter">Quadro de Pessoal (FTE)</h1>
-            <p className="text-slate-500 text-sm font-medium">Orçamento de vagas vs. Realizado mensal</p>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tighter">Quadro de Pessoal Flexível (FTE)</h1>
+            <p className="text-slate-500 text-sm font-medium">Análise de vagas e ocupação por período</p>
           </div>
         </div>
 
@@ -328,21 +292,21 @@ export const QuadroPessoal: React.FC = () => {
             className="flex items-center gap-2 bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
           >
             <FileSpreadsheet size={18} />
-            Exportar Lista Nominal
+            Exportar Nominal
           </button>
           <button 
             onClick={handleDownloadTemplate}
             className="flex items-center gap-2 bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
           >
             <Download size={18} />
-            Baixar Planilha Modelo
+            Baixar Modelo
           </button>
           <button 
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
           >
             <UploadCloud size={18} />
-            Subir Carga Histórica
+            Subir Histórico
           </button>
         </div>
       </div>
@@ -351,24 +315,35 @@ export const QuadroPessoal: React.FC = () => {
       <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex items-start gap-3 shadow-sm text-blue-800 mb-2">
         <Info className="mt-0.5 shrink-0" size={20} />
         <div className="text-sm leading-relaxed">
-          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Fechamento DP (Fotografia: Dia 25)</span>
-          Os números abaixo refletem exatamente a cadeira ocupada na data de corte (dia 25):<br/>
-          <b>1. Admissão:</b> Contabiliza quem foi admitido ATÉ o dia 25 do mês selecionado.<br/>
-          <b>2. Demissão:</b> A pessoa NÃO entra na contagem se foi desligada ANTES do dia 25 do mês selecionado.
+          <span className="font-bold uppercase tracking-wider text-[11px] block mb-1">Regras de Exibição</span>
+          Os números abaixo refletem quem esteve com a cadeira ocupada no período selecionado.<br/>
+          <b>1. Admissão:</b> Contabiliza quem foi admitido ATÉ a <i>Data Final</i>.<br/>
+          <b>2. Demissão:</b> A pessoa sai da conta apenas se foi desligada ANTES da <i>Data Inicial</i> (se trabalhou 1 dia no período, ela entra na foto).
         </div>
       </div>
 
-      {/* CONTROLE DE PERÍODO E AÇÕES */}
+      {/* CONTROLE DE PERÍODO CUSTOMIZADO E AÇÕES */}
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-xl border border-slate-200">
-            <Calendar size={18} className="text-indigo-600" />
-            <span className="text-sm font-bold text-slate-600">Mês/Ano:</span>
+        
+        {/* SELETOR DE DATAS */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+            <CalendarDays size={18} className="text-indigo-600" />
+            <span className="text-sm font-bold text-slate-600">De:</span>
             <input 
-              type="month" 
-              value={selectedPeriod} 
-              onChange={e => setSelectedPeriod(e.target.value)}
-              className="bg-transparent font-black text-indigo-900 outline-none cursor-pointer"
+              type="date" 
+              value={startDate} 
+              onChange={e => setStartDate(e.target.value)}
+              className="bg-transparent font-bold text-indigo-900 outline-none cursor-pointer text-sm"
+            />
+          </div>
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+            <span className="text-sm font-bold text-slate-600">Até:</span>
+            <input 
+              type="date" 
+              value={endDate} 
+              onChange={e => setEndDate(e.target.value)}
+              className="bg-transparent font-bold text-indigo-900 outline-none cursor-pointer text-sm"
             />
           </div>
         </div>
@@ -376,19 +351,12 @@ export const QuadroPessoal: React.FC = () => {
         <div>
           {isEditing ? (
             <div className="flex flex-wrap gap-2">
-              <button 
-                onClick={handleCopyPreviousMonth} 
-                className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl transition-colors flex items-center gap-2 border border-indigo-200"
-                title="Puxar as vagas orçadas do mês anterior"
-              >
-                <Copy size={18}/> <span className="hidden sm:inline">Copiar Mês Anterior</span>
-              </button>
               <button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors">Cancelar</button>
               <button onClick={handleSaveBudget} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"><Save size={18}/> Salvar Orçamento</button>
             </div>
           ) : (
             <button onClick={handleEditClick} className="px-6 py-2 bg-white border border-slate-200 hover:border-indigo-300 text-indigo-600 font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all">
-              <Edit3 size={18}/> Definir Orçamento Mensal
+              <Edit3 size={18}/> Editar Orçamento (FTE)
             </button>
           )}
         </div>
@@ -402,7 +370,7 @@ export const QuadroPessoal: React.FC = () => {
             <p className="text-5xl font-black relative z-10">{totals.orcado}</p>
         </div>
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-center">
-            <h3 className="font-bold text-slate-400 uppercase tracking-widest text-[10px] mb-2">Total Ativos (Trabalhando)</h3>
+            <h3 className="font-bold text-slate-400 uppercase tracking-widest text-[10px] mb-2">Total Ativos no Período</h3>
             <p className="text-4xl font-black text-slate-800">{totals.ativos}</p>
         </div>
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col justify-center">
@@ -556,7 +524,7 @@ export const QuadroPessoal: React.FC = () => {
                      <thead className="bg-white border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px] sticky top-0">
                         <tr>
                            <th className="p-4 pl-6">Nome</th>
-                           <th className="p-4">Cargo na Ficha Atual</th>
+                           <th className="p-4">Cargo no Período</th>
                            <th className="p-4 text-center">Admissão</th>
                         </tr>
                      </thead>
@@ -572,7 +540,7 @@ export const QuadroPessoal: React.FC = () => {
                   </table>
                </div>
                <div className="p-4 bg-slate-50 rounded-b-3xl border-t border-slate-100 text-center text-xs text-slate-400 font-medium">
-                   Mostrando {modalData.list.length} registros que passaram pela regra de fotografia do dia 25.
+                   Mostrando {modalData.list.length} registros que passaram pela regra de filtro do período.
                </div>
             </div>
          </div>
