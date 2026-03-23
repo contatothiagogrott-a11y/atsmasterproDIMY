@@ -41,7 +41,7 @@ export const Experiencia: React.FC = () => {
   // --- ESTADO DO DRILL DOWN (MODAL DE LISTAGEM DE QUEM VOTOU) ---
   const [drillDownTarget, setDrillDownTarget] = useState<string | null>(null);
 
-  // --- LÓGICA DE PRAZOS (COM EXPIRAÇÃO DE 14 DIAS) ---
+  // --- LÓGICA DE PRAZOS (COM EXPIRAÇÃO E PROGRESSÃO ESTRITA) ---
   const probationList = useMemo(() => {
     const today = new Date();
     today.setHours(0,0,0,0);
@@ -66,31 +66,40 @@ export const Experiencia: React.FC = () => {
         const hasInterview1 = emp.experienceInterviews?.some(i => i.period === '1º Período');
         const hasInterview2 = emp.experienceInterviews?.some(i => i.period === '2º Período');
 
-        // LÓGICA DE PRAZOS COM EXPIRAÇÃO (Max 14 dias de atraso permitidos na visualização)
-        if (!hasInterview1 && diff1 <= 7 && diff1 >= -14) {
-          currentPeriod = '1º Período';
-          daysLeft = diff1;
-        } else if (!hasInterview2 && diff2 <= 7 && diff2 >= -14) {
-          currentPeriod = '2º Período';
-          daysLeft = diff2;
-        } else if (diff2 >= 0) {
-           currentPeriod = '2º Período';
-           daysLeft = diff2;
+        // LÓGICA REVISADA: PROGRESSÃO ESTRITA (Não pula o 1º período se não foi feito)
+        if (!hasInterview1) {
+            // Se não fez a 1ª, a pendência dele é a 1ª. (Remove da tela se passar de 14 dias de atraso).
+            if (diff1 >= -14) {
+                currentPeriod = '1º Período';
+                daysLeft = diff1;
+            } else {
+                currentPeriod = 'Expirado'; // Deixou a 1ª passar do limite e nunca fez
+            }
+        } else if (!hasInterview2) {
+            // Se já fez a 1ª, a pendência dele agora é a 2ª.
+            if (diff2 >= -14) {
+                currentPeriod = '2º Período';
+                daysLeft = diff2;
+            } else {
+                currentPeriod = 'Expirado'; // Deixou a 2ª passar do limite
+            }
         } else {
-           currentPeriod = 'Efetivado';
-           daysLeft = diff2;
+            // Já fez as duas
+            currentPeriod = 'Efetivado';
         }
 
-        // Define a cor/urgência
-        if (daysLeft <= 7 && daysLeft >= 0) urgency = 'warning';
-        if (daysLeft < 0) urgency = 'danger';
+        // Define a cor/urgência apenas para quem vai aparecer na tela
+        if (currentPeriod !== 'Expirado' && currentPeriod !== 'Efetivado') {
+            if (daysLeft <= 7 && daysLeft >= 0) urgency = 'warning';
+            if (daysLeft < 0) urgency = 'danger';
+        }
 
         const alreadyInterviewed = emp.experienceInterviews?.some(i => i.period === currentPeriod);
 
         return { ...emp, currentPeriod, daysLeft, urgency, endPeriod1, endPeriod2, alreadyInterviewed };
       })
-      // Filtra Efetivados, quem já fez, e agora também remove quem perdeu o prazo máximo de 14 dias (ficou "órfão" na verificação de período)
-      .filter(emp => emp.currentPeriod !== 'Efetivado' && emp.currentPeriod !== '' && !emp.alreadyInterviewed) 
+      // Só mostra na tela quem tem pendência válida (nem expirado por mais de 14 dias, nem efetivado com tudo feito)
+      .filter(emp => emp.currentPeriod !== 'Efetivado' && emp.currentPeriod !== 'Expirado' && !emp.alreadyInterviewed) 
       .sort((a, b) => a.daysLeft - b.daysLeft); 
   }, [employees]);
 
