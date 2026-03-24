@@ -72,11 +72,8 @@ export const QuadroPessoal: React.FC = () => {
       const adDate = formatToYMD(emp.admissionDate);
       const termDate = formatToYMD(emp.terminationDate);
 
-      // REGRA 1 (ADMISSÃO): Foi admitido DEPOIS da Data Final selecionada? 
       if (adDate && adDate > endDate) return; 
 
-      // REGRA 2 (DEMISSÃO): Foi demitido ANTES da Data Final?
-      // O quadro FTE tira a fotografia do último dia do período. Se a pessoa saiu antes, a cadeira abriu!
       if (termDate && termDate < endDate) return; 
 
       let snapshotSector = emp.sector || 'Sem Setor';
@@ -87,7 +84,6 @@ export const QuadroPessoal: React.FC = () => {
       }
 
       if (emp.history && emp.history.length > 0) {
-          // Filtra o histórico ATÉ a Data Final do período
           const pastEvents = emp.history
               .filter((h: any) => h.date <= endDate)
               .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -165,34 +161,73 @@ export const QuadroPessoal: React.FC = () => {
     }
   };
 
+  // --- NOVA LÓGICA DE EXPORTAÇÃO "ESTILO POWER BI" ---
   const handleExportList = () => {
-    const exportData: any[] = [];
-    
-    Object.keys(headcountData).forEach(sector => {
-      headcountData[sector].list.forEach(emp => {
-        exportData.push({
-          'Nome do Colaborador': emp.name,
-          'Setor no Período': sector, 
-          'Cargo Atual': emp.role,
-          'Status no Período': emp.snapshotStatus === 'Afastado' ? 'Afastado' : 'Ativo',
-          'Data de Admissão': formatDateToBR(emp.admissionDate),
-          'Data de Desligamento': emp.terminationDate ? formatDateToBR(emp.terminationDate) : '-'
-        });
-      });
+    const workbook = XLSX.utils.book_new();
+    let hasData = false;
+
+    // 1. ABA RESUMO (Visão Macro)
+    const resumoData = Object.keys(headcountData).map(sector => {
+        const orcado = isEditing && sector !== '⚠️ Setor Inválido ou Antigo' ? (budgetDraft[sector] || 0) : (savedBudget[sector] || 0);
+        const ativos = headcountData[sector].ativos;
+        const afastados = headcountData[sector].afastados;
+        const saldo = orcado - ativos;
+        
+        if (ativos > 0 || afastados > 0 || orcado > 0) hasData = true;
+
+        return {
+            'Setor': sector,
+            'Vagas Orçadas': orcado,
+            'Total Ativos': ativos,
+            'Total Afastados': afastados,
+            'Saldo de Vagas': saldo
+        };
     });
 
-    if (exportData.length === 0) {
-      alert('Nenhum colaborador computado neste período com os filtros atuais.');
-      return;
+    if (!hasData) {
+        alert('Nenhum colaborador computado neste período com os filtros atuais.');
+        return;
     }
 
-    exportData.sort((a, b) => a['Nome do Colaborador'].localeCompare(b['Nome do Colaborador']));
+    const wsResumo = XLSX.utils.json_to_sheet(resumoData);
+    // Ajusta o tamanho das colunas do resumo
+    wsResumo['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(workbook, wsResumo, "1. Resumo Macro");
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Quadro de Pessoal");
-    
-    XLSX.writeFile(workbook, `Quadro_Pessoal_${startDate}_ate_${endDate}.xlsx`);
+    // 2. ABAS INDIVIDUAIS POR SETOR
+    Object.keys(headcountData).forEach(sector => {
+        const empList = headcountData[sector].list;
+        
+        if (empList.length > 0) {
+            // Ordena alfabeticamente
+            const sortedList = [...empList].sort((a, b) => a.name.localeCompare(b.name));
+
+            const sectorData = sortedList.map(emp => ({
+                'Nome do Colaborador': emp.name,
+                'Cargo Atual': emp.role,
+                'Status no Período': emp.snapshotStatus === 'Afastado' ? 'Afastado' : 'Ativo',
+                'Data de Admissão': formatDateToBR(emp.admissionDate),
+                'Desligamento (se houver)': emp.terminationDate ? formatDateToBR(emp.terminationDate) : '-'
+            }));
+
+            const wsSector = XLSX.utils.json_to_sheet(sectorData);
+            
+            // Estética: Ajusta a largura das colunas da aba do setor
+            wsSector['!cols'] = [
+                { wch: 40 }, // Nome
+                { wch: 35 }, // Cargo
+                { wch: 20 }, // Status
+                { wch: 20 }, // Admissao
+                { wch: 25 }, // Desligamento
+            ];
+
+            // Limpa o nome da aba para não dar erro no Excel (max 31 caracteres e sem símbolos inválidos)
+            const safeSheetName = sector.replace(/[\\/?*[\]:]/g, '').substring(0, 31);
+            XLSX.utils.book_append_sheet(workbook, wsSector, safeSheetName);
+        }
+    });
+
+    XLSX.writeFile(workbook, `Quadro_FTE_${startDate}_ate_${endDate}.xlsx`);
   };
 
   const handleDownloadTemplate = () => {
@@ -320,7 +355,7 @@ export const QuadroPessoal: React.FC = () => {
             className="flex items-center gap-2 bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
           >
             <FileSpreadsheet size={18} />
-            Exportar Nominal
+            Exportar Excel
           </button>
           <button 
             onClick={handleDownloadTemplate}
