@@ -106,7 +106,6 @@ export const Colaboradores: React.FC = () => {
     return dateStr;
   };
 
-  // Verifica se a pessoa que está no formulário está sendo retornada de um afastamento
   const originalEmpForForm = useMemo(() => employees.find((e: Employee) => e.id === formData.id), [employees, formData.id]);
   const isReturningFromLeave = originalEmpForForm?.status === 'Afastado' && formData.status === 'Ativo';
 
@@ -137,59 +136,85 @@ export const Colaboradores: React.FC = () => {
        return;
     }
 
-    // --- LÓGICA DE AFASTAMENTO NO HISTÓRICO ---
-    const originalEmp = employees.find((emp: Employee) => emp.id === formData.id);
-    let updatedHistory = [...(formData.history || [])];
+    const { actualReturnDate, leaveStartDate, leaveExpectedReturn, leaveReason, ...safeFormData } = formData;
     
-    let cleanLeaveData = { 
-      leaveStartDate: formData.leaveStartDate, 
-      leaveExpectedReturn: formData.leaveExpectedReturn, 
-      leaveReason: formData.leaveReason 
+    const originalEmp = employees.find((emp: Employee) => emp.id === safeFormData.id);
+    let updatedHistory = [...(safeFormData.history || [])];
+    
+    let finalLeaveData = { 
+      leaveStartDate: leaveStartDate || '', 
+      leaveExpectedReturn: leaveExpectedReturn || '', 
+      leaveReason: leaveReason || '' 
     };
 
-    // 1. Detecta se está SENDO afastado agora
-    if (formData.status === 'Afastado' && originalEmp?.status !== 'Afastado') {
+    const isNewEmployee = !originalEmp;
+
+    // --- NOVA LÓGICA: REGISTRO AUTOMÁTICO DE MUDANÇAS GERAIS ---
+    if (!isNewEmployee) {
+       const todayIso = new Date().toISOString().split('T')[0];
+       let changes = [];
+
+       if (originalEmp.sector !== safeFormData.sector) changes.push(`Setor (${originalEmp.sector || '-'} ➔ ${safeFormData.sector})`);
+       if (originalEmp.role !== safeFormData.role) changes.push(`Cargo (${originalEmp.role || '-'} ➔ ${safeFormData.role})`);
+       if (originalEmp.unit !== safeFormData.unit) changes.push(`Unidade (${originalEmp.unit || '-'} ➔ ${safeFormData.unit})`);
+       if (originalEmp.contractType !== safeFormData.contractType) changes.push(`Regime (${originalEmp.contractType || '-'} ➔ ${safeFormData.contractType})`);
+       
+       const oldSchedule = (originalEmp as any).workSchedule;
+       const newSchedule = safeFormData.workSchedule;
+       if (oldSchedule !== newSchedule && (oldSchedule || newSchedule)) {
+           changes.push(`Horário (${oldSchedule || '-'} ➔ ${newSchedule || '-'})`);
+       }
+
+       if (changes.length > 0) {
+           updatedHistory.push({
+               id: crypto.randomUUID(),
+               date: todayIso,
+               type: 'Mudança de Setor', // Pode usar isso como tipo genérico para mudanças estruturais
+               description: `[ALTERAÇÃO CADASTRAL] ${changes.join(' | ')} | Setor: ${safeFormData.sector} | Cargo: ${safeFormData.role}`,
+               createdBy: user?.name || 'Sistema'
+           });
+       }
+    }
+
+    // --- LÓGICA DE AFASTAMENTO NO HISTÓRICO ---
+    if (safeFormData.status === 'Afastado' && originalEmp?.status !== 'Afastado') {
        updatedHistory.push({
           id: crypto.randomUUID(),
-          date: formData.leaveStartDate || new Date().toISOString().split('T')[0],
+          date: leaveStartDate || new Date().toISOString().split('T')[0],
           type: 'Outros',
-          description: `[INÍCIO DE AFASTAMENTO] Motivo: ${formData.leaveReason || 'Não informado'} | Retorno Previsto: ${formData.leaveExpectedReturn ? formatDateToBRLocal(formData.leaveExpectedReturn) : 'Indeterminado'}`,
+          description: `[INÍCIO DE AFASTAMENTO] Motivo: ${leaveReason || 'Não informado'} | Retorno Previsto: ${leaveExpectedReturn ? formatDateToBRLocal(leaveExpectedReturn) : 'Indeterminado'}`,
           createdBy: user?.name || 'Sistema'
        });
     }
 
-    // 2. Detecta se está RETORNANDO de afastamento (Com caixinha amarela mantida para correção)
-    if (formData.status === 'Ativo' && originalEmp?.status === 'Afastado') {
-       if (!formData.actualReturnDate) {
+    if (safeFormData.status === 'Ativo' && originalEmp?.status === 'Afastado') {
+       if (!actualReturnDate) {
           alert("Por favor, informe a Data Efetiva do Retorno do afastamento na caixinha verde.");
           return;
        }
 
-       // Salva a data retroativa preenchida no input
        updatedHistory.push({
           id: crypto.randomUUID(),
-          date: formData.actualReturnDate, // DATA RETROATIVA VEM DAQUI
+          date: actualReturnDate, 
           type: 'Outros',
-          description: `[FIM DE AFASTAMENTO] Colaborador retornou às atividades. (Afastamento de ${formatDateToBRLocal(formData.leaveStartDate)} até ${formatDateToBRLocal(formData.actualReturnDate)} - Motivo: ${formData.leaveReason})`,
+          description: `[FIM DE AFASTAMENTO] Colaborador retornou às atividades. (Afastamento de ${formatDateToBRLocal(leaveStartDate)} até ${formatDateToBRLocal(actualReturnDate)} - Motivo: ${leaveReason})`,
           createdBy: user?.name || 'Sistema'
        });
        
-       cleanLeaveData = { leaveStartDate: '', leaveExpectedReturn: '', leaveReason: '' };
+       finalLeaveData = { leaveStartDate: '', leaveExpectedReturn: '', leaveReason: '' };
     }
 
     const employeeData = {
-      ...formData,
-      ...cleanLeaveData,
+      ...safeFormData,
+      ...finalLeaveData,
       terminationReason: finalTerminationReason,
-      id: formData.id || crypto.randomUUID(),
+      id: safeFormData.id || crypto.randomUUID(),
       hasPendingInfo: false,
-      createdAt: formData.createdAt || new Date().toISOString(),
+      createdAt: safeFormData.createdAt || new Date().toISOString(),
       history: updatedHistory
     } as Employee;
 
-    delete (employeeData as any).actualReturnDate;
-
-    if (formData.id) {
+    if (safeFormData.id) {
       await updateEmployee(employeeData);
     } else {
       await addEmployee(employeeData);
