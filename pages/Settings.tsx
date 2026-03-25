@@ -24,9 +24,8 @@ export const SettingsPage: React.FC = () => {
     users, addUser, user: currentUser, changePassword, adminResetPassword,
     jobs, talents, candidates, employees, addEmployee, updateEmployee, 
     trash, restoreItem, permanentlyDeleteItem 
-  } = useData() as any; // Usando any para facilitar o bypass de tipagens temporárias durante o refatoramento
+  } = useData() as any; 
   
-  // Adicionado CUSTOM_ROLE nas abas
   const [activeTab, setActiveTab] = useState<'SECTOR' | 'UNIT' | 'RESOURCE' | 'CUSTOM_ROLE'>('SECTOR');
   const [newSettingName, setNewSettingName] = useState('');
   
@@ -101,7 +100,6 @@ export const SettingsPage: React.FC = () => {
     return String(dateVal);
   };
 
-  // --- LÓGICA DE EXCEL: EXPORTAR (COM JORNADA E HORÁRIO) ---
   const handleExportEmployeesExcel = () => {
     const activeEmployees = employees.filter((emp: Employee) => emp.status !== 'Inativo');
 
@@ -128,7 +126,6 @@ export const SettingsPage: React.FC = () => {
     XLSX.writeFile(workbook, `MODELO_IMPORT_COLABORADORES.xlsx`);
   };
 
-  // --- LÓGICA DE EXCEL: IMPORTAR ---
   const handleImportEmployeesExcel = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -544,14 +541,15 @@ export const SettingsPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <input required type="password" placeholder="Senha" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                   
-                  {/* SELECT DINÂMICO DE CARGOS NA CRIAÇÃO DE USUÁRIO */}
+                  {/* SELECT DINÂMICO DE CARGOS NA CRIAÇÃO DE USUÁRIO - CORRIGIDO PARA SALVAR dbId */}
                   <select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
                     <optgroup label="Cargos do Sistema">
                        <option value="RECRUITER">Recrutador Padrão</option>
                        <option value="MASTER">Master Admin</option>
                     </optgroup>
                     <optgroup label="Cargos Personalizados">
-                       {customRoles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                       {/* AQUI ESTAVA O ERRO! AGORA SALVA O dbId */}
+                       {customRoles.map((r: any) => <option key={r.dbId} value={r.dbId}>{r.name}</option>)}
                     </optgroup>
                   </select>
                 </div>
@@ -562,9 +560,9 @@ export const SettingsPage: React.FC = () => {
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Users size={18}/> Usuários</h3>
               <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                 {users.map((u: any) => {
-                   // Tenta encontrar o nome amigável do cargo se for customizado
+                   // Busca o nome do cargo usando o dbId agora
                    const isCustom = !['MASTER', 'RECRUITER', 'AUXILIAR_RH', 'RECEPCAO', 'GESTOR'].includes(u.role);
-                   const customRoleName = isCustom ? customRoles.find((r:any) => r.id === u.role)?.name || 'Cargo Excluído' : u.role;
+                   const customRoleName = isCustom ? customRoles.find((r:any) => r.dbId === u.role)?.name || 'Cargo Excluído' : u.role;
 
                    return (
                      <div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600">
