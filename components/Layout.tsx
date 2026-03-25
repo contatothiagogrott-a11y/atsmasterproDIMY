@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, logout, isMockMode } = useData();
+  // Puxamos o hasPermission e a lista de settings (para pegar os nomes de cargos customizados)
+  const { user, logout, isMockMode, hasPermission, settings } = useData() as any;
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -39,20 +40,46 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  // --- REGRAS DE PERMISSÃO ---
+  // --- O NOVO MOTOR DE PERMISSÕES DINÂMICAS ---
+  // Em vez de checar hardcoded (isMaster, isAuxiliar), perguntamos para a função hasPermission se o usuário 
+  // tem pelo menos o nível 'VIEW' (Ver Apenas) naquele módulo.
+  const canViewDashboard = hasPermission('DASHBOARD', 'VIEW');
+  const canViewVagas = hasPermission('VAGAS', 'VIEW');
+  const canViewEntrevistasGerais = hasPermission('ENTREVISTAS_GERAIS', 'VIEW');
+  const canViewColaboradores = hasPermission('COLABORADORES', 'VIEW');
+  const canViewQuadroPessoal = hasPermission('QUADRO_PESSOAL', 'VIEW');
+  const canViewExperiencia = hasPermission('EXPERIENCIA_DESLIGAMENTO', 'VIEW');
+  const canViewSettings = hasPermission('CONFIGURACOES', 'VIEW');
+  
+  // Agrupamentos lógicos baseados no legado:
+  // Se ele pode ver vagas OU entrevistas gerais, a aba "Recrutamento" aparece.
+  const canViewRecrutamento = canViewVagas || canViewEntrevistasGerais; 
+  
+  // Absenteísmo, Reuniões e Aniversariantes mantemos com regras parecidas ao legado para não quebrar 
+  // (Pode ajustar para serem dinâmicas no futuro se quiser)
   const isMaster = user?.role === 'MASTER';
   const isAuxiliar = user?.role === 'AUXILIAR_RH';
-  const isRecruiter = user?.role === 'RECRUITER';
   const isRecepcao = user?.role === 'RECEPCAO'; 
-  
-  const canViewRecrutamento = isMaster || isRecruiter; 
+
   const canViewAbsenteismo = isMaster || isAuxiliar;
-  const canViewColaboradores = isMaster; 
-  
-  const canViewExperiencia = isMaster || isRecruiter; 
   const canViewReunioes = !isRecepcao; 
   const canViewAniversariantes = true; 
-  const canViewSettings = !isRecepcao;
+
+  const isGestaoSectionVisible = canViewColaboradores || canViewExperiencia || canViewAbsenteismo || canViewReunioes || canViewAniversariantes;
+
+  // Tenta encontrar o nome do cargo (Role) para exibir no menu abaixo do nome
+  const getDisplayRole = () => {
+    if (user?.role === 'MASTER') return 'Administrador';
+    if (user?.role === 'RECRUITER') return 'Recrutador';
+    if (user?.role === 'AUXILIAR_RH') return 'Auxiliar de RH';
+    if (user?.role === 'RECEPCAO') return 'Recepção';
+    
+    // Se for customizado, procura no settings
+    const customRole = settings?.find((s:any) => s.type === 'CUSTOM_ROLE' && s.id === user?.role);
+    if (customRole) return customRole.name;
+    
+    return 'Usuário'; // Fallback
+  };
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
@@ -70,10 +97,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
         <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto custom-scrollbar">
           
-          <Link to="/" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/') && location.pathname === '/' ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
-            <LayoutDashboard size={20} />
-            <span className="font-semibold">Dashboard</span>
-          </Link>
+          {canViewDashboard && (
+            <Link to="/" className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive('/') && location.pathname === '/' ? 'bg-blue-600/10 text-blue-700 shadow-sm border border-blue-100' : 'text-slate-600 hover:bg-white/50 hover:text-blue-600'}`}>
+              <LayoutDashboard size={20} />
+              <span className="font-semibold">Dashboard</span>
+            </Link>
+          )}
 
           {/* === MENU EXPANSÍVEL: RECRUTAMENTO E SELEÇÃO === */}
           {canViewRecrutamento && (
@@ -88,42 +117,54 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               
               {isRecrutamentoOpen && (
                 <div className="mt-1 space-y-1 border-l-2 border-slate-100 ml-4 pl-2">
-                  <Link to="/jobs" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/jobs') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
-                    <Briefcase size={18} />
-                    <span>Vagas</span>
-                  </Link>
+                  
+                  {canViewVagas && (
+                    <>
+                      <Link to="/jobs" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/jobs') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                        <Briefcase size={18} />
+                        <span>Vagas</span>
+                      </Link>
+                      
+                      <Link to="/talent-pool" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/talent-pool') || isActive('/talents') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                        <Users size={18} />
+                        <span>Banco de Talentos</span>
+                      </Link>
+                    </>
+                  )}
 
-                  <Link to="/general-interviews" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/general-interviews') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
-                    <ClipboardList size={18} />
-                    <span>Entrevistas Gerais</span>
-                  </Link>
+                  {canViewEntrevistasGerais && (
+                    <Link to="/general-interviews" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/general-interviews') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                      <ClipboardList size={18} />
+                      <span>Entrevistas Gerais</span>
+                    </Link>
+                  )}
 
-                  <Link to="/talent-pool" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/talent-pool') || isActive('/talents') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
-                    <Users size={18} />
-                    <span>Banco de Talentos</span>
-                  </Link>
+                  {/* Esses 3 continuam amarrados à permissão de ver as Vagas para manter o legado */}
+                  {canViewVagas && (
+                    <>
+                      <Link to="/integracao" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/integracao') ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 text-sm'}`}>
+                        <UserPlus size={18} />
+                        <span>Integração (Admissão)</span>
+                      </Link>
 
-                  <Link to="/integracao" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/integracao') ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 text-sm'}`}>
-                    <UserPlus size={18} />
-                    <span>Integração (Admissão)</span>
-                  </Link>
+                      <Link to="/reports" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/reports') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                        <BarChart size={18} />
+                        <span>Relatórios & SLA</span>
+                      </Link>
 
-                  <Link to="/reports" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/reports') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
-                    <BarChart size={18} />
-                    <span>Relatórios & SLA</span>
-                  </Link>
-
-                  <Link to="/strategic-report" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/strategic-report') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
-                    <BarChart size={18} />
-                    <span>Relatório Estratégico</span>
-                  </Link>
+                      <Link to="/strategic-report" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/strategic-report') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                        <BarChart size={18} />
+                        <span>Relatório Estratégico</span>
+                      </Link>
+                    </>
+                  )}
                 </div>
               )}
             </div>
           )}
 
           {/* === MENU EXPANSÍVEL: GESTÃO DE PESSOAS === */}
-          {(canViewAbsenteismo || canViewColaboradores || canViewExperiencia || canViewReunioes || canViewAniversariantes) && (
+          {isGestaoSectionVisible && (
             <div className="pt-2 pb-1">
               <button 
                 onClick={() => setIsGestaoOpen(!isGestaoOpen)}
@@ -143,8 +184,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     </Link>
                   )}
 
-                  {/* NOVO LINK: QUADRO DE PESSOAL (SÓ PARA MASTER) */}
-                  {isMaster && (
+                  {canViewQuadroPessoal && (
                     <Link to="/quadro" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/quadro') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600 text-sm'}`}>
                       <Users size={18} />
                       <span>Quadro de Pessoal (FTE)</span>
@@ -159,31 +199,29 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   )}
 
                   {canViewAbsenteismo && (
-                    <Link to="/setores" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/setores') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600 text-sm'}`}>
-                      <Building2 size={18} />
-                      <span>Setores</span>
-                    </Link>
-                  )}
-
-                  {canViewAbsenteismo && (
-                    <Link to="/absenteismo" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
-                      <CalendarX size={18} />
-                      <span>Absenteísmo</span>
-                    </Link>
-                  )}
-
-                  {canViewExperiencia && (
-                    <Link to="/experiencia" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/experiencia') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
-                      <CalendarClock size={18} />
-                      <span>Acomp. de Experiência</span>
-                    </Link>
+                    <>
+                      <Link to="/setores" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/setores') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600 text-sm'}`}>
+                        <Building2 size={18} />
+                        <span>Setores</span>
+                      </Link>
+                      <Link to="/absenteismo" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                        <CalendarX size={18} />
+                        <span>Absenteísmo</span>
+                      </Link>
+                    </>
                   )}
 
                   {canViewExperiencia && (
-                    <Link to="/desligamentos" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/desligamentos') ? 'bg-rose-50 text-rose-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-rose-600 text-sm'}`}>
-                      <UserMinus size={18} />
-                      <span>Entrev. Desligamento</span>
-                    </Link>
+                    <>
+                      <Link to="/experiencia" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/experiencia') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                        <CalendarClock size={18} />
+                        <span>Acomp. de Experiência</span>
+                      </Link>
+                      <Link to="/desligamentos" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/desligamentos') ? 'bg-rose-50 text-rose-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-rose-600 text-sm'}`}>
+                        <UserMinus size={18} />
+                        <span>Entrev. Desligamento</span>
+                      </Link>
+                    </>
                   )}
 
                   {canViewReunioes && (
@@ -198,7 +236,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
           )}
 
-          {/* SÓ MOSTRA CONFIGURAÇÕES SE NÃO FOR RECEPÇÃO */}
           {canViewSettings && (
             <>
               <div className="pt-4 pb-1">
@@ -217,8 +254,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <UserCircle className="text-slate-400" size={36} />
             <div className="overflow-hidden">
               <p className="text-sm font-bold text-slate-800 truncate">{user?.name}</p>
+              {/* Função nova chamada aqui para pegar o nome correto do cargo do banco */}
               <p className="text-xs text-slate-500 capitalize font-medium truncate">
-                {user?.role === 'MASTER' ? 'Administrador' : user?.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : user?.role === 'RECEPCAO' ? 'Recepção' : 'Recrutador'}
+                {getDisplayRole()}
               </p>
             </div>
           </div>

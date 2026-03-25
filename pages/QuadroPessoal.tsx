@@ -11,9 +11,13 @@ export const QuadroPessoal: React.FC = () => {
   const { user, employees = [], updateEmployee, settings = [], addSetting, updateSetting } = useData() as any;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  if (user?.role !== 'MASTER') {
+  // Permite que MASTER e GESTOR acessem a tela
+  if (user?.role !== 'MASTER' && user?.role !== 'GESTOR') {
     return <Navigate to="/" replace />;
   }
+
+  // Cria uma variável para bloquear os botões de edição do Gestor
+  const canEdit = user?.role === 'MASTER';
 
   // --- ESTADOS DE PERÍODO CUSTOMIZÁVEL ---
   const [startDate, setStartDate] = useState(() => {
@@ -72,8 +76,11 @@ export const QuadroPessoal: React.FC = () => {
       const adDate = formatToYMD(emp.admissionDate);
       const termDate = formatToYMD(emp.terminationDate);
 
+      // REGRA 1 (ADMISSÃO): Foi admitido DEPOIS da Data Final selecionada? 
       if (adDate && adDate > endDate) return; 
 
+      // REGRA 2 (DEMISSÃO): Foi demitido ANTES da Data Final?
+      // O quadro FTE tira a fotografia do último dia do período. Se a pessoa saiu antes, a cadeira abriu!
       if (termDate && termDate < endDate) return; 
 
       let snapshotSector = emp.sector || 'Sem Setor';
@@ -84,6 +91,7 @@ export const QuadroPessoal: React.FC = () => {
       }
 
       if (emp.history && emp.history.length > 0) {
+          // Filtra o histórico ATÉ a Data Final do período
           const pastEvents = emp.history
               .filter((h: any) => h.date <= endDate)
               .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -355,22 +363,26 @@ export const QuadroPessoal: React.FC = () => {
             className="flex items-center gap-2 bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
           >
             <FileSpreadsheet size={18} />
-            Exportar Excel
+            Exportar Nominal
           </button>
-          <button 
-            onClick={handleDownloadTemplate}
-            className="flex items-center gap-2 bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
-          >
-            <Download size={18} />
-            Baixar Modelo
-          </button>
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
-          >
-            <UploadCloud size={18} />
-            Subir Histórico
-          </button>
+          {canEdit && (
+            <>
+              <button 
+                onClick={handleDownloadTemplate}
+                className="flex items-center gap-2 bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
+              >
+                <Download size={18} />
+                Baixar Modelo
+              </button>
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-4 py-2.5 rounded-xl font-bold transition-all shadow-sm text-sm"
+              >
+                <UploadCloud size={18} />
+                Subir Histórico
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -412,15 +424,20 @@ export const QuadroPessoal: React.FC = () => {
         </div>
 
         <div>
-          {isEditing ? (
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors">Cancelar</button>
-              <button onClick={handleSaveBudget} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"><Save size={18}/> Salvar Orçamento</button>
-            </div>
-          ) : (
-            <button onClick={handleEditClick} className="px-6 py-2 bg-white border border-slate-200 hover:border-indigo-300 text-indigo-600 font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all">
-              <Edit3 size={18}/> Editar Orçamento (FTE)
-            </button>
+          {canEdit && (
+            isEditing ? (
+              <div className="flex flex-wrap gap-2">
+                <button onClick={handleCopyPreviousMonth} className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl transition-colors flex items-center gap-2 border border-indigo-200" title="Puxar as vagas orçadas do mês anterior">
+                  <Copy size={18}/> <span className="hidden sm:inline">Copiar Mês Anterior</span>
+                </button>
+                <button onClick={() => setIsEditing(false)} className="px-6 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-xl transition-colors">Cancelar</button>
+                <button onClick={handleSaveBudget} className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition-all active:scale-95"><Save size={18}/> Salvar Orçamento</button>
+              </div>
+            ) : (
+              <button onClick={handleEditClick} className="px-6 py-2 bg-white border border-slate-200 hover:border-indigo-300 text-indigo-600 font-bold rounded-xl shadow-sm flex items-center gap-2 transition-all">
+                <Edit3 size={18}/> Editar Orçamento (FTE)
+              </button>
+            )
           )}
         </div>
       </div>

@@ -1,24 +1,61 @@
-export type UserRole = 'MASTER' | 'RECRUITER' | 'AUXILIAR_RH' | 'RECEPCAO';
+// ==========================================
+// 1. PERMISSÕES DINÂMICAS E ACESSO (O NOVO MOTOR)
+// ==========================================
+export type AppModule = 
+  | 'COLABORADORES' 
+  | 'VAGAS' 
+  | 'QUADRO_PESSOAL' 
+  | 'ENTREVISTAS_GERAIS'
+  | 'EXPERIENCIA_DESLIGAMENTO'
+  | 'CONFIGURACOES'
+  | 'DASHBOARD';
+
+export type PermissionLevel = 
+  | 'NONE'       // Não vê nem a página
+  | 'VIEW'       // Só visualiza (Read-only)
+  | 'EDIT_BASIC' // Cria e edita o básico (Não deleta, não vê campos sigilosos/salário)
+  | 'EDIT_FULL'; // Acesso total àquela página (Pode tudo, inclusive deletar)
+
+export interface RoleConfig {
+  id: string;
+  name: string; // Ex: 'Líder de Vendas', 'Assistente DP'
+  description?: string;
+  permissions: Record<AppModule, PermissionLevel>;
+  isSystemRole?: boolean; // Trava para não deletar os cargos base do sistema
+}
+
+// ==========================================
+// USUÁRIOS (MANTIDO E EXPANDIDO)
+// ==========================================
+export type UserRole = 'MASTER' | 'RECRUITER' | 'AUXILIAR_RH' | 'RECEPCAO' | 'GESTOR';
 
 export interface User {
   id: string;
   username: string;
   password?: string;
   name: string;
-  role: UserRole;
+  // A role agora aceita a string fixa antiga OU um ID dinâmico que vem das configurações
+  role: UserRole | string; 
+  roleId?: string; // Aponta para a RoleConfig
   createdBy?: string;
 }
 
-// ADICIONADO: 'RESOURCE' para gerir os recursos de TI nas configurações
-export type SettingType = 'SECTOR' | 'UNIT' | 'SYSTEM_TEMPLATE' | 'RESOURCE' | 'HEADCOUNT_BUDGET';
+// ==========================================
+// CONFIGURAÇÕES GERAIS
+// ==========================================
+// ADICIONADO: 'CUSTOM_ROLE' para gerir os cargos dinâmicos
+export type SettingType = 'SECTOR' | 'UNIT' | 'SYSTEM_TEMPLATE' | 'RESOURCE' | 'HEADCOUNT_BUDGET' | 'CUSTOM_ROLE';
 
 export interface SettingItem {
   id: string;
   name: string;
-  type: SettingType; // <- Agora usa o tipo global expandido
-  value?: string; // Usado para guardar Base64 (ex: Modelos Excel)
+  type: SettingType; 
+  value?: string; // Usado para guardar Base64 ou JSON (ex: Permissões do Custom Role)
 }
 
+// ==========================================
+// VAGAS (JOBS)
+// ==========================================
 export type JobStatus = 'Aberta' | 'Fechada' | 'Congelada' | 'Cancelada';
 
 export interface FreezeEvent {
@@ -51,7 +88,7 @@ export interface Job {
   allowedUserIds?: string[]; // ACL: List of users who can see this if confidential
   openingDetails?: OpeningDetails;
 
-  // ADICIONADO: Integração TI
+  // Integração TI
   resources?: string[]; // Ex: ['Notebook', 'E-mail corporativo']
   accessReference?: string; // Ex: "Espelhar acessos do João"
 
@@ -68,11 +105,13 @@ export interface Job {
   deletedBy?: string; // User ID who performed deletion
 }
 
+// ==========================================
+// CANDIDATOS (RECRUTAMENTO)
+// ==========================================
 export type CandidateOrigin = 'LinkedIn' | 'Instagram' | 'SINE' | 'Busca espontânea' | 'Banco de Talentos' | 'Indicação' | 'Recrutamento Interno';
 
 export type CandidateStatus = 'Aguardando Triagem' | 'Em Teste' | 'Entrevista' | 'Aprovado' | 'Reprovado' | 'Proposta Aceita' | 'Proposta Recusada' | 'Desistência' | 'Contratado'; 
 
-// ContractType para Candidatos (Recrutamento)
 export type CandidateContractType = 'CLT' | 'PJ' | 'Estágio' | 'Temporário' | 'Outros';
 
 export interface CandidateTimeline {
@@ -93,7 +132,7 @@ export interface Candidate {
   age: number;
   phone: string;
   email?: string;
-  city?: string; // New: Location for quick filtering
+  city?: string; // Location for quick filtering
   origin: CandidateOrigin;
   status: CandidateStatus;
   rejectionReason?: string;
@@ -105,10 +144,10 @@ export interface Candidate {
   techTest?: boolean; 
   techTestEvaluator?: string; 
   techTestDate?: string; 
-  techTestResult?: 'Aprovado' | 'Reprovado'; // New field for Tech Test Result
+  techTestResult?: 'Aprovado' | 'Reprovado'; 
   createdAt: string;
 
-  // ADICIONADO: Checklist de Integração do DP / TI
+  // Checklist de Integração do DP / TI
   onboarding?: {
     docsRequested?: boolean;
     docsDelivered?: boolean;
@@ -116,17 +155,17 @@ export interface Candidate {
     needsLabExam?: boolean;
     labExamDate?: string;
     itTicketCreated?: boolean;
-    completed?: boolean; // <--- ADICIONADO PARA FECHAR O CICLO DE INTEGRAÇÃO
+    completed?: boolean; 
   };
 
-  // SLA Metrics (New)
-  firstContactAt?: string; // Date moved from 'Aguardando' to active
-  lastInteractionAt?: string; // Date of last edit/note
+  // SLA Metrics
+  firstContactAt?: string; 
+  lastInteractionAt?: string; 
 
-  // Audit Trail (New)
-  rejectedBy?: string; // Name of user who rejected
-  rejectionDate?: string; // Date of rejection
-  testApprovalDate?: string; // Date technical test was approved
+  // Audit Trail
+  rejectedBy?: string; 
+  rejectionDate?: string; 
+  testApprovalDate?: string; 
 
   // Origin Details
   isReferral?: boolean;
@@ -146,6 +185,9 @@ export interface Candidate {
   deletedAt?: string;
 }
 
+// ==========================================
+// BANCO DE TALENTOS
+// ==========================================
 export interface Education {
   institution: string;
   level: string;
@@ -177,7 +219,6 @@ export interface TalentProfile {
   transportation?: TransportType;
   needsReview?: boolean;
   observations?: string[];
-  // Soft Delete
   deletedAt?: string;
 }
 
@@ -193,7 +234,7 @@ export interface KPI {
 }
 
 // ==========================================
-// NOVAS INTERFACES: ABSENTEÍSMO
+// ABSENTEÍSMO
 // ==========================================
 export type DocumentType = 'Atestado' | 'Declaração' | 'Acompanhante de Dependente' | 'Falta Injustificada' | 'Licença Prevista em Lei';
 
@@ -201,12 +242,9 @@ export interface AbsenceRecord {
   id: string;
   employeeName: string;
   absenceDate: string; 
-  documentDuration: string; // Mantido para não quebrar registros antigos
-  
-  // NOVOS CAMPOS:
+  documentDuration: string; 
   durationUnit?: 'Dias' | 'Horas'; 
   durationAmount?: number;
-  
   documentType: DocumentType;
   reason: string; 
   companionName?: string;
@@ -216,7 +254,7 @@ export interface AbsenceRecord {
 }
 
 // ==========================================
-// NOVAS INTERFACES: EXPERIÊNCIA E eNPS
+// EXPERIÊNCIA E eNPS
 // ==========================================
 export type ProbationType = '45+45' | '30+60' | 'Nenhum';
 
@@ -224,73 +262,36 @@ export interface ExperienceInterview {
   id: string;
   interviewDate: string;
   period: '1º Período' | '2º Período' | 'Desligamento';
-  
-  // --- FOTOGRAFIA DO MOMENTO (SNAPSHOT) ---
   employeeRole?: string;
   employeeSector?: string;
   employeeUnit?: string;
-  
-  // Avaliações de 1 a 4 e eNPS Oficial
-  qRecommend?: number; // <--- ADICIONADO: Nota de 0 a 10 para o eNPS
+  qRecommend?: number; 
   qLeader: number;
   qColleagues: number;
   qTraining: number;
   qJobSatisfaction: number;
   qCompanySatisfaction: number;
   qBenefits: number;
-  
-  // Perguntas Abertas
   trainerName: string;
   comments: string;
-  
-  // Auditoria
   interviewerName: string;
 }
 
 // ==========================================
-// NOVAS INTERFACES: COLABORADORES
+// COLABORADORES
 // ==========================================
 export type EmployeeStatus = 'Ativo' | 'Inativo' | 'Afastado';
 
-// Regime de contratação para Colaboradores (Gestão)
 export type ContractType = 'CLT' | 'PJ' | 'Estagiário' | 'JA';
 
 export type EmployeeHistoryType = 'Promoção' | 'Mudança de Setor' | 'Afastamento' | 'Desligamento' | 'Outros';
 
 export interface EmployeeHistoryRecord {
   id: string;
-  date: string; // ISO Date
+  date: string; 
   type: EmployeeHistoryType;
   description: string;
-  createdBy?: string; // Quem registrou o histórico
-}
-
-// ==========================================
-// NOVAS INTERFACES: ENTREVISTA DE DESLIGAMENTO
-// ==========================================
-export interface ExitInterview {
-  id: string;
-  interviewDate: string;
-  reason: string; 
-  reasonObservation?: string; 
-  
-  colleaguesRating: number; // 4=Ótimo, 3=Bom, 2=Regular, 1=Péssimo
-  
-  leaderName: string;
-  leaderRating: number;
-  
-  trainerName: string;
-  trainingRating: number;
-  
-  growthRating: number;
-  salaryRating: number;
-  benefitsRating: number;
-  jobSatisfactionRating: number;
-  
-  additionalComments?: string;
-  interviewerName: string;
-  
-  didNotRespond?: boolean; // Caso o colaborador não queira responder
+  createdBy?: string; 
 }
 
 export interface Employee {
@@ -305,17 +306,12 @@ export interface Employee {
   status: EmployeeStatus;
   contractType: ContractType;
   hasPendingInfo?: boolean;
-
-  // NOVO: Jornada e dias trabalhados
-  dailyWorkload?: number; // Ex: 8.8 para CLT normal, 6.0 para Estagiário
-  workDays?: number[]; // <--- ADICIONADO: Array com dias da semana (ex: [1,2,3,4,5] para Seg-Sex)
-
-  // --- NOVOS CAMPOS PARA EXPERIÊNCIA E DESLIGAMENTO ---
+  dailyWorkload?: number; 
+  workDays?: number[]; 
   probationType?: ProbationType; 
   experienceInterviews?: ExperienceInterview[];
-  exitInterview?: ExitInterview; // <--- ADICIONADO AQUI: Entrevista de desligamento atrelada ao perfil
-
-  terminationDate?: string; // Para o cálculo de turnover dos setores
+  exitInterview?: ExitInterview; 
+  terminationDate?: string; 
   terminationReason?: string;
   leaveReason?: string;
   leaveExpectedReturn?: string;
@@ -325,7 +321,29 @@ export interface Employee {
 }
 
 // ==========================================
-// NOVAS INTERFACES: CAFÉS E REUNIÕES
+// ENTREVISTA DE DESLIGAMENTO
+// ==========================================
+export interface ExitInterview {
+  id: string;
+  interviewDate: string;
+  reason: string; 
+  reasonObservation?: string; 
+  colleaguesRating: number; 
+  leaderName: string;
+  leaderRating: number;
+  trainerName: string;
+  trainingRating: number;
+  growthRating: number;
+  salaryRating: number;
+  benefitsRating: number;
+  jobSatisfactionRating: number;
+  additionalComments?: string;
+  interviewerName: string;
+  didNotRespond?: boolean; 
+}
+
+// ==========================================
+// CAFÉS E REUNIÕES
 // ==========================================
 export type MeetingType = 'Reunião' | 'Treinamento' | 'Integração' | 'Coffee Break' | 'Outros';
 
@@ -335,8 +353,8 @@ export interface MeetingEvent {
   type?: MeetingType;         
   instructor?: string;        
   date: string;         
-  time: string;               // Hora Início
-  endTime?: string;           // Hora Fim
+  time: string;               
+  endTime?: string;           
   location: string;     
   requirements: string; 
   participantCount: number; 

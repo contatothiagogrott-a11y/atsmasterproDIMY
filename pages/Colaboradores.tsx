@@ -28,6 +28,9 @@ const WEEK_DAYS = [
 export const Colaboradores: React.FC = () => {
   const { employees = [], addEmployee, updateEmployee, removeEmployee, settings = [], absences = [], user } = useData() as any;
   
+  // --- CONTROLE DE ACESSO (MASTER / GESTOR) ---
+  const canEdit = ['MASTER', 'RECRUITER'].includes(user?.role);
+
   const [view, setView] = useState<'list' | 'form' | 'details'>('list');
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   
@@ -435,7 +438,8 @@ export const Colaboradores: React.FC = () => {
           </div>
         </div>
         
-        {view === 'list' && (
+        {/* BOTÕES DE AÇÃO OCULTOS PARA GESTORES */}
+        {view === 'list' && canEdit && (
           <div className="flex flex-wrap gap-2">
             <button 
                 onClick={handleSyncWorkDays}
@@ -551,10 +555,14 @@ export const Colaboradores: React.FC = () => {
                         {emp.contractType || 'CLT'}
                       </div>
                     </div>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => handleEdit(emp)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 size={16}/></button>
-                      <button onClick={() => removeEmployee(emp.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>
-                    </div>
+                    
+                    {/* BOTÕES DE EDIÇÃO NO CARD OCULTOS PARA GESTOR */}
+                    {canEdit && (
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => handleEdit(emp)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 size={16}/></button>
+                        <button onClick={() => removeEmployee(emp.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={16}/></button>
+                      </div>
+                    )}
                   </div>
                   
                   <h3 className="font-bold text-slate-800 text-lg mb-1 truncate">{emp.name}</h3>
@@ -602,7 +610,7 @@ export const Colaboradores: React.FC = () => {
         </>
       )}
 
-      {view === 'form' && (
+      {view === 'form' && canEdit && (
         <div className="max-w-4xl mx-auto animate-in fade-in zoom-in-95">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -938,12 +946,16 @@ export const Colaboradores: React.FC = () => {
                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
                   <History className="text-blue-600" /> Histórico Funcional
                 </h3>
-                <button 
-                  onClick={() => setShowEventForm(!showEventForm)} 
-                  className="text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors"
-                >
-                  <Plus size={16} /> Novo Evento
-                </button>
+                
+                {/* BOTÃO NOVO EVENTO OCULTO PARA GESTOR */}
+                {canEdit && (
+                  <button 
+                    onClick={() => setShowEventForm(!showEventForm)} 
+                    className="text-sm bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors"
+                  >
+                    <Plus size={16} /> Novo Evento
+                  </button>
+                )}
               </div>
 
               {showEventForm && (
@@ -1006,8 +1018,8 @@ export const Colaboradores: React.FC = () => {
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${item.isAbsence ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{item.type || 'Falta'}</span>
                       </div>
                       
-                      {/* BOTOES DE EDICAO PARA EVENTOS MANUAIS */}
-                      {!item.isAbsence && (
+                      {/* BOTOES DE EDICAO PARA EVENTOS MANUAIS - OCULTOS PARA GESTOR */}
+                      {!item.isAbsence && canEdit && (
                         <div className="flex items-center gap-2">
                           <button onClick={() => handleEditHistoryEvent(item)} className="text-slate-400 hover:text-blue-600 transition-colors" title="Editar Evento"><Edit2 size={14}/></button>
                           <button onClick={() => handleDeleteHistoryEvent(item.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Excluir Evento"><Trash2 size={14}/></button>

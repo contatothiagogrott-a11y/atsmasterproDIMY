@@ -1,6 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom'; 
-import { User, Job, Candidate, TalentProfile, SettingItem, AbsenceRecord, Employee, MeetingEvent } from '../types'; // <--- MeetingEvent adicionado
+import { 
+  User, Job, Candidate, TalentProfile, SettingItem, 
+  AbsenceRecord, Employee, MeetingEvent, 
+  AppModule, PermissionLevel // <-- ADICIONADO: Novos tipos de permissão
+} from '../types';
 
 interface DataContextType {
   user: User | null;
@@ -10,6 +14,9 @@ interface DataContextType {
   changePassword: (currentPass: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   adminResetPassword: (targetUserId: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   
+  // --- O MOTOR DE PERMISSÕES DINÂMICAS ---
+  hasPermission: (module: AppModule, minLevel: PermissionLevel) => boolean;
+
   users: User[];
   addUser: (u: User) => Promise<void>;
   updateUser: (u: User) => Promise<void>;
@@ -46,7 +53,6 @@ interface DataContextType {
   updateEmployee: (e: Employee) => Promise<void>;
   removeEmployee: (id: string) => Promise<void>;
 
-  // --- NOVA SESSÃO: REUNIÕES ---
   meetings: MeetingEvent[];
   addMeeting: (m: MeetingEvent) => Promise<void>;
   updateMeeting: (m: MeetingEvent) => Promise<void>;
@@ -58,7 +64,7 @@ interface DataContextType {
 
   refreshData: () => Promise<void>;
   loading: boolean;
-  isMockMode?: boolean; // Para evitar erro de tipagem caso use no Layout
+  isMockMode?: boolean; 
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -72,7 +78,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [talents, setTalents] = useState<TalentProfile[]>([]);
   const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]); 
-  const [meetings, setMeetings] = useState<MeetingEvent[]>([]); // <--- NOVO ESTADO
+  const [meetings, setMeetings] = useState<MeetingEvent[]>([]); 
   const [trash, setTrash] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
@@ -100,7 +106,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.candidates) setCandidates(data.candidates);
       if (data.absences) setAbsences(data.absences);
       if (data.employees) setEmployees(data.employees); 
-      if (data.meetings) setMeetings(data.meetings); // <--- CARREGA DO BANCO
+      if (data.meetings) setMeetings(data.meetings); 
       if (data.trash) setTrash(data.trash);
       
     } catch (error) {
@@ -179,6 +185,61 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await addUser({ ...targetUser, password: newPass });
     return { success: true, message: 'Senha resetada com sucesso!' };
   };
+
+  // =========================================================================
+  // MÁQUINA DE PERMISSÕES DINÂMICAS
+  // =========================================================================
+  const hasPermission = (module: AppModule, minLevel: PermissionLevel): boolean => {
+    if (!user) return false;
+
+    // Dicionário de peso: Quanto maior o número, mais poder
+    const weights: Record<PermissionLevel, number> = {
+      'NONE': 0,
+      'VIEW': 1,
+      'EDIT_BASIC': 2,
+      'EDIT_FULL': 3
+    };
+
+    // 1. Regras do Legado (Cargos Nativos do Sistema)
+    if (user.role === 'MASTER') return true; // Master tem acesso ilimitado
+
+    if (user.role === 'RECRUITER') {
+      if (module === 'CONFIGURACOES' || module === 'QUADRO_PESSOAL') return false;
+      return true; // Recrutador é deus no resto
+    }
+
+    if (user.role === 'AUXILIAR_RH') {
+      if (module === 'CONFIGURACOES' || module === 'QUADRO_PESSOAL' || module === 'DASHBOARD') return false;
+      // Auxiliar só pode editar básico no máximo (não exclui nada)
+      return weights['EDIT_BASIC'] >= weights[minLevel];
+    }
+
+    if (user.role === 'RECEPCAO') {
+      if (module === 'ENTREVISTAS_GERAIS') return weights['EDIT_BASIC'] >= weights[minLevel];
+      return false; // Recepção só acessa Entrevistas Gerais
+    }
+
+    // 2. Regras Dinâmicas (Cargos Customizados)
+    // Se o user.role não for nenhum dos de cima, ele é o ID de uma ROLE que o MASTER criou
+    const customRoleSetting = settings.find(s => s.type === 'CUSTOM_ROLE' && s.id === user.role);
+    
+    if (customRoleSetting && customRoleSetting.value) {
+      try {
+        const roleConfig = JSON.parse(customRoleSetting.value);
+        const userModuleLevel = roleConfig.permissions[module] || 'NONE';
+        
+        // Verifica se o nível do cargo da pessoa é maior ou igual ao exigido pela tela
+        return weights[userModuleLevel as PermissionLevel] >= weights[minLevel];
+      } catch (e) {
+        console.error("Erro ao ler permissão dinâmica:", e);
+        return false;
+      }
+    }
+
+    // Fallback de Segurança: Bloqueia o acesso
+    return false;
+  };
+  // =========================================================================
 
   // --- Funções Auxiliares ---
   const saveEntity = async (type: string, item: any) => {
@@ -327,10 +388,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id);
   };
 
-  // --- CRUD REUNIÕES (NOVO) ---
   const addMeeting = async (m: MeetingEvent) => {
     setMeetings(prev => [...prev, m]);
-    await saveEntity('meeting', m); // O servidor deve salvar como arquivo meeting.json ou similar
+    await saveEntity('meeting', m); 
   };
   const updateMeeting = async (m: MeetingEvent) => {
     setMeetings(prev => prev.map(ex => ex.id === m.id ? m : ex));
@@ -345,6 +405,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <DataContext.Provider value={{
       user, login, logout, 
       verifyUserPassword, changePassword, adminResetPassword,
+      hasPermission, // <-- FUNÇÃO EXPOSTA AQUI!
       users, addUser, updateUser, removeUser,
       settings, addSetting, removeSetting, updateSetting, importSettings,
       jobs, addJob, updateJob, removeJob,
@@ -352,7 +413,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       talents, addTalent, removeTalent, updateTalent,
       absences, addAbsence, updateAbsence, removeAbsence,
       employees, addEmployee, updateEmployee, removeEmployee, 
-      meetings, addMeeting, updateMeeting, removeMeeting, // <--- REUNIÕES EXPOSTAS AQUI
+      meetings, addMeeting, updateMeeting, removeMeeting,
       trash, restoreItem, permanentlyDeleteItem,
       refreshData, loading
     }}>

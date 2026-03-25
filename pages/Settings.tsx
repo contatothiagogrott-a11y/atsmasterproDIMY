@@ -3,10 +3,20 @@ import { useData } from '../context/DataContext';
 import { 
   Trash2, Plus, Download, Upload, Edit2, Check, X, Key, ShieldCheck, 
   UserPlus, Users, Save, RotateCcw, FileQuestion, XCircle, 
-  FileSpreadsheet, DownloadCloud, UploadCloud 
+  FileSpreadsheet, DownloadCloud, UploadCloud, Settings, Lock
 } from 'lucide-react';
-import { SettingItem, User, UserRole, Employee, ContractType, EmployeeStatus } from '../types';
+import { SettingItem, User, UserRole, Employee, ContractType, EmployeeStatus, AppModule, PermissionLevel, RoleConfig } from '../types';
 import * as XLSX from 'xlsx';
+
+// Lista de Módulos (Páginas) que podem ser bloqueadas/liberadas
+const APP_MODULES: { id: AppModule, label: string }[] = [
+  { id: 'COLABORADORES', label: 'Lista de Colaboradores' },
+  { id: 'VAGAS', label: 'Gestão de Vagas' },
+  { id: 'QUADRO_PESSOAL', label: 'Quadro FTE / Orçamento' },
+  { id: 'ENTREVISTAS_GERAIS', label: 'Entrevistas Gerais' },
+  { id: 'EXPERIENCIA_DESLIGAMENTO', label: 'Avaliações (Exp. e Desligamento)' },
+  { id: 'DASHBOARD', label: 'Dashboard Geral' },
+];
 
 export const SettingsPage: React.FC = () => {
   const { 
@@ -14,13 +24,13 @@ export const SettingsPage: React.FC = () => {
     users, addUser, user: currentUser, changePassword, adminResetPassword,
     jobs, talents, candidates, employees, addEmployee, updateEmployee, 
     trash, restoreItem, permanentlyDeleteItem 
-  } = useData();
+  } = useData() as any; // Usando any para facilitar o bypass de tipagens temporárias durante o refatoramento
   
-  // A aba RESOURCE foi adicionada para controlar os equipamentos de TI nas Vagas
-  const [activeTab, setActiveTab] = useState<'SECTOR' | 'UNIT' | 'RESOURCE'>('SECTOR');
+  // Adicionado CUSTOM_ROLE nas abas
+  const [activeTab, setActiveTab] = useState<'SECTOR' | 'UNIT' | 'RESOURCE' | 'CUSTOM_ROLE'>('SECTOR');
   const [newSettingName, setNewSettingName] = useState('');
   
-  const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'RECRUITER' as UserRole });
+  const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'RECRUITER' });
   const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
@@ -32,8 +42,16 @@ export const SettingsPage: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
+  // --- ESTADOS DO MODAL DE CARGOS DINÂMICOS ---
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [editingRole, setEditingRole] = useState<RoleConfig | null>(null);
+
   const isMaster = currentUser?.role?.toUpperCase() === 'MASTER';
   const isAuxiliar = currentUser?.role === 'AUXILIAR_RH';
+
+  const customRoles = settings
+    .filter((s: SettingItem) => s.type === 'CUSTOM_ROLE')
+    .map((s: SettingItem) => ({ ...JSON.parse(s.value || '{}'), dbId: s.id }));
 
   const formatToYMD = (dateVal: any) => {
     if (!dateVal) return '';
@@ -124,8 +142,8 @@ export const SettingsPage: React.FC = () => {
         const worksheet = workbook.Sheets[sheetName];
         const json: any[] = XLSX.utils.sheet_to_json(worksheet, { raw: true, defval: '' });
 
-        const activeSectors = settings.filter(s => s.type === 'SECTOR').map(s => s.name.trim().toLowerCase());
-        const activeUnits = settings.filter(s => s.type === 'UNIT').map(s => s.name.trim().toLowerCase());
+        const activeSectors = settings.filter((s:any) => s.type === 'SECTOR').map((s:any) => s.name.trim().toLowerCase());
+        const activeUnits = settings.filter((s:any) => s.type === 'UNIT').map((s:any) => s.name.trim().toLowerCase());
 
         if (confirm(`Deseja processar ${json.length} colaboradores? O sistema irá atualizar os nomes que já existem e criar os novos.`)) {
           let pendingCount = 0;
@@ -277,6 +295,54 @@ export const SettingsPage: React.FC = () => {
       setNewSettingName(''); 
     } 
   };
+
+  // --- LÓGICA PARA SALVAR UM CARGO PERSONALIZADO (CUSTOM ROLE) ---
+  const handleSaveRole = async () => {
+    if (!editingRole?.name.trim()) {
+      alert("O nome do cargo é obrigatório.");
+      return;
+    }
+    
+    const roleDataStr = JSON.stringify({
+      id: editingRole.id,
+      name: editingRole.name,
+      description: editingRole.description,
+      permissions: editingRole.permissions
+    });
+
+    if ((editingRole as any).dbId) {
+      await updateSetting({ id: (editingRole as any).dbId, name: editingRole.name, type: 'CUSTOM_ROLE', value: roleDataStr });
+    } else {
+      await addSetting({ id: crypto.randomUUID(), name: editingRole.name, type: 'CUSTOM_ROLE', value: roleDataStr });
+    }
+
+    setIsRoleModalOpen(false);
+    setEditingRole(null);
+  };
+
+  const handleDeleteRole = async (dbId: string) => {
+    if(confirm("ATENÇÃO: Se houver usuários usando este cargo, eles perderão o acesso. Deseja excluir este cargo personalizado?")) {
+      await removeSetting(dbId);
+    }
+  };
+
+  const openNewRoleModal = () => {
+    setEditingRole({
+      id: crypto.randomUUID(),
+      name: '',
+      description: '',
+      permissions: {
+        'COLABORADORES': 'NONE',
+        'VAGAS': 'NONE',
+        'QUADRO_PESSOAL': 'NONE',
+        'ENTREVISTAS_GERAIS': 'NONE',
+        'EXPERIENCIA_DESLIGAMENTO': 'NONE',
+        'DASHBOARD': 'NONE',
+        'CONFIGURACOES': 'NONE',
+      }
+    });
+    setIsRoleModalOpen(true);
+  };
   
   const handlePasswordChange = async (e: React.FormEvent) => { e.preventDefault(); if (passwordData.new !== passwordData.confirm) { setPasswordMsg({ type: 'error', text: 'A confirmação de senha não coincide.' }); return; } const result = await changePassword(passwordData.current, passwordData.new); if (result.success) { setPasswordMsg({ type: 'success', text: result.message }); setPasswordData({ current: '', new: '', confirm: '' }); } else { setPasswordMsg({ type: 'error', text: result.message }); } };
   const handleAdminReset = async (e: React.FormEvent) => { e.preventDefault(); if (!userToReset) return; if (resetData.new !== resetData.confirm) { setResetMsg({ type: 'error', text: 'As senhas não coincidem.' }); return; } const result = await adminResetPassword(userToReset.id, resetData.new); if (result.success) { setResetMsg({ type: 'success', text: result.message }); setTimeout(() => { setIsResetModalOpen(false); setUserToReset(null); setResetData({ new: '', confirm: '' }); setResetMsg(null); }, 2000); } else { setResetMsg({ type: 'error', text: result.message }); } };
@@ -285,7 +351,7 @@ export const SettingsPage: React.FC = () => {
   const handleCreateUser = async (e: React.FormEvent) => { 
     e.preventDefault(); 
     if(!isMaster) return; 
-    await addUser({ id: crypto.randomUUID(), name: newUser.name, username: newUser.username, password: newUser.password, role: newUser.role, createdBy: currentUser?.id }); 
+    await addUser({ id: crypto.randomUUID(), name: newUser.name, username: newUser.username, password: newUser.password, role: newUser.role as any, createdBy: currentUser?.id }); 
     setNewUser({ name: '', username: '', password: '', role: 'RECRUITER' }); 
     alert('Usuário criado com sucesso!'); 
   };
@@ -345,43 +411,89 @@ export const SettingsPage: React.FC = () => {
            </form>
         </div>
 
-        {/* Setores, Unidades e Recursos */}
+        {/* Setores, Unidades, Recursos e CARGOS */}
         {!isAuxiliar && (
           <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-             <div className="flex gap-6 mb-6 border-b border-slate-100 pb-2">
-               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'SECTOR' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('SECTOR')}>Setores</button>
-               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'UNIT' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('UNIT')}>Unidades</button>
-               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide ${activeTab === 'RESOURCE' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('RESOURCE')}>Recursos (TI)</button>
+             <div className="flex gap-4 mb-6 border-b border-slate-100 pb-2 overflow-x-auto custom-scrollbar">
+               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide whitespace-nowrap ${activeTab === 'SECTOR' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('SECTOR')}>Setores</button>
+               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide whitespace-nowrap ${activeTab === 'UNIT' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('UNIT')}>Unidades</button>
+               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide whitespace-nowrap ${activeTab === 'RESOURCE' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('RESOURCE')}>Recursos TI</button>
+               <button className={`pb-2 font-bold transition-colors text-sm uppercase tracking-wide whitespace-nowrap ${activeTab === 'CUSTOM_ROLE' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600'}`} onClick={() => setActiveTab('CUSTOM_ROLE')}><Lock size={14} className="inline mr-1 mb-0.5"/>Cargos</button>
              </div>
              
-             <form onSubmit={handleAddSetting} className="flex gap-2 mb-4">
-               <input 
-                  type="text" 
-                  className="flex-1 border border-slate-300 p-3 rounded-lg" 
-                  placeholder={`Novo ${activeTab === 'SECTOR' ? 'Setor' : activeTab === 'UNIT' ? 'Unidade' : 'Recurso (Ex: Notebook, Acesso ERP)'}`} 
-                  value={newSettingName} 
-                  onChange={e => setNewSettingName(e.target.value)} 
-                />
-               <button type="submit" className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700"><Plus size={20} /></button>
-             </form>
+             {/* ABA: CONFIGURAÇÕES SIMPLES */}
+             {activeTab !== 'CUSTOM_ROLE' && (
+               <>
+                 <form onSubmit={handleAddSetting} className="flex gap-2 mb-4">
+                   <input 
+                      type="text" 
+                      className="flex-1 border border-slate-300 p-3 rounded-lg" 
+                      placeholder={`Novo ${activeTab === 'SECTOR' ? 'Setor' : activeTab === 'UNIT' ? 'Unidade' : 'Recurso (Ex: Notebook)'}`} 
+                      value={newSettingName} 
+                      onChange={e => setNewSettingName(e.target.value)} 
+                    />
+                   <button type="submit" className="bg-blue-600 text-white p-3 rounded-lg hover:bg-blue-700"><Plus size={20} /></button>
+                 </form>
 
-             <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-               {settings.filter(s => s.type === activeTab).map(item => (
-                 <div key={item.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
-                   {editingId === item.id ? (
-                     <div className="flex flex-1 items-center gap-2"><input className="flex-1 border border-blue-300 p-1.5 rounded text-sm" value={editingName} onChange={e => setEditingName(e.target.value)} autoFocus /><button onClick={() => saveEditing(item)} className="text-green-600"><Check size={18}/></button><button onClick={cancelEditing} className="text-red-500"><X size={18}/></button></div>
-                   ) : (
-                     <>
-                      <span className="text-slate-700 font-medium">{item.name}</span>
-                      <div className="flex gap-2"><button onClick={() => startEditing(item)} className="text-slate-400 hover:text-blue-600"><Edit2 size={18} /></button><button onClick={() => removeSetting(item.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={18} /></button></div>
-                     </>
+                 <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                   {settings.filter((s:any) => s.type === activeTab).map((item:any) => (
+                     <div key={item.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-100">
+                       {editingId === item.id ? (
+                         <div className="flex flex-1 items-center gap-2"><input className="flex-1 border border-blue-300 p-1.5 rounded text-sm" value={editingName} onChange={e => setEditingName(e.target.value)} autoFocus /><button onClick={() => saveEditing(item)} className="text-green-600"><Check size={18}/></button><button onClick={cancelEditing} className="text-red-500"><X size={18}/></button></div>
+                       ) : (
+                         <>
+                          <span className="text-slate-700 font-medium">{item.name}</span>
+                          <div className="flex gap-2"><button onClick={() => startEditing(item)} className="text-slate-400 hover:text-blue-600"><Edit2 size={18} /></button><button onClick={() => removeSetting(item.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={18} /></button></div>
+                         </>
+                       )}
+                     </div>
+                   ))}
+                   {settings.filter((s:any) => s.type === activeTab).length === 0 && (
+                      <p className="text-sm text-slate-400 italic py-4">Nenhum item cadastrado nesta categoria.</p>
                    )}
                  </div>
-               ))}
-               {settings.filter(s => s.type === activeTab).length === 0 && (
-                  <p className="text-sm text-slate-400 italic py-4">Nenhum item cadastrado nesta categoria.</p>
-               )}
-             </div>
+               </>
+             )}
+
+             {/* ABA: CARGOS PERSONALIZADOS */}
+             {activeTab === 'CUSTOM_ROLE' && (
+               <>
+                 <div className="flex justify-between items-center mb-4">
+                    <p className="text-xs text-slate-500">Crie perfis de acesso customizados.</p>
+                    <button onClick={openNewRoleModal} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 hover:bg-blue-700 transition-colors"><Plus size={16}/> Novo Cargo</button>
+                 </div>
+                 
+                 <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                   {/* Cargos Padrões que não podem ser editados aqui (Apenas ilustrativo) */}
+                   <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg border border-slate-200 opacity-60 cursor-not-allowed">
+                      <span className="text-slate-800 font-bold text-sm">MASTER <span className="font-normal text-xs ml-2 text-slate-500">(Sistema)</span></span>
+                      <Lock size={16} className="text-slate-400"/>
+                   </div>
+                   <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg border border-slate-200 opacity-60 cursor-not-allowed">
+                      <span className="text-slate-800 font-bold text-sm">RECRUITER <span className="font-normal text-xs ml-2 text-slate-500">(Sistema)</span></span>
+                      <Lock size={16} className="text-slate-400"/>
+                   </div>
+
+                   {/* Cargos Customizados do Banco */}
+                   {customRoles.map((role: any) => (
+                     <div key={role.id} className="flex justify-between items-center p-3 bg-white rounded-lg border border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
+                        <div>
+                          <span className="text-slate-700 font-bold text-sm block">{role.name}</span>
+                          <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{role.description || 'Sem descrição'}</span>
+                        </div>
+                        <div className="flex gap-2">
+                           <button onClick={() => { setEditingRole(role); setIsRoleModalOpen(true); }} className="text-slate-400 hover:text-blue-600 p-1.5"><Edit2 size={16} /></button>
+                           <button onClick={() => handleDeleteRole(role.dbId)} className="text-slate-400 hover:text-red-500 p-1.5"><Trash2 size={16} /></button>
+                        </div>
+                     </div>
+                   ))}
+                   
+                   {customRoles.length === 0 && (
+                      <p className="text-sm text-slate-400 italic py-4 text-center border border-dashed border-slate-200 rounded-lg mt-2">Nenhum cargo customizado. Crie um para limitar acessos de gerentes ou auxiliares.</p>
+                   )}
+                 </div>
+               </>
+             )}
           </div>
         )}
       </div>
@@ -425,14 +537,22 @@ export const SettingsPage: React.FC = () => {
             <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><UserPlus size={18}/> Novo Usuário</h3>
               <form onSubmit={handleCreateUser} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4"><input required placeholder="Nome" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} /><input required placeholder="Login" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} /></div>
+                <div className="grid grid-cols-2 gap-4">
+                   <input required placeholder="Nome" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                   <input required placeholder="Login" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <input required type="password" placeholder="Senha" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-                  <select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}>
-                    <option value="RECRUITER">Recrutador</option>
-                    <option value="MASTER">Master Admin</option>
-                    <option value="AUXILIAR_RH">Auxiliar de RH</option>
-                    <option value="RECEPCAO">Recepção</option>
+                  
+                  {/* SELECT DINÂMICO DE CARGOS NA CRIAÇÃO DE USUÁRIO */}
+                  <select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
+                    <optgroup label="Cargos do Sistema">
+                       <option value="RECRUITER">Recrutador Padrão</option>
+                       <option value="MASTER">Master Admin</option>
+                    </optgroup>
+                    <optgroup label="Cargos Personalizados">
+                       {customRoles.map((r: any) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </optgroup>
                   </select>
                 </div>
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-lg">Criar Usuário</button>
@@ -441,15 +561,21 @@ export const SettingsPage: React.FC = () => {
             <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Users size={18}/> Usuários</h3>
               <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                {users.map(u => (
-                  <div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600">
-                    <div>
-                      <div className="font-bold text-slate-200">{u.name}</div>
-                      <div className="text-xs text-slate-400">@{u.username} • {u.role === 'AUXILIAR_RH' ? 'Auxiliar de RH' : u.role === 'RECEPCAO' ? 'Recepção' : u.role}</div>
-                    </div>
-                    <button onClick={() => openResetModal(u)} className="text-xs bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-white">Resetar</button>
-                  </div>
-                ))}
+                {users.map((u: any) => {
+                   // Tenta encontrar o nome amigável do cargo se for customizado
+                   const isCustom = !['MASTER', 'RECRUITER', 'AUXILIAR_RH', 'RECEPCAO', 'GESTOR'].includes(u.role);
+                   const customRoleName = isCustom ? customRoles.find((r:any) => r.id === u.role)?.name || 'Cargo Excluído' : u.role;
+
+                   return (
+                     <div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600">
+                       <div>
+                         <div className="font-bold text-slate-200">{u.name}</div>
+                         <div className="text-xs text-slate-400">@{u.username} • {customRoleName}</div>
+                       </div>
+                       <button onClick={() => openResetModal(u)} className="text-xs bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-white">Resetar</button>
+                     </div>
+                   );
+                })}
               </div>
             </div>
             
@@ -463,7 +589,7 @@ export const SettingsPage: React.FC = () => {
 
               {trash && trash.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {trash.map((item) => (
+                  {trash.map((item: any) => (
                     <div key={item.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 shadow-sm flex flex-col justify-between">
                       <div>
                         <div className="flex justify-between items-start mb-2"><span className="text-xs font-bold uppercase tracking-wider text-slate-300 bg-slate-700 px-2 py-1 rounded">{getTrashTypeLabel(item.originalType)}</span><span className="text-xs text-slate-400">{item.deletedAt ? new Date(item.deletedAt).toLocaleDateString() : ''}</span></div>
@@ -495,6 +621,92 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL GIGANTE DE CONFIGURAÇÃO DE PERMISSÕES DO CARGO */}
+      {isRoleModalOpen && editingRole && (
+         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex justify-center items-center z-[200] p-4 animate-fadeIn">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+               <div className="p-6 border-b border-slate-100 bg-slate-50 rounded-t-3xl flex justify-between items-center shrink-0">
+                  <div>
+                     <h3 className="font-black text-slate-800 uppercase tracking-tighter text-xl flex items-center gap-2">
+                        <Settings className="text-blue-600"/> Matriz de Permissões
+                     </h3>
+                     <p className="text-xs text-slate-500 font-bold mt-1">Configure o nível de acesso em cada tela do sistema.</p>
+                  </div>
+                  <button onClick={() => { setIsRoleModalOpen(false); setEditingRole(null); }} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors"><X size={20} /></button>
+               </div>
+
+               <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Nome do Cargo (Role)</label>
+                        <input 
+                           type="text" 
+                           placeholder="Ex: Gestor Comercial" 
+                           className="w-full border border-slate-300 p-3 rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-500" 
+                           value={editingRole.name} 
+                           onChange={e => setEditingRole({...editingRole, name: e.target.value})} 
+                        />
+                     </div>
+                     <div>
+                        <label className="block text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Descrição Breve</label>
+                        <input 
+                           type="text" 
+                           placeholder="Ex: Só tem acesso para aprovar vagas" 
+                           className="w-full border border-slate-300 p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500" 
+                           value={editingRole.description || ''} 
+                           onChange={e => setEditingRole({...editingRole, description: e.target.value})} 
+                        />
+                     </div>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                     <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-100 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
+                           <tr>
+                              <th className="p-4 w-1/3">Módulo / Tela</th>
+                              <th className="p-4 text-center border-l border-slate-200">Nenhum Acesso</th>
+                              <th className="p-4 text-center border-l border-slate-200">Ver Apenas</th>
+                              <th className="p-4 text-center border-l border-slate-200">Editar (S/ Excluir)</th>
+                              <th className="p-4 text-center border-l border-slate-200 bg-red-50 text-red-700">Controle Total</th>
+                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                           {APP_MODULES.map((module) => (
+                              <tr key={module.id} className="hover:bg-slate-50 transition-colors">
+                                 <td className="p-4 font-bold text-slate-700">{module.label}</td>
+                                 
+                                 <td className="p-4 text-center border-l border-slate-100 cursor-pointer hover:bg-slate-100" onClick={() => setEditingRole({...editingRole, permissions: {...editingRole.permissions, [module.id]: 'NONE'}})}>
+                                    <input type="radio" className="w-4 h-4 cursor-pointer" checked={editingRole.permissions[module.id] === 'NONE'} readOnly />
+                                 </td>
+                                 <td className="p-4 text-center border-l border-slate-100 cursor-pointer hover:bg-blue-50" onClick={() => setEditingRole({...editingRole, permissions: {...editingRole.permissions, [module.id]: 'VIEW'}})}>
+                                    <input type="radio" className="w-4 h-4 cursor-pointer text-blue-600" checked={editingRole.permissions[module.id] === 'VIEW'} readOnly />
+                                 </td>
+                                 <td className="p-4 text-center border-l border-slate-100 cursor-pointer hover:bg-emerald-50" onClick={() => setEditingRole({...editingRole, permissions: {...editingRole.permissions, [module.id]: 'EDIT_BASIC'}})}>
+                                    <input type="radio" className="w-4 h-4 cursor-pointer text-emerald-600" checked={editingRole.permissions[module.id] === 'EDIT_BASIC'} readOnly />
+                                 </td>
+                                 <td className="p-4 text-center border-l border-slate-100 bg-red-50/30 cursor-pointer hover:bg-red-50" onClick={() => setEditingRole({...editingRole, permissions: {...editingRole.permissions, [module.id]: 'EDIT_FULL'}})}>
+                                    <input type="radio" className="w-4 h-4 cursor-pointer text-red-600" checked={editingRole.permissions[module.id] === 'EDIT_FULL'} readOnly />
+                                 </td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+                  <p className="text-xs text-slate-500 italic mt-2 text-center">
+                     * <b className="text-emerald-700">Editar (S/ Excluir)</b>: Permite alterar informações básicas, mas bloqueia o botão de lixeira e informações de salário de colaboradores.<br/>
+                     * <b className="text-red-700">Controle Total</b>: Acesso completo, com poderes administrativos sobre os dados daquela tela.
+                  </p>
+               </div>
+
+               <div className="p-6 border-t border-slate-100 bg-slate-50 rounded-b-3xl flex justify-end gap-3 shrink-0">
+                  <button onClick={() => { setIsRoleModalOpen(false); setEditingRole(null); }} className="px-6 py-2.5 font-bold text-slate-500 hover:bg-slate-200 rounded-xl transition-colors">Cancelar</button>
+                  <button onClick={handleSaveRole} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 rounded-xl font-bold shadow-md transition-all active:scale-95">Salvar Cargo</button>
+               </div>
+            </div>
+         </div>
+      )}
+
     </div>
   );
 };
