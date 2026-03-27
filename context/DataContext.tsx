@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { 
   User, Job, Candidate, TalentProfile, SettingItem, 
   AbsenceRecord, Employee, MeetingEvent, 
-  AppModule, PermissionLevel // <-- ADICIONADO: Novos tipos de permissão
+  AppModule, PermissionLevel 
 } from '../types';
 
 interface DataContextType {
@@ -20,7 +20,7 @@ interface DataContextType {
   users: User[];
   addUser: (u: User) => Promise<void>;
   updateUser: (u: User) => Promise<void>;
-  removeUser: (id: string) => Promise<void>;
+  removeUser: (id: string) => Promise<void>; // <-- AGORA IMPLEMENTADO
 
   settings: SettingItem[];
   addSetting: (s: SettingItem) => Promise<void>;
@@ -220,7 +220,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // 2. Regras Dinâmicas (Cargos Customizados)
-    // Se o user.role não for nenhum dos de cima, ele é o ID de uma ROLE que o MASTER criou
     const customRoleSetting = settings.find(s => s.type === 'CUSTOM_ROLE' && s.id === user.role);
     
     if (customRoleSetting && customRoleSetting.value) {
@@ -228,7 +227,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const roleConfig = JSON.parse(customRoleSetting.value);
         const userModuleLevel = roleConfig.permissions[module] || 'NONE';
         
-        // Verifica se o nível do cargo da pessoa é maior ou igual ao exigido pela tela
         return weights[userModuleLevel as PermissionLevel] >= weights[minLevel];
       } catch (e) {
         console.error("Erro ao ler permissão dinâmica:", e);
@@ -236,7 +234,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Fallback de Segurança: Bloqueia o acesso
     return false;
   };
   // =========================================================================
@@ -302,7 +299,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) { console.error("Erro ao salvar usuário:", error); }
   };
   const updateUser = (u: User) => addUser(u);
-  const removeUser = async (id: string) => { console.warn("Not implemented"); };
+  
+  // <-- CÓDIGO CORRIGIDO: Agora deleta o usuário de verdade sem dar reload!
+  const removeUser = async (id: string) => {
+    setUsers(prev => prev.filter(u => u.id !== id));
+    await deleteEntity(id);
+  };
 
   const addSetting = async (s: SettingItem) => {
     setSettings(prev => [...prev, s]); 
@@ -405,7 +407,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     <DataContext.Provider value={{
       user, login, logout, 
       verifyUserPassword, changePassword, adminResetPassword,
-      hasPermission, // <-- FUNÇÃO EXPOSTA AQUI!
+      hasPermission,
       users, addUser, updateUser, removeUser,
       settings, addSetting, removeSetting, updateSetting, importSettings,
       jobs, addJob, updateJob, removeJob,

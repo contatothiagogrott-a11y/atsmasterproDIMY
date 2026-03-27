@@ -8,7 +8,6 @@ import {
 import { SettingItem, User, UserRole, Employee, ContractType, EmployeeStatus, AppModule, PermissionLevel, RoleConfig } from '../types';
 import * as XLSX from 'xlsx';
 
-// Lista de Módulos (Páginas) que podem ser bloqueadas/liberadas
 const APP_MODULES: { id: AppModule, label: string }[] = [
   { id: 'COLABORADORES', label: 'Lista de Colaboradores' },
   { id: 'VAGAS', label: 'Gestão de Vagas' },
@@ -21,9 +20,9 @@ const APP_MODULES: { id: AppModule, label: string }[] = [
 export const SettingsPage: React.FC = () => {
   const { 
     settings, addSetting, removeSetting, updateSetting, 
-    users, addUser, updateUser, user: currentUser, changePassword, adminResetPassword,
+    users, addUser, updateUser, removeUser, user: currentUser, changePassword, adminResetPassword,
     jobs, talents, candidates, employees, addEmployee, 
-    trash, restoreItem, permanentlyDeleteItem 
+    trash, restoreItem, permanentlyDeleteItem, refreshData 
   } = useData() as any; 
   
   const [activeTab, setActiveTab] = useState<'SECTOR' | 'UNIT' | 'RESOURCE' | 'CUSTOM_ROLE'>('SECTOR');
@@ -33,7 +32,6 @@ export const SettingsPage: React.FC = () => {
   const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
-  // Modais de Usuário
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [userToReset, setUserToReset] = useState<User | null>(null);
   const [resetData, setResetData] = useState({ new: '', confirm: '' });
@@ -46,7 +44,6 @@ export const SettingsPage: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
-  // --- ESTADOS DO MODAL DE CARGOS DINÂMICOS ---
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<RoleConfig | null>(null);
 
@@ -249,7 +246,7 @@ export const SettingsPage: React.FC = () => {
             msg += `\n\n⚠️ Atenção: ${pendingCount} colaboradores estão com setor ou unidade pendente (card laranja).`;
           }
           alert(msg);
-          window.location.reload();
+          await refreshData();
         }
       } catch (err) {
         console.error(err);
@@ -298,7 +295,6 @@ export const SettingsPage: React.FC = () => {
     } 
   };
 
-  // --- LÓGICA PARA SALVAR UM CARGO PERSONALIZADO (CUSTOM ROLE) ---
   const handleSaveRole = async () => {
     if (!editingRole?.name.trim()) {
       alert("O nome do cargo é obrigatório.");
@@ -358,7 +354,6 @@ export const SettingsPage: React.FC = () => {
     alert('Usuário criado com sucesso!'); 
   };
 
-  // --- NOVAS FUNÇÕES: EDITAR E EXCLUIR USUÁRIO ---
   const openEditUserModal = (u: User) => {
     setUserToEdit(u);
     setEditUserData({ name: u.name, username: u.username, role: u.role });
@@ -374,6 +369,7 @@ export const SettingsPage: React.FC = () => {
     alert('Usuário atualizado com sucesso!');
   };
 
+  // --- O CÓDIGO CORRIGIDO (SEMPRE USA removeUser DO CONTEXTO) ---
   const handleDeleteUser = async (u: User) => {
     if (u.id === currentUser?.id) {
         alert("Você não pode excluir sua própria conta!");
@@ -381,13 +377,8 @@ export const SettingsPage: React.FC = () => {
     }
     if (confirm(`TEM CERTEZA? Deseja excluir permanentemente o usuário ${u.name}?`)) {
         try {
-            await fetch('/api/main?action=delete-entity', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: u.id, userId: currentUser?.id })
-            });
+            await removeUser(u.id);
             alert('Usuário excluído com sucesso!');
-            window.location.reload(); 
         } catch (error) {
             console.error("Erro ao deletar usuário:", error);
             alert("Erro ao excluir usuário.");
@@ -422,7 +413,12 @@ export const SettingsPage: React.FC = () => {
         const payload = jsonContent.data ? jsonContent.data : jsonContent;
         const response = await fetch('/api/main?action=restore-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data: payload }) });
         const result = await response.json();
-        if (response.ok) { alert('✅ Backup importado com sucesso! A página será recarregada.'); window.location.reload(); } else { alert('❌ Erro ao importar: ' + (result.error || 'Erro desconhecido')); }
+        if (response.ok) { 
+            alert('✅ Backup importado com sucesso!'); 
+            await refreshData();
+        } else { 
+            alert('❌ Erro ao importar: ' + (result.error || 'Erro desconhecido')); 
+        }
       } catch (error) { console.error(error); alert('Erro ao processar arquivo. Verifique se é um JSON válido.'); }
     };
     reader.readAsText(file);
