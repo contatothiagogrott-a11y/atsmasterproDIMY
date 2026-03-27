@@ -21,8 +21,8 @@ const APP_MODULES: { id: AppModule, label: string }[] = [
 export const SettingsPage: React.FC = () => {
   const { 
     settings, addSetting, removeSetting, updateSetting, 
-    users, addUser, user: currentUser, changePassword, adminResetPassword,
-    jobs, talents, candidates, employees, addEmployee, updateEmployee, 
+    users, addUser, updateUser, user: currentUser, changePassword, adminResetPassword,
+    jobs, talents, candidates, employees, addEmployee, 
     trash, restoreItem, permanentlyDeleteItem 
   } = useData() as any; 
   
@@ -33,10 +33,15 @@ export const SettingsPage: React.FC = () => {
   const [passwordData, setPasswordData] = useState({ current: '', new: '', confirm: '' });
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
+  // Modais de Usuário
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [userToReset, setUserToReset] = useState<User | null>(null);
   const [resetData, setResetData] = useState({ new: '', confirm: '' });
   const [resetMsg, setResetMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  const [isEditUserModalOpen, setIsEditUserModalOpen] = useState(false);
+  const [userToEdit, setUserToEdit] = useState<User | null>(null);
+  const [editUserData, setEditUserData] = useState({ name: '', username: '', role: '' });
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
@@ -353,6 +358,43 @@ export const SettingsPage: React.FC = () => {
     alert('Usuário criado com sucesso!'); 
   };
 
+  // --- NOVAS FUNÇÕES: EDITAR E EXCLUIR USUÁRIO ---
+  const openEditUserModal = (u: User) => {
+    setUserToEdit(u);
+    setEditUserData({ name: u.name, username: u.username, role: u.role });
+    setIsEditUserModalOpen(true);
+  };
+
+  const handleEditUserSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userToEdit) return;
+    await updateUser({ ...userToEdit, name: editUserData.name, username: editUserData.username, role: editUserData.role as any });
+    setIsEditUserModalOpen(false);
+    setUserToEdit(null);
+    alert('Usuário atualizado com sucesso!');
+  };
+
+  const handleDeleteUser = async (u: User) => {
+    if (u.id === currentUser?.id) {
+        alert("Você não pode excluir sua própria conta!");
+        return;
+    }
+    if (confirm(`TEM CERTEZA? Deseja excluir permanentemente o usuário ${u.name}?`)) {
+        try {
+            await fetch('/api/main?action=delete-entity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: u.id, userId: currentUser?.id })
+            });
+            alert('Usuário excluído com sucesso!');
+            window.location.reload(); 
+        } catch (error) {
+            console.error("Erro ao deletar usuário:", error);
+            alert("Erro ao excluir usuário.");
+        }
+    }
+  };
+
   const handleExportBackup = () => {
     const backupData = {
       metadata: { version: "1.1", exportedAt: new Date().toISOString(), exportedBy: currentUser?.name },
@@ -461,7 +503,7 @@ export const SettingsPage: React.FC = () => {
                  </div>
                  
                  <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                   {/* Cargos Padrões que não podem ser editados aqui (Apenas ilustrativo) */}
+                   {/* Cargos Padrões */}
                    <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg border border-slate-200 opacity-60 cursor-not-allowed">
                       <span className="text-slate-800 font-bold text-sm">MASTER <span className="font-normal text-xs ml-2 text-slate-500">(Sistema)</span></span>
                       <Lock size={16} className="text-slate-400"/>
@@ -471,7 +513,7 @@ export const SettingsPage: React.FC = () => {
                       <Lock size={16} className="text-slate-400"/>
                    </div>
 
-                   {/* Cargos Customizados do Banco */}
+                   {/* Cargos Customizados */}
                    {customRoles.map((role: any) => (
                      <div key={role.id} className="flex justify-between items-center p-3 bg-white rounded-lg border border-slate-200 shadow-sm hover:border-blue-300 transition-colors">
                         <div>
@@ -541,14 +583,14 @@ export const SettingsPage: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <input required type="password" placeholder="Senha" className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
                   
-                  {/* SELECT DINÂMICO DE CARGOS NA CRIAÇÃO DE USUÁRIO - CORRIGIDO PARA SALVAR dbId */}
                   <select className="bg-slate-700 border-slate-600 text-white rounded-lg p-2.5" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
                     <optgroup label="Cargos do Sistema">
                        <option value="RECRUITER">Recrutador Padrão</option>
                        <option value="MASTER">Master Admin</option>
+                       <option value="AUXILIAR_RH">Auxiliar de RH</option>
+                       <option value="RECEPCAO">Recepção</option>
                     </optgroup>
                     <optgroup label="Cargos Personalizados">
-                       {/* AQUI ESTAVA O ERRO! AGORA SALVA O dbId */}
                        {customRoles.map((r: any) => <option key={r.dbId} value={r.dbId}>{r.name}</option>)}
                     </optgroup>
                   </select>
@@ -556,21 +598,27 @@ export const SettingsPage: React.FC = () => {
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-lg">Criar Usuário</button>
               </form>
             </div>
+            
             <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
               <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2"><Users size={18}/> Usuários</h3>
               <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
                 {users.map((u: any) => {
-                   // Busca o nome do cargo usando o dbId agora
                    const isCustom = !['MASTER', 'RECRUITER', 'AUXILIAR_RH', 'RECEPCAO', 'GESTOR'].includes(u.role);
                    const customRoleName = isCustom ? customRoles.find((r:any) => r.dbId === u.role)?.name || 'Cargo Excluído' : u.role;
 
                    return (
-                     <div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600">
-                       <div>
-                         <div className="font-bold text-slate-200">{u.name}</div>
-                         <div className="text-xs text-slate-400">@{u.username} • {customRoleName}</div>
+                     <div key={u.id} className="flex justify-between items-center p-3 bg-slate-700/50 rounded-lg border border-slate-600 group">
+                       <div className="overflow-hidden pr-2">
+                         <div className="font-bold text-slate-200 truncate">{u.name}</div>
+                         <div className="text-xs text-slate-400 truncate">@{u.username} • {customRoleName}</div>
                        </div>
-                       <button onClick={() => openResetModal(u)} className="text-xs bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded text-white">Resetar</button>
+                       
+                       {/* BOTÕES DE AÇÃO DO USUÁRIO */}
+                       <div className="flex gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
+                         <button onClick={() => openEditUserModal(u)} className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors" title="Editar Usuário"><Edit2 size={16}/></button>
+                         <button onClick={() => openResetModal(u)} className="p-1.5 text-amber-400 hover:bg-amber-500/20 rounded-lg transition-colors" title="Resetar Senha"><Key size={16}/></button>
+                         <button onClick={() => handleDeleteUser(u)} className="p-1.5 text-red-400 hover:bg-red-500/20 rounded-lg transition-colors" title="Excluir Usuário"><Trash2 size={16}/></button>
+                       </div>
                      </div>
                    );
                 })}
@@ -605,7 +653,7 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal de Reset */}
+      {/* Modal de Reset de Senha */}
       {isResetModalOpen && userToReset && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
@@ -615,6 +663,45 @@ export const SettingsPage: React.FC = () => {
               <div><label className="block text-sm font-bold text-slate-500 mb-1">Nova Senha</label><input autoFocus required type="password" className="w-full border border-slate-300 p-2.5 rounded-lg" value={resetData.new} onChange={e => setResetData({...resetData, new: e.target.value})} /></div>
               <div><label className="block text-sm font-bold text-slate-500 mb-1">Confirmar</label><input required type="password" className="w-full border border-slate-300 p-2.5 rounded-lg" value={resetData.confirm} onChange={e => setResetData({...resetData, confirm: e.target.value})} /></div>
               <div className="flex gap-3 mt-6"><button type="button" onClick={() => setIsResetModalOpen(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-lg">Cancelar</button><button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg">Salvar</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE EDITAR USUÁRIO */}
+      {isEditUserModalOpen && userToEdit && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Edit2 size={20} className="text-blue-600" /> Editar Usuário
+            </h3>
+            <form onSubmit={handleEditUserSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">Nome Completo</label>
+                <input required className="w-full border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={editUserData.name} onChange={e => setEditUserData({...editUserData, name: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">Login (Username)</label>
+                <input required className="w-full border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={editUserData.username} onChange={e => setEditUserData({...editUserData, username: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-500 mb-1">Cargo (Role)</label>
+                <select className="w-full border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white" value={editUserData.role} onChange={e => setEditUserData({...editUserData, role: e.target.value})}>
+                  <optgroup label="Cargos do Sistema">
+                      <option value="RECRUITER">Recrutador Padrão</option>
+                      <option value="MASTER">Master Admin</option>
+                      <option value="AUXILIAR_RH">Auxiliar de RH</option>
+                      <option value="RECEPCAO">Recepção</option>
+                  </optgroup>
+                  <optgroup label="Cargos Personalizados">
+                      {customRoles.map((r: any) => <option key={r.dbId} value={r.dbId}>{r.name}</option>)}
+                  </optgroup>
+                </select>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button type="button" onClick={() => setIsEditUserModalOpen(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-lg transition-colors">Cancelar</button>
+                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg transition-colors shadow-md">Salvar Alterações</button>
+              </div>
             </form>
           </div>
         </div>
