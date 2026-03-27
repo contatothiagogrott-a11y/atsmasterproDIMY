@@ -96,7 +96,7 @@ export default async function handler(request: any, response: any) {
       if (data.candidates) for (const item of data.candidates) await insertEntity('candidate', item);
       if (data.absences) for (const item of data.absences) await insertEntity('absence', item);
       if (data.employees) for (const item of data.employees) await insertEntity('employee', item);
-      if (data.meetings) for (const item of data.meetings) await insertEntity('meeting', item); // <--- ADICIONADO REUNIÕES
+      if (data.meetings) for (const item of data.meetings) await insertEntity('meeting', item); 
       
       // Restaurar Lixeira
       if (data.trash) {
@@ -129,7 +129,7 @@ export default async function handler(request: any, response: any) {
         const candidates = active('candidate');
         const absences = active('absence');
         const employees = active('employee'); 
-        const meetings = active('meeting'); // <--- ADICIONADO REUNIÕES AQUI
+        const meetings = active('meeting'); 
 
         const trash = rawEntities
           .filter((e: any) => e.deleted_at !== null)
@@ -141,13 +141,12 @@ export default async function handler(request: any, response: any) {
           }));
 
         return response.status(200).json({ 
-          users, settings, jobs, talents, candidates, absences, employees, meetings, trash // <--- ADICIONADO meetings NO RETORNO
+          users, settings, jobs, talents, candidates, absences, employees, meetings, trash 
         });
 
       } catch (err: any) {
         if (err.code === '42P01' || err.message?.includes('does not exist')) {
            await initTables(sql);
-           // Também incluído fallback vazio para meetings aqui:
            return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], absences: [], employees: [], meetings: [], trash: [] });
         }
         throw err;
@@ -164,20 +163,33 @@ export default async function handler(request: any, response: any) {
       return response.status(200).json({ valid: false });
     }
 
+    // --- 3. SAVE USER ---
     if (action === 'save-user') {
       const user = request.body;
       let hashedPassword = user.password;
       if (user.password && !user.password.startsWith('$2a$')) { 
         hashedPassword = await bcrypt.hash(user.password, 10);
       }
-      const role = user.role ? user.role.toUpperCase() : 'USER';
+      
+      // O React envia a nova data de deleção lógica quando queremos fazer soft delete
+      const deletedAt = user.deletedAt ? new Date(user.deletedAt) : null;
 
       await sql`
-        INSERT INTO users (id, username, password, name, role, created_by)
-        VALUES (${user.id || crypto.randomUUID()}, ${user.username}, ${hashedPassword}, ${user.name}, ${role}, ${user.created_by || null})
+        INSERT INTO users (id, username, password, name, role, created_by, deleted_at)
+        VALUES (${user.id || crypto.randomUUID()}, ${user.username}, ${hashedPassword}, ${user.name}, ${user.role}, ${user.created_by || null}, ${deletedAt})
         ON CONFLICT (id) DO UPDATE SET
-        username = EXCLUDED.username, password = EXCLUDED.password, name = EXCLUDED.name, role = EXCLUDED.role
+        username = EXCLUDED.username, password = EXCLUDED.password, name = EXCLUDED.name, role = EXCLUDED.role, deleted_at = EXCLUDED.deleted_at
       `;
+      return response.status(200).json({ success: true });
+    }
+
+    // --- 4. ROTA EXCLUSIVA PARA DELETAR USUÁRIO ---
+    if (action === 'delete-user') {
+      const { id } = request.body;
+      
+      // Faz o Soft Delete apenas na tabela de usuários
+      await sql`UPDATE users SET deleted_at = NOW() WHERE id = ${id}`;
+      
       return response.status(200).json({ success: true });
     }
 
