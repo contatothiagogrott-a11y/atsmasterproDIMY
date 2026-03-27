@@ -20,7 +20,7 @@ interface DataContextType {
   users: User[];
   addUser: (u: User) => Promise<void>;
   updateUser: (u: User) => Promise<void>;
-  removeUser: (id: string) => Promise<void>; // <-- AGORA IMPLEMENTADO
+  removeUser: (id: string) => Promise<void>; // <-- CORRIGIDO AQUI
 
   settings: SettingItem[];
   addSetting: (s: SettingItem) => Promise<void>;
@@ -220,6 +220,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     // 2. Regras Dinâmicas (Cargos Customizados)
+    // Se o user.role não for nenhum dos de cima, ele é o ID de uma ROLE que o MASTER criou
     const customRoleSetting = settings.find(s => s.type === 'CUSTOM_ROLE' && s.id === user.role);
     
     if (customRoleSetting && customRoleSetting.value) {
@@ -227,6 +228,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const roleConfig = JSON.parse(customRoleSetting.value);
         const userModuleLevel = roleConfig.permissions[module] || 'NONE';
         
+        // Verifica se o nível do cargo da pessoa é maior ou igual ao exigido pela tela
         return weights[userModuleLevel as PermissionLevel] >= weights[minLevel];
       } catch (e) {
         console.error("Erro ao ler permissão dinâmica:", e);
@@ -234,6 +236,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
+    // Fallback de Segurança: Bloqueia o acesso
     return false;
   };
   // =========================================================================
@@ -252,12 +255,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deleteEntity = async (id: string) => {
+  const deleteEntity = async (id: string, type?: string) => {
     try {
       await fetch('/api/main?action=delete-entity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, userId: user?.id }),
+        // Envia o type caso o servidor exija para saber de qual aba apagar
+        body: JSON.stringify({ id, type, userId: user?.id }), 
       });
       await refreshData();
     } catch (error) {
@@ -299,11 +303,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) { console.error("Erro ao salvar usuário:", error); }
   };
   const updateUser = (u: User) => addUser(u);
-  
-  // <-- CÓDIGO CORRIGIDO: Agora deleta o usuário de verdade sem dar reload!
-  const removeUser = async (id: string) => {
+
+  // --- NOVA FUNÇÃO BLINDADA PARA DELETAR USUÁRIO ---
+  const removeUser = async (id: string) => { 
+    // Remove da tela otimisticamente
     setUsers(prev => prev.filter(u => u.id !== id));
-    await deleteEntity(id);
+    
+    try {
+      // Disparo Duplo: Tenta a rota específica de usuários primeiro
+      await fetch('/api/main?action=delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, userId: user?.id })
+      });
+
+      // Rota de contingência genérica (enviando a instrução de que é do tipo 'user')
+      await fetch('/api/main?action=delete-entity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, type: 'user', userId: user?.id })
+      });
+
+      // Atualiza tudo de forma limpa do banco
+      await refreshData();
+    } catch (error) {
+      console.error("Erro ao deletar usuário no servidor:", error);
+    }
   };
 
   const addSetting = async (s: SettingItem) => {
@@ -316,7 +341,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const removeSetting = async (id: string) => {
     setSettings(prev => prev.filter(i => i.id !== id));
-    await deleteEntity(id);
+    await deleteEntity(id, 'setting');
   };
   const importSettings = async (s: SettingItem[]) => { console.log("Legacy import"); };
 
@@ -331,7 +356,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const removeJob = async (id: string) => {
     setJobs(prev => prev.filter(j => j.id !== id));
-    await deleteEntity(id);
+    await deleteEntity(id, 'job');
   };
 
   const addCandidate = async (c: Candidate) => {
@@ -348,7 +373,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const removeCandidate = async (id: string) => {
     setCandidates(prev => prev.filter(c => c.id !== id));
-    await deleteEntity(id);
+    await deleteEntity(id, 'candidate');
   };
 
   const addTalent = async (t: TalentProfile) => {
@@ -361,7 +386,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const removeTalent = async (id: string) => {
     setTalents(prev => prev.filter(t => t.id !== id));
-    await deleteEntity(id);
+    await deleteEntity(id, 'talent');
   };
 
   const addAbsence = async (a: AbsenceRecord) => {
@@ -374,7 +399,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const removeAbsence = async (id: string) => {
     setAbsences(prev => prev.filter(a => a.id !== id));
-    await deleteEntity(id);
+    await deleteEntity(id, 'absence');
   };
 
   const addEmployee = async (e: Employee) => {
@@ -387,7 +412,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const removeEmployee = async (id: string) => {
     setEmployees(prev => prev.filter(e => e.id !== id));
-    await deleteEntity(id);
+    await deleteEntity(id, 'employee');
   };
 
   const addMeeting = async (m: MeetingEvent) => {
@@ -400,14 +425,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const removeMeeting = async (id: string) => {
     setMeetings(prev => prev.filter(m => m.id !== id));
-    await deleteEntity(id);
+    await deleteEntity(id, 'meeting');
   };
 
   return (
     <DataContext.Provider value={{
       user, login, logout, 
       verifyUserPassword, changePassword, adminResetPassword,
-      hasPermission,
+      hasPermission, // <-- FUNÇÃO EXPOSTA AQUI!
       users, addUser, updateUser, removeUser,
       settings, addSetting, removeSetting, updateSetting, importSettings,
       jobs, addJob, updateJob, removeJob,
