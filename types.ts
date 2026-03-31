@@ -8,7 +8,8 @@ export type AppModule =
   | 'ENTREVISTAS_GERAIS'
   | 'EXPERIENCIA_DESLIGAMENTO'
   | 'CONFIGURACOES'
-  | 'DASHBOARD';
+  | 'DASHBOARD'
+  | 'REFEITORIO'; // <--- ADICIONADO: Novo módulo do Refeitório
 
 export type PermissionLevel = 
   | 'NONE'       // Não vê nem a página
@@ -43,14 +44,14 @@ export interface User {
 // ==========================================
 // CONFIGURAÇÕES GERAIS
 // ==========================================
-// ADICIONADO: 'CUSTOM_ROLE' para gerir os cargos dinâmicos
-export type SettingType = 'SECTOR' | 'UNIT' | 'SYSTEM_TEMPLATE' | 'RESOURCE' | 'HEADCOUNT_BUDGET' | 'CUSTOM_ROLE';
+// ADICIONADO: 'REFEITORIO_PRODUCT' para gerenciar os itens e preços do refeitório
+export type SettingType = 'SECTOR' | 'UNIT' | 'SYSTEM_TEMPLATE' | 'RESOURCE' | 'HEADCOUNT_BUDGET' | 'CUSTOM_ROLE' | 'REFEITORIO_PRODUCT';
 
 export interface SettingItem {
   id: string;
   name: string;
   type: SettingType; 
-  value?: string; // Usado para guardar Base64 ou JSON (ex: Permissões do Custom Role)
+  value?: string; // Usado para guardar Base64 ou JSON (ex: Permissões do Custom Role ou Preço do Produto)
 }
 
 // ==========================================
@@ -360,4 +361,15 @@ export interface MeetingEvent {
   participantCount: number; 
   participantIds?: string[];  
   createdAt: string;
+}
+
+// ==========================================
+// GESTÃO DE REFEITÓRIO (NOVO)
+// ==========================================
+export interface RefeitorioRecord {
+  id: string;
+  date: string; // ISO Date YYYY-MM-DD
+  quantities: Record<string, number>; // Objeto chave-valor onde a chave é o ID do produto e o valor é a quantidade
+  createdAt?: string;
+  updatedAt?: string;
 }

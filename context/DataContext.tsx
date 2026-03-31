@@ -3,7 +3,8 @@ import { useLocation } from 'react-router-dom';
 import { 
   User, Job, Candidate, TalentProfile, SettingItem, 
   AbsenceRecord, Employee, MeetingEvent, 
-  AppModule, PermissionLevel 
+  AppModule, PermissionLevel, 
+  RefeitorioRecord // <-- ADICIONADO AQUI
 } from '../types';
 
 interface DataContextType {
@@ -20,7 +21,7 @@ interface DataContextType {
   users: User[];
   addUser: (u: User) => Promise<void>;
   updateUser: (u: User) => Promise<void>;
-  removeUser: (id: string) => Promise<void>; // <-- CORRIGIDO AQUI
+  removeUser: (id: string) => Promise<void>;
 
   settings: SettingItem[];
   addSetting: (s: SettingItem) => Promise<void>;
@@ -58,6 +59,12 @@ interface DataContextType {
   updateMeeting: (m: MeetingEvent) => Promise<void>;
   removeMeeting: (id: string) => Promise<void>;
 
+  // --- REFEITÓRIO (NOVO) ---
+  refeitorioRecords: RefeitorioRecord[];
+  addRefeitorioRecord: (r: RefeitorioRecord) => Promise<void>;
+  updateRefeitorioRecord: (r: RefeitorioRecord) => Promise<void>;
+  removeRefeitorioRecord: (id: string) => Promise<void>;
+
   trash: any[];
   restoreItem: (id: string) => Promise<void>;
   permanentlyDeleteItem: (id: string) => Promise<void>;
@@ -79,6 +86,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]); 
   const [meetings, setMeetings] = useState<MeetingEvent[]>([]); 
+  const [refeitorioRecords, setRefeitorioRecords] = useState<RefeitorioRecord[]>([]); // <-- ADICIONADO ESTADO
   const [trash, setTrash] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
@@ -99,7 +107,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const data = await response.json();
       
-      if (data.users) setUsers(data.users);
+      if (data.users) {
+        const activeUsers = data.users.filter((u: any) => u.role !== 'DELETED' && !u.deletedAt);
+        setUsers(activeUsers);
+      }
+      
       if (data.settings) setSettings(data.settings);
       if (data.jobs) setJobs(data.jobs);
       if (data.talents) setTalents(data.talents);
@@ -107,6 +119,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.absences) setAbsences(data.absences);
       if (data.employees) setEmployees(data.employees); 
       if (data.meetings) setMeetings(data.meetings); 
+      if (data.refeitorio) setRefeitorioRecords(data.refeitorio); // <-- LÊ OS DADOS DO BANCO
       if (data.trash) setTrash(data.trash);
       
     } catch (error) {
@@ -137,6 +150,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (response.ok) {
         const userData = await response.json();
+        
+        if (userData.role === 'DELETED' || userData.deletedAt) {
+            return false;
+        }
+
         setUser(userData);
         localStorage.setItem('ats_user', JSON.stringify(userData));
         await refreshData();
@@ -186,13 +204,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { success: true, message: 'Senha resetada com sucesso!' };
   };
 
-  // =========================================================================
-  // MÁQUINA DE PERMISSÕES DINÂMICAS
-  // =========================================================================
   const hasPermission = (module: AppModule, minLevel: PermissionLevel): boolean => {
     if (!user) return false;
 
-    // Dicionário de peso: Quanto maior o número, mais poder
     const weights: Record<PermissionLevel, number> = {
       'NONE': 0,
       'VIEW': 1,
@@ -200,27 +214,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       'EDIT_FULL': 3
     };
 
-    // 1. Regras do Legado (Cargos Nativos do Sistema)
-    if (user.role === 'MASTER') return true; // Master tem acesso ilimitado
+    if (user.role === 'MASTER') return true; 
 
     if (user.role === 'RECRUITER') {
       if (module === 'CONFIGURACOES' || module === 'QUADRO_PESSOAL') return false;
-      return true; // Recrutador é deus no resto
+      return true; 
     }
 
     if (user.role === 'AUXILIAR_RH') {
       if (module === 'CONFIGURACOES' || module === 'QUADRO_PESSOAL' || module === 'DASHBOARD') return false;
-      // Auxiliar só pode editar básico no máximo (não exclui nada)
       return weights['EDIT_BASIC'] >= weights[minLevel];
     }
 
     if (user.role === 'RECEPCAO') {
       if (module === 'ENTREVISTAS_GERAIS') return weights['EDIT_BASIC'] >= weights[minLevel];
-      return false; // Recepção só acessa Entrevistas Gerais
+      return false; 
     }
 
-    // 2. Regras Dinâmicas (Cargos Customizados)
-    // Se o user.role não for nenhum dos de cima, ele é o ID de uma ROLE que o MASTER criou
     const customRoleSetting = settings.find(s => s.type === 'CUSTOM_ROLE' && s.id === user.role);
     
     if (customRoleSetting && customRoleSetting.value) {
@@ -228,7 +238,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const roleConfig = JSON.parse(customRoleSetting.value);
         const userModuleLevel = roleConfig.permissions[module] || 'NONE';
         
-        // Verifica se o nível do cargo da pessoa é maior ou igual ao exigido pela tela
         return weights[userModuleLevel as PermissionLevel] >= weights[minLevel];
       } catch (e) {
         console.error("Erro ao ler permissão dinâmica:", e);
@@ -236,12 +245,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Fallback de Segurança: Bloqueia o acesso
     return false;
   };
-  // =========================================================================
 
-  // --- Funções Auxiliares ---
   const saveEntity = async (type: string, item: any) => {
     try {
       await fetch('/api/main?action=save-entity', {
@@ -260,8 +266,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await fetch('/api/main?action=delete-entity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Envia o type caso o servidor exija para saber de qual aba apagar
-        body: JSON.stringify({ id, type, userId: user?.id }), 
+        body: JSON.stringify({ id, type, userId: user?.id }),
       });
       await refreshData();
     } catch (error) {
@@ -291,7 +296,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) { console.error("Erro ao excluir permanentemente:", error); }
   };
 
-  // --- CRUD WRAPPERS ---
   const addUser = async (u: User) => {
     try {
       await fetch('/api/main?action=save-user', {
@@ -304,30 +308,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const updateUser = (u: User) => addUser(u);
 
-  // --- NOVA FUNÇÃO BLINDADA PARA DELETAR USUÁRIO ---
   const removeUser = async (id: string) => { 
-    // Remove da tela otimisticamente
+    const targetUser = users.find(u => u.id === id);
+    if (!targetUser) return;
+
     setUsers(prev => prev.filter(u => u.id !== id));
     
     try {
-      // Disparo Duplo: Tenta a rota específica de usuários primeiro
-      await fetch('/api/main?action=delete-user', {
+      await fetch('/api/main?action=save-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, userId: user?.id })
+        body: JSON.stringify({ ...targetUser, role: 'DELETED', deletedAt: new Date().toISOString() })
       });
-
-      // Rota de contingência genérica (enviando a instrução de que é do tipo 'user')
-      await fetch('/api/main?action=delete-entity', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, type: 'user', userId: user?.id })
-      });
-
-      // Atualiza tudo de forma limpa do banco
       await refreshData();
     } catch (error) {
-      console.error("Erro ao deletar usuário no servidor:", error);
+      console.error("Erro ao realizar soft-delete do usuário:", error);
     }
   };
 
@@ -428,11 +423,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id, 'meeting');
   };
 
+  // --- CRUD WRAPPERS DO REFEITÓRIO ---
+  const addRefeitorioRecord = async (r: RefeitorioRecord) => {
+    setRefeitorioRecords(prev => [...prev, r]);
+    await saveEntity('refeitorio', r); 
+  };
+  const updateRefeitorioRecord = async (r: RefeitorioRecord) => {
+    setRefeitorioRecords(prev => prev.map(ex => ex.id === r.id ? r : ex));
+    await saveEntity('refeitorio', r);
+  };
+  const removeRefeitorioRecord = async (id: string) => {
+    setRefeitorioRecords(prev => prev.filter(r => r.id !== id));
+    await deleteEntity(id, 'refeitorio');
+  };
+
   return (
     <DataContext.Provider value={{
       user, login, logout, 
       verifyUserPassword, changePassword, adminResetPassword,
-      hasPermission, // <-- FUNÇÃO EXPOSTA AQUI!
+      hasPermission, 
       users, addUser, updateUser, removeUser,
       settings, addSetting, removeSetting, updateSetting, importSettings,
       jobs, addJob, updateJob, removeJob,
@@ -441,6 +450,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       absences, addAbsence, updateAbsence, removeAbsence,
       employees, addEmployee, updateEmployee, removeEmployee, 
       meetings, addMeeting, updateMeeting, removeMeeting,
+      refeitorioRecords, addRefeitorioRecord, updateRefeitorioRecord, removeRefeitorioRecord, // <-- EXPOSTO AQUI
       trash, restoreItem, permanentlyDeleteItem,
       refreshData, loading
     }}>
