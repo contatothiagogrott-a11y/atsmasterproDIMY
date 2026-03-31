@@ -22,23 +22,25 @@ import { Aniversariantes } from './pages/Aniversariantes';
 import { Integracao } from './pages/Integracao';
 import { Setores } from './pages/Setores';
 import { Desligamentos } from './pages/Desligamentos';
-import { QuadroPessoal } from './pages/QuadroPessoal'; // <--- IMPORTAÇÃO ADICIONADA
+import { QuadroPessoal } from './pages/QuadroPessoal'; 
+import { GestaoRefeitorio } from './pages/GestaoRefeitorio'; // <--- IMPORTAÇÃO ADICIONADA
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
-  const { user } = useData();
+  const { user } = useData() as any;
   const location = useLocation();
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
+  // --- LÓGICA DE ACESSO LEGADO ---
+  // Identificamos se o usuário possui um dos cargos "Chumbados" no código
   const role = user.role?.toUpperCase();
   const isMaster = role === 'MASTER';
   const isAuxiliar = role === 'AUXILIAR_RH';
   const isRecepcao = role === 'RECEPCAO';
-
-  // --- LÓGICA DE ACESSO ---
+  const isRecruiter = role === 'RECRUITER';
 
   // 1. RECEPÇÃO: Acesso estritamente restrito
   const allowedRecepcaoRoutes = ['/', '/aniversariantes'];
@@ -46,19 +48,21 @@ const ProtectedRoute = () => {
     return <Navigate to="/" replace />;
   }
 
-  // 2. AUXILIAR DE RH: Liberado para Dashboard, Gestão, Configurações e Desligamentos (Quadro de pessoal bloqueado)
-  const allowedAuxiliarRoutes = ['/', '/absenteismo', '/colaboradores', '/reunioes', '/aniversariantes', '/settings', '/setores', '/desligamentos'];
+  // 2. AUXILIAR DE RH: Liberado para Dashboard, Gestão, Configurações e Desligamentos
+  const allowedAuxiliarRoutes = ['/', '/absenteismo', '/colaboradores', '/reunioes', '/aniversariantes', '/settings', '/setores', '/desligamentos', '/refeitorio'];
   if (isAuxiliar && !allowedAuxiliarRoutes.includes(location.pathname)) {
     return <Navigate to="/" replace />;
   }
 
-  // 3. RECRUTADOR: Bloqueado APENAS nas páginas profundas de DP/Gestão e Quadro
-  const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores', '/setores', '/desligamentos', '/quadro']; // <--- ADICIONADO /quadro NO BLOQUEIO
-  if (!isMaster && !isAuxiliar && !isRecepcao && forbiddenRecruiterRoutes.includes(location.pathname)) {
+  // 3. RECRUTADOR PADRÃO: Bloqueado nas páginas profundas de DP/Gestão
+  // NOTA: Mudamos a verificação para focar apenas no 'RECRUITER'. 
+  // Cargos Dinâmicos/Personalizados passarão por aqui e a segurança será feita dentro da própria página!
+  const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores', '/setores', '/desligamentos', '/quadro', '/refeitorio']; 
+  if (isRecruiter && forbiddenRecruiterRoutes.includes(location.pathname)) {
     return <Navigate to="/" replace />;
   }
 
-  // Master passa por aqui sem cair em nenhum IF acima, tendo acesso total.
+  // Master e Cargos Personalizados passam por aqui e renderizam a tela!
   return (
     <Layout>
       <Outlet />
@@ -98,11 +102,12 @@ const App: React.FC = () => {
             <Route path="/aniversariantes" element={<Aniversariantes />} />
             <Route path="/setores" element={<Setores />} />
             <Route path="/desligamentos" element={<Desligamentos />} />
-            <Route path="/quadro" element={<QuadroPessoal />} /> {/* <--- ROTA ADICIONADA */}
+            <Route path="/quadro" element={<QuadroPessoal />} /> 
+            <Route path="/refeitorio" element={<GestaoRefeitorio />} /> {/* <--- ROTA DO REFEITÓRIO ADICIONADA */}
 
           </Route>
 
-          {/* Rota de Segurança */}
+          {/* Rota de Segurança: Se a URL não existir, volta pro Dashboard */}
           <Route path="*" element={<Navigate to="/" replace />} />
           
         </Routes>
