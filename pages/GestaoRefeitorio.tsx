@@ -1,25 +1,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { Calendar as CalendarIcon, Plus, Save, Settings2, Trash2, Edit3, DollarSign, Building2 } from 'lucide-react';
+import { Calendar as CalendarIcon, Plus, Save, Settings2, Trash2, Edit3, DollarSign, Building2, X } from 'lucide-react'; // <--- O "X" AGORA ESTÁ AQUI
 import { SettingItem } from '../types';
 
 export const GestaoRefeitorio: React.FC = () => {
-  // Puxa o motor de permissões e as funções de salvar no BD
   const { 
     user, hasPermission, settings, addSetting, updateSetting, removeSetting,
     refeitorioRecords = [], addRefeitorioRecord, updateRefeitorioRecord 
   } = useData() as any;
 
-  // 1. Trava de Segurança da Rota
   if (!hasPermission('REFEITORIO', 'VIEW')) {
     return <Navigate to="/" replace />;
   }
 
-  // 2. Nível de permissão (Master/RH edita, outros só visualizam)
   const canEdit = hasPermission('REFEITORIO', 'EDIT_BASIC');
 
-  // --- ESTADOS INICIAIS ---
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
@@ -32,12 +28,10 @@ export const GestaoRefeitorio: React.FC = () => {
 
   const [selectedUnit, setSelectedUnit] = useState('Geral');
 
-  // Puxa as Unidades cadastradas nas configurações
   const activeUnits = useMemo(() => {
     return settings.filter((s: SettingItem) => s.type === 'UNIT').map((s: SettingItem) => s.name).sort();
   }, [settings]);
 
-  // --- PRODUTOS DINÂMICOS (VINDOS DO BANCO DE DADOS) ---
   const products = useMemo(() => {
     return settings
       .filter((s: SettingItem) => s.type === 'REFEITORIO_PRODUCT')
@@ -48,16 +42,13 @@ export const GestaoRefeitorio: React.FC = () => {
       .sort((a: any, b: any) => a.name.localeCompare(b.name));
   }, [settings]);
 
-  // --- REGISTROS DIÁRIOS (LÓGICA LOCAL ANTES DE SALVAR) ---
   const [localQuantities, setLocalQuantities] = useState<Record<string, Record<string, number>>>({});
   const [isSaving, setIsSaving] = useState(false);
 
-  // Sincroniza o estado local com o banco de dados SEMPRE que trocar a UNIDADE ou carregar a página
   useEffect(() => {
     const loadedData: Record<string, Record<string, number>> = {};
     
     refeitorioRecords.forEach((record: any) => {
-      // Se o registro for antigo (sem unidade), assumimos 'Geral'
       const recordUnit = record.unit || 'Geral'; 
       
       if (recordUnit === selectedUnit) {
@@ -68,11 +59,9 @@ export const GestaoRefeitorio: React.FC = () => {
     setLocalQuantities(loadedData);
   }, [refeitorioRecords, selectedUnit]);
 
-  // Estados para o Modal de Produtos
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<{id?: string, name: string, unitPrice: number} | null>(null);
 
-  // --- LÓGICA DE DATAS ---
   const daysInRange = useMemo(() => {
     const days: string[] = [];
     const start = new Date(startDate + 'T00:00:00');
@@ -84,7 +73,6 @@ export const GestaoRefeitorio: React.FC = () => {
     return days;
   }, [startDate, endDate]);
 
-  // --- HANDLERS ---
   const handleQuantityChange = (date: string, productId: string, value: string) => {
     if (!canEdit) return;
     const qty = parseInt(value, 10);
@@ -103,28 +91,21 @@ export const GestaoRefeitorio: React.FC = () => {
     return localQuantities[date]?.[productId] || 0;
   };
 
-  // --- SALVAR NO BANCO DE DADOS (AGORA FUNCIONA DE VERDADE!) ---
   const handleSaveMonth = async () => {
     if (!canEdit) return;
     setIsSaving(true);
     
     try {
-      // Passa por todos os dias do calendário que está na tela
       for (const date of daysInRange) {
         const qtyForDay = localQuantities[date] || {};
-        
-        // Verifica se tem alguma quantidade preenchida nesse dia
         const hasData = Object.values(qtyForDay).some(val => val > 0);
-        
-        // Procura no banco se já existe um registro para ESSE dia e ESSA unidade
         const existingRecord = refeitorioRecords.find((r: any) => r.date === date && (r.unit || 'Geral') === selectedUnit);
 
-        // Se tem dado na tela OU se já existia no banco (e a pessoa apagou os números pra zerar)
         if (hasData || existingRecord) {
           const recordToSave = {
             id: existingRecord?.id || crypto.randomUUID(),
             date,
-            unit: selectedUnit, // Salva a unidade junto!
+            unit: selectedUnit, 
             quantities: qtyForDay
           };
 
@@ -144,7 +125,6 @@ export const GestaoRefeitorio: React.FC = () => {
     }
   };
 
-  // --- CÁLCULOS DE TOTAIS ---
   const getDayTotal = (date: string) => {
     return products.reduce((acc: number, product: any) => {
       const qty = getQuantity(date, product.id);
@@ -168,7 +148,6 @@ export const GestaoRefeitorio: React.FC = () => {
     return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   };
 
-  // --- GERENCIAMENTO DE PRODUTOS ---
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct || !canEdit) return;
@@ -197,7 +176,6 @@ export const GestaoRefeitorio: React.FC = () => {
   return (
     <div className="space-y-6 pb-12 animate-in fade-in">
       
-      {/* HEADER E CONTROLES */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <div>
            <h1 className="text-2xl font-black text-slate-800 flex items-center gap-3">
@@ -208,7 +186,6 @@ export const GestaoRefeitorio: React.FC = () => {
         
         <div className="flex flex-wrap items-center gap-4">
           
-          {/* NOVO: SELETOR DE UNIDADE */}
           <div className="flex items-center gap-2 bg-indigo-50 p-2 rounded-xl border border-indigo-200">
             <Building2 size={16} className="text-indigo-600 ml-1" />
             <select 
@@ -261,7 +238,6 @@ export const GestaoRefeitorio: React.FC = () => {
         </div>
       </div>
 
-      {/* PLANILHA DINÂMICA */}
       {products.length === 0 ? (
         <div className="bg-white p-12 rounded-2xl shadow-sm border border-slate-200 text-center">
            <h3 className="text-lg font-bold text-slate-700 mb-2">Nenhum produto cadastrado!</h3>
