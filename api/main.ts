@@ -97,6 +97,8 @@ export default async function handler(request: any, response: any) {
       if (data.absences) for (const item of data.absences) await insertEntity('absence', item);
       if (data.employees) for (const item of data.employees) await insertEntity('employee', item);
       if (data.meetings) for (const item of data.meetings) await insertEntity('meeting', item); 
+      // ADICIONADO REFEITÓRIO ABAIXO
+      if (data.refeitorio) for (const item of data.refeitorio) await insertEntity('refeitorio', item); 
       
       // Restaurar Lixeira
       if (data.trash) {
@@ -130,6 +132,8 @@ export default async function handler(request: any, response: any) {
         const absences = active('absence');
         const employees = active('employee'); 
         const meetings = active('meeting'); 
+        // ADICIONADO REFEITÓRIO ABAIXO
+        const refeitorio = active('refeitorio'); 
 
         const trash = rawEntities
           .filter((e: any) => e.deleted_at !== null)
@@ -141,13 +145,14 @@ export default async function handler(request: any, response: any) {
           }));
 
         return response.status(200).json({ 
-          users, settings, jobs, talents, candidates, absences, employees, meetings, trash 
+          // ADICIONADO REFEITÓRIO NO RETORNO
+          users, settings, jobs, talents, candidates, absences, employees, meetings, refeitorio, trash 
         });
 
       } catch (err: any) {
         if (err.code === '42P01' || err.message?.includes('does not exist')) {
            await initTables(sql);
-           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], absences: [], employees: [], meetings: [], trash: [] });
+           return response.status(200).json({ users: [], settings: [], jobs: [], talents: [], candidates: [], absences: [], employees: [], meetings: [], refeitorio: [], trash: [] });
         }
         throw err;
       }

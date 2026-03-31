@@ -51,6 +51,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const canViewExperiencia = hasPermission('EXPERIENCIA_DESLIGAMENTO', 'VIEW');
   const canViewSettings = hasPermission('CONFIGURACOES', 'VIEW');
   
+  // NOVA PERMISSÃO DO REFEITÓRIO
+  const canViewRefeitorio = hasPermission('REFEITORIO', 'VIEW');
+  
   // Agrupamentos lógicos baseados no legado:
   // Se ele pode ver vagas OU entrevistas gerais, a aba "Recrutamento" aparece.
   const canViewRecrutamento = canViewVagas || canViewEntrevistasGerais; 
@@ -65,7 +68,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const canViewReunioes = !isRecepcao; 
   const canViewAniversariantes = true; 
 
-  const isGestaoSectionVisible = canViewColaboradores || canViewExperiencia || canViewAbsenteismo || canViewReunioes || canViewAniversariantes;
+  const isGestaoSectionVisible = canViewColaboradores || canViewExperiencia || canViewAbsenteismo || canViewReunioes || canViewAniversariantes || canViewRefeitorio;
 
   // Tenta encontrar o nome do cargo (Role) para exibir no menu abaixo do nome
   const getDisplayRole = () => {
@@ -195,6 +198,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     <Link to="/aniversariantes" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/aniversariantes') ? 'bg-pink-50 text-pink-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-pink-600 text-sm'}`}>
                       <Gift size={18} />
                       <span>Aniversariantes</span>
+                    </Link>
+                  )}
+
+                  {/* NOVO MENU DO REFEITÓRIO AQUI */}
+                  {canViewRefeitorio && (
+                    <Link to="/refeitorio" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/refeitorio') ? 'bg-amber-50 text-amber-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-amber-600 text-sm'}`}>
+                      <Coffee size={18} />
+                      <span>Refeitório</span>
                     </Link>
                   )}
 
