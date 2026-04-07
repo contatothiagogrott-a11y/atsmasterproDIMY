@@ -15,12 +15,12 @@ interface DataContextType {
   changePassword: (currentPass: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   adminResetPassword: (targetUserId: string, newPass: string) => Promise<{ success: boolean, message: string }>;
   
-  // --- O MOTOR DE PERMISSÕES DINÂMICAS ---
   hasPermission: (module: AppModule, minLevel: PermissionLevel) => boolean;
 
   users: User[];
-  addUser: (u: User) => Promise<void>;
-  updateUser: (u: User) => Promise<void>;
+  // --- ATUALIZADO: Agora elas devolvem o status de sucesso/erro ---
+  addUser: (u: User) => Promise<{success: boolean, message?: string}>;
+  updateUser: (u: User) => Promise<{success: boolean, message?: string}>;
   removeUser: (id: string) => Promise<void>;
 
   settings: SettingItem[];
@@ -59,7 +59,6 @@ interface DataContextType {
   updateMeeting: (m: MeetingEvent) => Promise<void>;
   removeMeeting: (id: string) => Promise<void>;
 
-  // --- REFEITÓRIO ---
   refeitorioRecords: RefeitorioRecord[];
   addRefeitorioRecord: (r: RefeitorioRecord) => Promise<void>;
   updateRefeitorioRecord: (r: RefeitorioRecord) => Promise<void>;
@@ -216,10 +215,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (user.role === 'MASTER') return true; 
 
-    // --- NOVA REGRA DO GESTOR ---
     if (user.role === 'GESTOR') {
-      // Retorna 'true' se o que a página pede (minLevel) for no máximo 'VIEW' (peso 1).
-      // Nunca vai retornar true se a página pedir EDIT_BASIC (peso 2) ou EDIT_FULL (peso 3).
       return weights['VIEW'] >= weights[minLevel];
     }
 
@@ -303,17 +299,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) { console.error("Erro ao excluir permanentemente:", error); }
   };
 
+  // --- ATUALIZADO: Agora ele ouve o erro do backend e avisa o front-end! ---
   const addUser = async (u: User) => {
     try {
-      await fetch('/api/main?action=save-user', {
+      const response = await fetch('/api/main?action=save-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...u, created_by: user?.id }),
       });
+      
+      const data = await response.json();
+      
+      if (!response.ok || data.error) {
+         // O Backend reclamou (ex: Login duplicado)
+         return { success: false, message: data.message || 'Erro ao salvar usuário' };
+      }
+      
       await refreshData();
-    } catch (error) { console.error("Erro ao salvar usuário:", error); }
+      return { success: true };
+    } catch (error) { 
+      console.error("Erro ao salvar usuário:", error); 
+      return { success: false, message: 'Erro de conexão com o banco.' };
+    }
   };
-  const updateUser = (u: User) => addUser(u);
+
+  const updateUser = async (u: User) => await addUser(u);
 
   const removeUser = async (id: string) => { 
     const targetUser = users.find(u => u.id === id);

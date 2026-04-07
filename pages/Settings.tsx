@@ -283,10 +283,25 @@ export const SettingsPage: React.FC = () => {
   const handleAdminReset = async (e: React.FormEvent) => { e.preventDefault(); if (!userToReset) return; if (resetData.new !== resetData.confirm) { setResetMsg({ type: 'error', text: 'As senhas não coincidem.' }); return; } const result = await adminResetPassword(userToReset.id, resetData.new); if (result.success) { setResetMsg({ type: 'success', text: result.message }); setTimeout(() => { setIsResetModalOpen(false); setUserToReset(null); setResetData({ new: '', confirm: '' }); setResetMsg(null); }, 2000); } else { setResetMsg({ type: 'error', text: result.message }); } };
   const openResetModal = (u: User) => { setUserToReset(u); setResetData({ new: '', confirm: '' }); setResetMsg(null); setIsResetModalOpen(true); };
   
+  // --- ATUALIZADO: AGUARDA RESULTADO DO SERVIDOR ---
   const handleCreateUser = async (e: React.FormEvent) => { 
     e.preventDefault(); 
     if(!isMaster) return; 
-    await addUser({ id: crypto.randomUUID(), name: newUser.name, username: newUser.username, password: newUser.password, role: newUser.role as any, createdBy: currentUser?.id }); 
+    
+    const result = await addUser({ 
+       id: crypto.randomUUID(), 
+       name: newUser.name, 
+       username: newUser.username, 
+       password: newUser.password, 
+       role: newUser.role as any, 
+       createdBy: currentUser?.id 
+    }); 
+
+    if (result && result.success === false) {
+       alert(result.message); 
+       return;
+    }
+
     setNewUser({ name: '', username: '', password: '', role: 'RECRUITER' }); 
     alert('Usuário criado com sucesso!'); 
   };
@@ -297,10 +312,23 @@ export const SettingsPage: React.FC = () => {
     setIsEditUserModalOpen(true);
   };
 
+  // --- ATUALIZADO: AGUARDA RESULTADO DO SERVIDOR ---
   const handleEditUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userToEdit) return;
-    await updateUser({ ...userToEdit, name: editUserData.name, username: editUserData.username, role: editUserData.role as any });
+
+    const result = await updateUser({ 
+       ...userToEdit, 
+       name: editUserData.name, 
+       username: editUserData.username, 
+       role: editUserData.role as any 
+    });
+
+    if (result && result.success === false) {
+       alert(result.message);
+       return;
+    }
+
     setIsEditUserModalOpen(false);
     setUserToEdit(null);
     alert('Usuário atualizado com sucesso!');
@@ -360,7 +388,6 @@ export const SettingsPage: React.FC = () => {
     reader.readAsText(file);
   };
 
-  // Função para formatar o nome do cargo na tabela de usuários
   const getRoleDisplayName = (role: string) => {
     switch (role) {
       case 'MASTER': return 'Master Admin';
@@ -503,7 +530,6 @@ export const SettingsPage: React.FC = () => {
                        <div className="text-xs text-slate-400 truncate">@{u.username} • {getRoleDisplayName(u.role)}</div>
                      </div>
                      
-                     {/* BOTÕES DE AÇÃO DO USUÁRIO */}
                      <div className="flex gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
                        <button onClick={() => openEditUserModal(u)} className="p-1.5 text-blue-400 hover:bg-blue-500/20 rounded-lg transition-colors" title="Editar Usuário"><Edit2 size={16}/></button>
                        <button onClick={() => openResetModal(u)} className="p-1.5 text-amber-400 hover:bg-amber-500/20 rounded-lg transition-colors" title="Resetar Senha"><Key size={16}/></button>

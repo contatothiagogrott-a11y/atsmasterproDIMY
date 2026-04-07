@@ -168,15 +168,26 @@ export default async function handler(request: any, response: any) {
       return response.status(200).json({ valid: false });
     }
 
-    // --- 3. SAVE USER ---
+    // --- 3. SAVE USER (COM TRAVA DE SEGURANÇA PARA DUPLICIDADE) ---
     if (action === 'save-user') {
       const user = request.body;
+
+      // TRAVA DE SEGURANÇA: Verifica se o login já existe em outro ID
+      const existing = await sql`SELECT id, deleted_at FROM users WHERE username = ${user.username}`;
+      if (existing.length > 0 && existing[0].id !== user.id) {
+        return response.status(400).json({
+          error: 'DUPLICATE_USERNAME',
+          message: existing[0].deleted_at 
+            ? '❌ Este login já pertence a um usuário excluído. Por favor, adicione um número ou escolha um login diferente (ex: nome.sobrenome2).' 
+            : '❌ Este login já está em uso por outro usuário ativo. Escolha outro.'
+        });
+      }
+
       let hashedPassword = user.password;
       if (user.password && !user.password.startsWith('$2a$')) { 
         hashedPassword = await bcrypt.hash(user.password, 10);
       }
       
-      // O React envia a nova data de deleção lógica quando queremos fazer soft delete
       const deletedAt = user.deletedAt ? new Date(user.deletedAt) : null;
 
       await sql`
