@@ -139,14 +139,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [location.pathname]);
 
   // =========================================================================
-  // 🔒 CÃO DE GUARDA DO GESTOR (BLINDAGEM CONTRA EDIÇÕES)
+  // 🔒 CÃO DE GUARDA DO GESTOR (BLINDAGEM CONTRA EDIÇÕES NO BANCO)
   // =========================================================================
   const checkGestorReadOnly = () => {
     if (user?.role === 'GESTOR') {
-      alert("🔒 Modo Leitura: Seu perfil de Gestor permite apenas visualizar as informações. Você não pode criar, editar ou excluir dados.");
-      return true;
+      alert("🔒 Acesso Restrito: Seu perfil de Gestor permite apenas visualizar as informações (Quadro e Setores). Você não tem permissão para adicionar, editar ou excluir dados.");
+      return true; // Retorna true informando que ele está bloqueado
     }
-    return false;
+    return false; // Libera para os outros cargos
   };
 
   const login = async (username: string, pass: string) => {
@@ -202,40 +202,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, message: 'Não logado' };
     const isValid = await verifyUserPassword(currentPass);
     if (!isValid) return { success: false, message: 'Senha atual incorreta' };
-    
-    try {
-      const response = await fetch('/api/main?action=save-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...user, password: newPass, created_by: user?.id }),
-      });
-      const data = await response.json();
-      if (!response.ok || data.error) return { success: false, message: data.message || 'Erro ao salvar senha' };
-      await refreshData();
-      return { success: true, message: 'Senha alterada com sucesso!' };
-    } catch (error) {
-      return { success: false, message: 'Erro de conexão com o banco.' };
-    }
+    await addUser({ ...user, password: newPass });
+    return { success: true, message: 'Senha alterada com sucesso!' };
   };
 
   const adminResetPassword = async (targetUserId: string, newPass: string) => {
     if (checkGestorReadOnly()) return { success: false, message: 'Acesso Negado' };
     const targetUser = users.find(u => u.id === targetUserId);
     if (!targetUser) return { success: false, message: 'Usuário não encontrado' };
-    
-    try {
-      const response = await fetch('/api/main?action=save-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...targetUser, password: newPass, created_by: user?.id }),
-      });
-      const data = await response.json();
-      if (!response.ok || data.error) return { success: false, message: data.message || 'Erro ao resetar senha' };
-      await refreshData();
-      return { success: true, message: 'Senha resetada com sucesso!' };
-    } catch (error) {
-      return { success: false, message: 'Erro de conexão com o banco.' };
-    }
+    await addUser({ ...targetUser, password: newPass });
+    return { success: true, message: 'Senha resetada com sucesso!' };
   };
 
   const hasPermission = (module: AppModule, minLevel: PermissionLevel): boolean => {
@@ -251,7 +227,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (user.role === 'MASTER') return true; 
 
     if (user.role === 'GESTOR') {
-      return weights['VIEW'] >= weights[minLevel];
+      // O Gestor só tem acesso restrito a visualização de Quadro de Pessoal
+      if (module === 'QUADRO_PESSOAL') {
+        return weights['VIEW'] >= weights[minLevel];
+      }
+      return false; // Todo o resto do sistema responde 'falso' e bloqueia ele
     }
 
     if (user.role === 'RECRUITER') {

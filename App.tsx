@@ -23,7 +23,7 @@ import { Integracao } from './pages/Integracao';
 import { Setores } from './pages/Setores';
 import { Desligamentos } from './pages/Desligamentos';
 import { QuadroPessoal } from './pages/QuadroPessoal'; 
-import { GestaoRefeitorio } from './pages/GestaoRefeitorio';
+import { GestaoRefeitorio } from './pages/GestaoRefeitorio'; 
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
@@ -59,9 +59,15 @@ const ProtectedRoute = () => {
     return <Navigate to="/" replace />;
   }
 
-  // 4. MASTER e GESTOR
-  // Ambos têm acesso de ROTA a todas as páginas do sistema.
-  // A diferença é que o GESTOR será impedido de editar pelas regras do 'hasPermission' dentro de cada tela.
+  // 4. GESTOR: Blindagem de Rota (Acesso Estrito)
+  // O Gestor só pode ver o Dashboard, o Quadro de Pessoal e os Setores. 
+  // Qualquer outra URL que ele tentar acessar será bloqueada.
+  const allowedGestorRoutes = ['/', '/quadro', '/setores'];
+  if (isGestor && !allowedGestorRoutes.includes(location.pathname)) {
+    return <Navigate to="/" replace />;
+  }
+
+  // Master passa por aqui sem cair em nenhum IF acima, tendo acesso total.
   return (
     <Layout>
       <Outlet />

@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Puxamos o hasPermission e a lista de settings (para pegar os nomes de cargos customizados)
   const { user, logout, isMockMode, hasPermission, settings } = useData() as any;
   const location = useLocation();
   const navigate = useNavigate();
@@ -40,9 +39,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  // --- O NOVO MOTOR DE PERMISSÕES DINÂMICAS ---
-  // Em vez de checar hardcoded (isMaster, isAuxiliar), perguntamos para a função hasPermission se o usuário 
-  // tem pelo menos o nível 'VIEW' (Ver Apenas) naquele módulo.
   const canViewDashboard = hasPermission('DASHBOARD', 'VIEW');
   const canViewVagas = hasPermission('VAGAS', 'VIEW');
   const canViewEntrevistasGerais = hasPermission('ENTREVISTAS_GERAIS', 'VIEW');
@@ -50,28 +46,23 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const canViewQuadroPessoal = hasPermission('QUADRO_PESSOAL', 'VIEW');
   const canViewExperiencia = hasPermission('EXPERIENCIA_DESLIGAMENTO', 'VIEW');
   const canViewSettings = hasPermission('CONFIGURACOES', 'VIEW');
-  
-  // NOVA PERMISSÃO DO REFEITÓRIO
   const canViewRefeitorio = hasPermission('REFEITORIO', 'VIEW');
   
-  // Agrupamentos lógicos baseados no legado:
-  // Se ele pode ver vagas OU entrevistas gerais, a aba "Recrutamento" aparece.
   const canViewRecrutamento = canViewVagas || canViewEntrevistasGerais; 
   
-  // Absenteísmo, Reuniões e Aniversariantes mantemos com regras parecidas ao legado para não quebrar 
   const isMaster = user?.role === 'MASTER';
   const isAuxiliar = user?.role === 'AUXILIAR_RH';
   const isRecepcao = user?.role === 'RECEPCAO'; 
   const isGestor = user?.role === 'GESTOR';
 
-  // Se o Gestor tem visão de tudo no DP, nós precisamos forçar "true" nesses menus antigos para que ele veja a aba também.
-  const canViewAbsenteismo = isMaster || isAuxiliar || isGestor;
-  const canViewReunioes = !isRecepcao; 
-  const canViewAniversariantes = true; 
+  // --- SEPARAÇÃO DOS MENUS PARA O GESTOR (BLINDADO) ---
+  const canViewSetores = isMaster || isAuxiliar; // Gestor NÃO vê setores
+  const canViewAbsenteismo = isMaster || isAuxiliar; // Gestor NÃO vê absenteísmo
+  const canViewReunioes = !isRecepcao && !isGestor; // Gestor NÃO vê reuniões
+  const canViewAniversariantes = !isGestor; // Gestor NÃO vê aniversariantes
 
-  const isGestaoSectionVisible = canViewColaboradores || canViewExperiencia || canViewAbsenteismo || canViewReunioes || canViewAniversariantes || canViewRefeitorio;
+  const isGestaoSectionVisible = canViewColaboradores || canViewExperiencia || canViewAbsenteismo || canViewSetores || canViewReunioes || canViewAniversariantes || canViewRefeitorio || canViewQuadroPessoal;
 
-  // Tenta encontrar o nome do cargo (Role) para exibir no menu abaixo do nome
   const getDisplayRole = () => {
     if (user?.role === 'MASTER') return 'Administrador';
     if (user?.role === 'RECRUITER') return 'Recrutador';
@@ -79,16 +70,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     if (user?.role === 'RECEPCAO') return 'Recepção';
     if (user?.role === 'GESTOR') return 'Gestor (Apenas Leitura)';
     
-    // Se for customizado, procura no settings
     const customRole = settings?.find((s:any) => s.type === 'CUSTOM_ROLE' && s.id === user?.role);
     if (customRole) return customRole.name;
     
-    return 'Usuário'; // Fallback
+    return 'Usuário'; 
   };
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans overflow-hidden">
-      {/* Sidebar */}
       <aside className="w-64 bg-white/70 backdrop-blur-lg border-r border-white/50 flex flex-col shadow-2xl z-20 relative">
         <div className="p-8 border-b border-slate-200/50">
           <h1 className="text-2xl font-bold tracking-tight text-blue-900">ATS Master</h1>
@@ -109,7 +98,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </Link>
           )}
 
-          {/* === MENU EXPANSÍVEL: RECRUTAMENTO E SELEÇÃO === */}
           {canViewRecrutamento && (
             <div className="pt-2 pb-1">
               <button 
@@ -122,14 +110,12 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               
               {isRecrutamentoOpen && (
                 <div className="mt-1 space-y-1 border-l-2 border-slate-100 ml-4 pl-2">
-                  
                   {canViewVagas && (
                     <>
                       <Link to="/jobs" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/jobs') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
                         <Briefcase size={18} />
                         <span>Vagas</span>
                       </Link>
-                      
                       <Link to="/talent-pool" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/talent-pool') || isActive('/talents') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
                         <Users size={18} />
                         <span>Banco de Talentos</span>
@@ -150,12 +136,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                         <UserPlus size={18} />
                         <span>Integração (Admissão)</span>
                       </Link>
-
                       <Link to="/reports" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/reports') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
                         <BarChart size={18} />
                         <span>Relatórios & SLA</span>
                       </Link>
-
                       <Link to="/strategic-report" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/strategic-report') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
                         <BarChart size={18} />
                         <span>Relatório Estratégico</span>
@@ -167,7 +151,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
           )}
 
-          {/* === MENU EXPANSÍVEL: GESTÃO DE PESSOAS === */}
           {isGestaoSectionVisible && (
             <div className="pt-2 pb-1">
               <button 
@@ -209,17 +192,18 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     </Link>
                   )}
 
+                  {canViewSetores && (
+                    <Link to="/setores" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/setores') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600 text-sm'}`}>
+                      <Building2 size={18} />
+                      <span>Setores</span>
+                    </Link>
+                  )}
+
                   {canViewAbsenteismo && (
-                    <>
-                      <Link to="/setores" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/setores') ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-600 text-sm'}`}>
-                        <Building2 size={18} />
-                        <span>Setores</span>
-                      </Link>
-                      <Link to="/absenteismo" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
-                        <CalendarX size={18} />
-                        <span>Absenteísmo</span>
-                      </Link>
-                    </>
+                    <Link to="/absenteismo" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/absenteismo') ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-blue-600 text-sm'}`}>
+                      <CalendarX size={18} />
+                      <span>Absenteísmo</span>
+                    </Link>
                   )}
 
                   {canViewExperiencia && (
@@ -280,7 +264,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-auto bg-slate-50 relative">
         <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-blue-100/50 to-transparent pointer-events-none"></div>
         {isMockMode && (
