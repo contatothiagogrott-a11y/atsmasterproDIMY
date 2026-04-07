@@ -18,7 +18,6 @@ interface DataContextType {
   hasPermission: (module: AppModule, minLevel: PermissionLevel) => boolean;
 
   users: User[];
-  // --- ATUALIZADO: Agora elas devolvem o status de sucesso/erro ---
   addUser: (u: User) => Promise<{success: boolean, message?: string}>;
   updateUser: (u: User) => Promise<{success: boolean, message?: string}>;
   removeUser: (id: string) => Promise<void>;
@@ -139,6 +138,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refreshData();
   }, [location.pathname]);
 
+  // =========================================================================
+  // 🔒 CÃO DE GUARDA DO GESTOR (BLINDAGEM CONTRA EDIÇÕES)
+  // =========================================================================
+  const checkGestorReadOnly = () => {
+    if (user?.role === 'GESTOR') {
+      alert("🔒 Modo Leitura: Seu perfil de Gestor permite apenas visualizar as informações. Você não pode criar, editar ou excluir dados.");
+      return true;
+    }
+    return false;
+  };
+
   const login = async (username: string, pass: string) => {
     try {
       const response = await fetch('/api/login', {
@@ -192,15 +202,40 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!user) return { success: false, message: 'Não logado' };
     const isValid = await verifyUserPassword(currentPass);
     if (!isValid) return { success: false, message: 'Senha atual incorreta' };
-    await addUser({ ...user, password: newPass });
-    return { success: true, message: 'Senha alterada com sucesso!' };
+    
+    try {
+      const response = await fetch('/api/main?action=save-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...user, password: newPass, created_by: user?.id }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) return { success: false, message: data.message || 'Erro ao salvar senha' };
+      await refreshData();
+      return { success: true, message: 'Senha alterada com sucesso!' };
+    } catch (error) {
+      return { success: false, message: 'Erro de conexão com o banco.' };
+    }
   };
 
   const adminResetPassword = async (targetUserId: string, newPass: string) => {
+    if (checkGestorReadOnly()) return { success: false, message: 'Acesso Negado' };
     const targetUser = users.find(u => u.id === targetUserId);
     if (!targetUser) return { success: false, message: 'Usuário não encontrado' };
-    await addUser({ ...targetUser, password: newPass });
-    return { success: true, message: 'Senha resetada com sucesso!' };
+    
+    try {
+      const response = await fetch('/api/main?action=save-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...targetUser, password: newPass, created_by: user?.id }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) return { success: false, message: data.message || 'Erro ao resetar senha' };
+      await refreshData();
+      return { success: true, message: 'Senha resetada com sucesso!' };
+    } catch (error) {
+      return { success: false, message: 'Erro de conexão com o banco.' };
+    }
   };
 
   const hasPermission = (module: AppModule, minLevel: PermissionLevel): boolean => {
@@ -234,24 +269,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return false; 
     }
 
-    const customRoleSetting = settings.find(s => s.type === 'CUSTOM_ROLE' && s.id === user.role);
-    
-    if (customRoleSetting && customRoleSetting.value) {
-      try {
-        const roleConfig = JSON.parse(customRoleSetting.value);
-        const userModuleLevel = roleConfig.permissions[module] || 'NONE';
-        
-        return weights[userModuleLevel as PermissionLevel] >= weights[minLevel];
-      } catch (e) {
-        console.error("Erro ao ler permissão dinâmica:", e);
-        return false;
-      }
-    }
-
     return false;
   };
 
   const saveEntity = async (type: string, item: any) => {
+    if (checkGestorReadOnly()) return;
     try {
       await fetch('/api/main?action=save-entity', {
         method: 'POST',
@@ -265,6 +287,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deleteEntity = async (id: string, type?: string) => {
+    if (checkGestorReadOnly()) return;
     try {
       await fetch('/api/main?action=delete-entity', {
         method: 'POST',
@@ -278,6 +301,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const restoreItem = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     try {
       await fetch('/api/main?action=restore-entity', {
         method: 'POST',
@@ -289,6 +313,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const permanentlyDeleteItem = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     try {
       await fetch('/api/main?action=permanently-delete-entity', {
         method: 'POST',
@@ -299,8 +324,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) { console.error("Erro ao excluir permanentemente:", error); }
   };
 
-  // --- ATUALIZADO: Agora ele ouve o erro do backend e avisa o front-end! ---
   const addUser = async (u: User) => {
+    if (checkGestorReadOnly()) return { success: false, message: 'Acesso Negado' };
     try {
       const response = await fetch('/api/main?action=save-user', {
         method: 'POST',
@@ -311,7 +336,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const data = await response.json();
       
       if (!response.ok || data.error) {
-         // O Backend reclamou (ex: Login duplicado)
          return { success: false, message: data.message || 'Erro ao salvar usuário' };
       }
       
@@ -326,6 +350,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateUser = async (u: User) => await addUser(u);
 
   const removeUser = async (id: string) => { 
+    if (checkGestorReadOnly()) return;
     const targetUser = users.find(u => u.id === id);
     if (!targetUser) return;
 
@@ -344,34 +369,41 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addSetting = async (s: SettingItem) => {
+    if (checkGestorReadOnly()) return;
     setSettings(prev => [...prev, s]); 
     await saveEntity('setting', s);
   };
   const updateSetting = async (s: SettingItem) => {
+    if (checkGestorReadOnly()) return;
     setSettings(prev => prev.map(i => i.id === s.id ? s : i));
     await saveEntity('setting', s);
   };
   const removeSetting = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     setSettings(prev => prev.filter(i => i.id !== id));
     await deleteEntity(id, 'setting');
   };
   const importSettings = async (s: SettingItem[]) => { console.log("Legacy import"); };
 
   const addJob = async (j: Job) => {
+    if (checkGestorReadOnly()) return;
     const jobWithOwner = { ...j, createdBy: user?.id };
     setJobs(prev => [...prev, jobWithOwner]);
     await saveEntity('job', jobWithOwner);
   };
   const updateJob = async (j: Job) => {
+    if (checkGestorReadOnly()) return;
     setJobs(prev => prev.map(ex => ex.id === j.id ? j : ex));
     await saveEntity('job', j);
   };
   const removeJob = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     setJobs(prev => prev.filter(j => j.id !== id));
     await deleteEntity(id, 'job');
   };
 
   const addCandidate = async (c: Candidate) => {
+    if (checkGestorReadOnly()) return;
     const newCandidate = { ...c };
     if (!newCandidate.createdAt) newCandidate.createdAt = new Date().toISOString();
     setCandidates(prev => [...prev, newCandidate]);
@@ -379,76 +411,93 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateCandidate = async (c: Candidate) => {
+    if (checkGestorReadOnly()) return;
     setCandidates(prev => prev.map(ex => ex.id === c.id ? c : ex));
     await saveEntity('candidate', c);
   };
 
   const removeCandidate = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     setCandidates(prev => prev.filter(c => c.id !== id));
     await deleteEntity(id, 'candidate');
   };
 
   const addTalent = async (t: TalentProfile) => {
+    if (checkGestorReadOnly()) return;
     setTalents(prev => [...prev, t]);
     await saveEntity('talent', t);
   };
   const updateTalent = async (t: TalentProfile) => {
+    if (checkGestorReadOnly()) return;
     setTalents(prev => prev.map(ex => ex.id === t.id ? t : ex));
     await saveEntity('talent', t);
   };
   const removeTalent = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     setTalents(prev => prev.filter(t => t.id !== id));
     await deleteEntity(id, 'talent');
   };
 
   const addAbsence = async (a: AbsenceRecord) => {
+    if (checkGestorReadOnly()) return;
     setAbsences(prev => [...prev, a]);
     await saveEntity('absence', a);
   };
   const updateAbsence = async (a: AbsenceRecord) => {
+    if (checkGestorReadOnly()) return;
     setAbsences(prev => prev.map(ex => ex.id === a.id ? a : ex));
     await saveEntity('absence', a);
   };
   const removeAbsence = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     setAbsences(prev => prev.filter(a => a.id !== id));
     await deleteEntity(id, 'absence');
   };
 
   const addEmployee = async (e: Employee) => {
+    if (checkGestorReadOnly()) return;
     setEmployees(prev => [...prev, e]);
     await saveEntity('employee', e);
   };
   const updateEmployee = async (e: Employee) => {
+    if (checkGestorReadOnly()) return;
     setEmployees(prev => prev.map(ex => ex.id === e.id ? e : ex));
     await saveEntity('employee', e);
   };
   const removeEmployee = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     setEmployees(prev => prev.filter(e => e.id !== id));
     await deleteEntity(id, 'employee');
   };
 
   const addMeeting = async (m: MeetingEvent) => {
+    if (checkGestorReadOnly()) return;
     setMeetings(prev => [...prev, m]);
     await saveEntity('meeting', m); 
   };
   const updateMeeting = async (m: MeetingEvent) => {
+    if (checkGestorReadOnly()) return;
     setMeetings(prev => prev.map(ex => ex.id === m.id ? m : ex));
     await saveEntity('meeting', m);
   };
   const removeMeeting = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     setMeetings(prev => prev.filter(m => m.id !== id));
     await deleteEntity(id, 'meeting');
   };
 
   const addRefeitorioRecord = async (r: RefeitorioRecord) => {
+    if (checkGestorReadOnly()) return;
     setRefeitorioRecords(prev => [...prev, r]);
     await saveEntity('refeitorio', r); 
   };
   const updateRefeitorioRecord = async (r: RefeitorioRecord) => {
+    if (checkGestorReadOnly()) return;
     setRefeitorioRecords(prev => prev.map(ex => ex.id === r.id ? r : ex));
     await saveEntity('refeitorio', r);
   };
   const removeRefeitorioRecord = async (id: string) => {
+    if (checkGestorReadOnly()) return;
     setRefeitorioRecords(prev => prev.filter(r => r.id !== id));
     await deleteEntity(id, 'refeitorio');
   };
