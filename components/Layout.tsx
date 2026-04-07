@@ -59,12 +59,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const canViewRecrutamento = canViewVagas || canViewEntrevistasGerais; 
   
   // Absenteísmo, Reuniões e Aniversariantes mantemos com regras parecidas ao legado para não quebrar 
-  // (Pode ajustar para serem dinâmicas no futuro se quiser)
   const isMaster = user?.role === 'MASTER';
   const isAuxiliar = user?.role === 'AUXILIAR_RH';
   const isRecepcao = user?.role === 'RECEPCAO'; 
+  const isGestor = user?.role === 'GESTOR';
 
-  const canViewAbsenteismo = isMaster || isAuxiliar;
+  // Se o Gestor tem visão de tudo no DP, nós precisamos forçar "true" nesses menus antigos para que ele veja a aba também.
+  const canViewAbsenteismo = isMaster || isAuxiliar || isGestor;
   const canViewReunioes = !isRecepcao; 
   const canViewAniversariantes = true; 
 
@@ -76,6 +77,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     if (user?.role === 'RECRUITER') return 'Recrutador';
     if (user?.role === 'AUXILIAR_RH') return 'Auxiliar de RH';
     if (user?.role === 'RECEPCAO') return 'Recepção';
+    if (user?.role === 'GESTOR') return 'Gestor (Apenas Leitura)';
     
     // Se for customizado, procura no settings
     const customRole = settings?.find((s:any) => s.type === 'CUSTOM_ROLE' && s.id === user?.role);
@@ -142,7 +144,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     </Link>
                   )}
 
-                  {/* Esses 3 continuam amarrados à permissão de ver as Vagas para manter o legado */}
                   {canViewVagas && (
                     <>
                       <Link to="/integracao" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/integracao') ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-emerald-600 text-sm'}`}>
@@ -201,7 +202,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     </Link>
                   )}
 
-                  {/* NOVO MENU DO REFEITÓRIO AQUI */}
                   {canViewRefeitorio && (
                     <Link to="/refeitorio" className={`flex items-center space-x-3 px-3 py-2.5 rounded-lg transition-all duration-300 ${isActive('/refeitorio') ? 'bg-amber-50 text-amber-700 font-semibold' : 'text-slate-600 hover:bg-slate-100 hover:text-amber-600 text-sm'}`}>
                       <Coffee size={18} />
@@ -265,7 +265,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             <UserCircle className="text-slate-400" size={36} />
             <div className="overflow-hidden">
               <p className="text-sm font-bold text-slate-800 truncate">{user?.name}</p>
-              {/* Função nova chamada aqui para pegar o nome correto do cargo do banco */}
               <p className="text-xs text-slate-500 capitalize font-medium truncate">
                 {getDisplayRole()}
               </p>

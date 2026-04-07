@@ -23,7 +23,7 @@ import { Integracao } from './pages/Integracao';
 import { Setores } from './pages/Setores';
 import { Desligamentos } from './pages/Desligamentos';
 import { QuadroPessoal } from './pages/QuadroPessoal'; 
-import { GestaoRefeitorio } from './pages/GestaoRefeitorio'; // <--- IMPORTAÇÃO ADICIONADA
+import { GestaoRefeitorio } from './pages/GestaoRefeitorio';
 
 // Componente que protege as rotas
 const ProtectedRoute = () => {
@@ -34,13 +34,12 @@ const ProtectedRoute = () => {
     return <Navigate to="/login" replace />;
   }
 
-  // --- LÓGICA DE ACESSO LEGADO ---
-  // Identificamos se o usuário possui um dos cargos "Chumbados" no código
   const role = user.role?.toUpperCase();
   const isMaster = role === 'MASTER';
   const isAuxiliar = role === 'AUXILIAR_RH';
   const isRecepcao = role === 'RECEPCAO';
   const isRecruiter = role === 'RECRUITER';
+  const isGestor = role === 'GESTOR';
 
   // 1. RECEPÇÃO: Acesso estritamente restrito
   const allowedRecepcaoRoutes = ['/', '/aniversariantes'];
@@ -55,14 +54,14 @@ const ProtectedRoute = () => {
   }
 
   // 3. RECRUTADOR PADRÃO: Bloqueado nas páginas profundas de DP/Gestão
-  // NOTA: Mudamos a verificação para focar apenas no 'RECRUITER'. 
-  // Cargos Dinâmicos/Personalizados passarão por aqui e a segurança será feita dentro da própria página!
   const forbiddenRecruiterRoutes = ['/absenteismo', '/colaboradores', '/setores', '/desligamentos', '/quadro', '/refeitorio']; 
   if (isRecruiter && forbiddenRecruiterRoutes.includes(location.pathname)) {
     return <Navigate to="/" replace />;
   }
 
-  // Master e Cargos Personalizados passam por aqui e renderizam a tela!
+  // 4. MASTER e GESTOR
+  // Ambos têm acesso de ROTA a todas as páginas do sistema.
+  // A diferença é que o GESTOR será impedido de editar pelas regras do 'hasPermission' dentro de cada tela.
   return (
     <Layout>
       <Outlet />
@@ -103,7 +102,7 @@ const App: React.FC = () => {
             <Route path="/setores" element={<Setores />} />
             <Route path="/desligamentos" element={<Desligamentos />} />
             <Route path="/quadro" element={<QuadroPessoal />} /> 
-            <Route path="/refeitorio" element={<GestaoRefeitorio />} /> {/* <--- ROTA DO REFEITÓRIO ADICIONADA */}
+            <Route path="/refeitorio" element={<GestaoRefeitorio />} /> 
 
           </Route>
 

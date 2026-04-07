@@ -4,7 +4,7 @@ import {
   User, Job, Candidate, TalentProfile, SettingItem, 
   AbsenceRecord, Employee, MeetingEvent, 
   AppModule, PermissionLevel, 
-  RefeitorioRecord // <-- ADICIONADO AQUI
+  RefeitorioRecord
 } from '../types';
 
 interface DataContextType {
@@ -59,7 +59,7 @@ interface DataContextType {
   updateMeeting: (m: MeetingEvent) => Promise<void>;
   removeMeeting: (id: string) => Promise<void>;
 
-  // --- REFEITÓRIO (NOVO) ---
+  // --- REFEITÓRIO ---
   refeitorioRecords: RefeitorioRecord[];
   addRefeitorioRecord: (r: RefeitorioRecord) => Promise<void>;
   updateRefeitorioRecord: (r: RefeitorioRecord) => Promise<void>;
@@ -86,7 +86,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]); 
   const [meetings, setMeetings] = useState<MeetingEvent[]>([]); 
-  const [refeitorioRecords, setRefeitorioRecords] = useState<RefeitorioRecord[]>([]); // <-- ADICIONADO ESTADO
+  const [refeitorioRecords, setRefeitorioRecords] = useState<RefeitorioRecord[]>([]); 
   const [trash, setTrash] = useState<any[]>([]);
   
   const [loading, setLoading] = useState(true);
@@ -119,7 +119,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.absences) setAbsences(data.absences);
       if (data.employees) setEmployees(data.employees); 
       if (data.meetings) setMeetings(data.meetings); 
-      if (data.refeitorio) setRefeitorioRecords(data.refeitorio); // <-- LÊ OS DADOS DO BANCO
+      if (data.refeitorio) setRefeitorioRecords(data.refeitorio); 
       if (data.trash) setTrash(data.trash);
       
     } catch (error) {
@@ -215,6 +215,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     if (user.role === 'MASTER') return true; 
+
+    // --- NOVA REGRA DO GESTOR ---
+    if (user.role === 'GESTOR') {
+      // Retorna 'true' se o que a página pede (minLevel) for no máximo 'VIEW' (peso 1).
+      // Nunca vai retornar true se a página pedir EDIT_BASIC (peso 2) ou EDIT_FULL (peso 3).
+      return weights['VIEW'] >= weights[minLevel];
+    }
 
     if (user.role === 'RECRUITER') {
       if (module === 'CONFIGURACOES' || module === 'QUADRO_PESSOAL') return false;
@@ -423,7 +430,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await deleteEntity(id, 'meeting');
   };
 
-  // --- CRUD WRAPPERS DO REFEITÓRIO ---
   const addRefeitorioRecord = async (r: RefeitorioRecord) => {
     setRefeitorioRecords(prev => [...prev, r]);
     await saveEntity('refeitorio', r); 
@@ -450,7 +456,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       absences, addAbsence, updateAbsence, removeAbsence,
       employees, addEmployee, updateEmployee, removeEmployee, 
       meetings, addMeeting, updateMeeting, removeMeeting,
-      refeitorioRecords, addRefeitorioRecord, updateRefeitorioRecord, removeRefeitorioRecord, // <-- EXPOSTO AQUI
+      refeitorioRecords, addRefeitorioRecord, updateRefeitorioRecord, removeRefeitorioRecord,
       trash, restoreItem, permanentlyDeleteItem,
       refreshData, loading
     }}>
