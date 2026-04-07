@@ -61,7 +61,6 @@ export default async function handler(request: any, response: any) {
       const { data } = request.body;
       if (!data) return response.status(400).json({ error: 'Dados inválidos' });
 
-      // Restaurar Usuários
       if (data.users && Array.isArray(data.users)) {
         for (const user of data.users) {
           let passwordToSave = user.password || 'mudar.123';
@@ -80,7 +79,6 @@ export default async function handler(request: any, response: any) {
         }
       }
 
-      // Restaurar Entidades
       const insertEntity = async (type: string, item: any) => {
         await sql`
           INSERT INTO entities (id, type, data)
@@ -97,10 +95,8 @@ export default async function handler(request: any, response: any) {
       if (data.absences) for (const item of data.absences) await insertEntity('absence', item);
       if (data.employees) for (const item of data.employees) await insertEntity('employee', item);
       if (data.meetings) for (const item of data.meetings) await insertEntity('meeting', item); 
-      // ADICIONADO REFEITÓRIO ABAIXO
       if (data.refeitorio) for (const item of data.refeitorio) await insertEntity('refeitorio', item); 
       
-      // Restaurar Lixeira
       if (data.trash) {
          for (const item of data.trash) {
             await sql`
@@ -132,7 +128,6 @@ export default async function handler(request: any, response: any) {
         const absences = active('absence');
         const employees = active('employee'); 
         const meetings = active('meeting'); 
-        // ADICIONADO REFEITÓRIO ABAIXO
         const refeitorio = active('refeitorio'); 
 
         const trash = rawEntities
@@ -145,7 +140,6 @@ export default async function handler(request: any, response: any) {
           }));
 
         return response.status(200).json({ 
-          // ADICIONADO REFEITÓRIO NO RETORNO
           users, settings, jobs, talents, candidates, absences, employees, meetings, refeitorio, trash 
         });
 
@@ -168,19 +162,24 @@ export default async function handler(request: any, response: any) {
       return response.status(200).json({ valid: false });
     }
 
-    // --- 3. SAVE USER (COM TRAVA DE SEGURANÇA PARA DUPLICIDADE) ---
+    // --- 3. SAVE USER (COM CAÇA-FANTASMAS INCLUSO) ---
     if (action === 'save-user') {
       const user = request.body;
 
-      // TRAVA DE SEGURANÇA: Verifica se o login já existe em outro ID
       const existing = await sql`SELECT id, deleted_at FROM users WHERE username = ${user.username}`;
+      
       if (existing.length > 0 && existing[0].id !== user.id) {
-        return response.status(400).json({
-          error: 'DUPLICATE_USERNAME',
-          message: existing[0].deleted_at 
-            ? '❌ Este login já pertence a um usuário excluído. Por favor, adicione um número ou escolha um login diferente (ex: nome.sobrenome2).' 
-            : '❌ Este login já está em uso por outro usuário ativo. Escolha outro.'
-        });
+        if (existing[0].deleted_at) {
+          // CAÇA-FANTASMAS: Se o dono do login estiver na lixeira, nós sujamos o login dele
+          // adicionando um '_del_ID' no final. Isso libera o login original na mesma hora!
+          await sql`UPDATE users SET username = username || '_del_' || id WHERE id = ${existing[0].id}`;
+        } else {
+          // Se não está na lixeira, é porque o login está em uso por alguém ativo mesmo.
+          return response.status(400).json({
+            error: 'DUPLICATE_USERNAME',
+            message: '❌ Este login já está em uso por outro usuário ativo. Escolha outro.'
+          });
+        }
       }
 
       let hashedPassword = user.password;
@@ -199,12 +198,12 @@ export default async function handler(request: any, response: any) {
       return response.status(200).json({ success: true });
     }
 
-    // --- 4. ROTA EXCLUSIVA PARA DELETAR USUÁRIO ---
+    // --- 4. DELETE USER ---
     if (action === 'delete-user') {
       const { id } = request.body;
       
-      // Faz o Soft Delete apenas na tabela de usuários
-      await sql`UPDATE users SET deleted_at = NOW() WHERE id = ${id}`;
+      // Ao deletar, já "suja" o username imediatamente para liberar para novas contas
+      await sql`UPDATE users SET deleted_at = NOW(), username = username || '_del_' || id WHERE id = ${id}`;
       
       return response.status(200).json({ success: true });
     }
