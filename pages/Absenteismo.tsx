@@ -948,8 +948,8 @@ export const Absenteismo: React.FC = () => {
                   
                   <optgroup label="Licenças Legais (Não Desconta Horas)">
                     <option value="Licença Prevista em Lei" className="text-purple-600">Licença Maternidade / Paternidade</option>
-                    <option value="Licença - Casamento" className="text-purple-600">Licença Casamento (Gala)</option>
-                    <option value="Licença - Óbito" className="text-purple-600">Licença Óbito (Nojo)</option>
+                    <option value="Licença - Casamento" className="text-purple-600">Licença Casamento </option>
+                    <option value="Licença - Óbito" className="text-purple-600">Licença Óbito </option>
                   </optgroup>
                 </select>
               </label>
