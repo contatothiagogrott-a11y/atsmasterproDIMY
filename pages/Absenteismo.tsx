@@ -112,8 +112,8 @@ export const Absenteismo: React.FC = () => {
 
     if (unit === 'Horas') return amount; 
 
-    // SE FOR LICENÇA, É DIA CORRIDO (NÃO DESCONTA FINAL DE SEMANA)
-    if (record.documentType === 'Licença Prevista em Lei') {
+    // SE FOR LICENÇA (QUALQUER UMA), É DIA CORRIDO (NÃO DESCONTA FINAL DE SEMANA)
+    if (record.documentType?.startsWith('Licença')) {
         return amount * workload;
     }
 
@@ -252,9 +252,10 @@ export const Absenteismo: React.FC = () => {
       else if (record.documentType === 'Declaração') { declaracoes++; declaracoesHours += hours; }
       else if (record.documentType === 'Falta Injustificada') { injustificadas++; injustificadasHours += hours; }
       else if (record.documentType === 'Acompanhante de Dependente') { acompanhamentos++; acompanhamentosHours += hours; }
-      else if (record.documentType === 'Licença Prevista em Lei') { licencas++; licencasHours += hours; }
+      else if (record.documentType?.startsWith('Licença')) { licencas++; licencasHours += hours; }
 
-      if (record.documentType !== 'Licença Prevista em Lei') {
+      // Nenhuma licença (Seja maternidade, obito ou casamento) conta no absenteísmo
+      if (!record.documentType?.startsWith('Licença')) {
         totalLostHours += hours;
         if (record.reason) reasonCounts[record.reason] = (reasonCounts[record.reason] || 0) + hours;
         if (record.employeeName) nameCounts[record.employeeName!] = (nameCounts[record.employeeName!] || 0) + hours;
@@ -289,7 +290,7 @@ export const Absenteismo: React.FC = () => {
       { name: '💧 Urologia e Nefrologia', regex: /(rim|rins|urin[aá]ri|n20|calculose)/i },
       { name: '💊 Endócrino e Nutricional', regex: /(diabetes|e14|tireoide|hipotireoidismo|e03|obesidade|e66|vitamina|e53)/i },
       { name: '🩸 Exames e Avaliações', regex: /(exame|sangue|rotina|check[\s\-]up|laborat|ultrasson|raio[\s\-]x|ressonância|ressonancia|coleta|biológico|z00|consulta de retorno|consulta para exame)/i },
-      { name: '🏢 Assuntos Pessoais (Admin)', regex: /(cnh|boletim|ocorrência|faculdade|matrícula|particular)/i },
+      { name: '🏢 Assuntos Pessoais (Admin)', regex: /(cnh|boletim|ocorrência|faculdade|matrícula|particular|casamento|obito|óbito)/i },
       { name: '⚠️ Dores Gerais e Mal Estar', regex: /(mal estar|r52|dor aguda|dor na)/i }
     ];
 
@@ -299,7 +300,7 @@ export const Absenteismo: React.FC = () => {
     pureKeys.forEach(k => { categories[k] = { hours: 0, reasons: new Set(), records: [] }; });
 
     filteredAbsences.forEach((record: AbsenceRecord) => {
-        if (record.documentType === 'Licença Prevista em Lei') return;
+        if (record.documentType?.startsWith('Licença')) return;
 
         const reason = (record.reason || '').toLowerCase();
         const emp = employees.find((e: Employee) => e.name.toLowerCase() === record.employeeName?.toLowerCase());
@@ -461,13 +462,13 @@ export const Absenteismo: React.FC = () => {
       let startRow = 8;
       exportData.forEach((rowObj, index) => {
         const row = sheet.getRow(startRow + index);
-        row.getCell(1).value = rowObj.date;       
-        row.getCell(2).value = rowObj.name;       
-        row.getCell(4).value = rowObj.reason;     
-        row.getCell(5).value = rowObj.doc;        
-        row.getCell(6).value = rowObj.sector;     
-        row.getCell(7).value = rowObj.unit;       
-        row.getCell(8).value = rowObj.duration;   
+        row.getCell(1).value = rowObj.date;        
+        row.getCell(2).value = rowObj.name;        
+        row.getCell(4).value = rowObj.reason;      
+        row.getCell(5).value = rowObj.doc;         
+        row.getCell(6).value = rowObj.sector;      
+        row.getCell(7).value = rowObj.unit;        
+        row.getCell(8).value = rowObj.duration;    
         row.commit();
       });
 
@@ -838,7 +839,7 @@ export const Absenteismo: React.FC = () => {
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-purple-100 flex flex-col justify-between relative overflow-hidden">
               <div className="absolute -right-4 -bottom-4 opacity-[0.03] text-purple-900 pointer-events-none"><Baby size={100}/></div>
               <div className="flex justify-between items-start mb-2 relative z-10">
-                <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest leading-tight">Licenças Legais<br/>(Maternidade/etc)</p>
+                <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest leading-tight">Licenças Legais<br/>(Isentas)</p>
                 <div className="p-2 bg-purple-50 text-purple-600 rounded-xl shrink-0"><Baby size={20} /></div>
               </div>
               <div className="relative z-10">
@@ -944,13 +945,18 @@ export const Absenteismo: React.FC = () => {
                   <option value="Declaração">Declaração de Horas</option>
                   <option value="Acompanhante de Dependente">Acompanhante de Dependente</option>
                   <option value="Falta Injustificada">Falta Injustificada</option>
-                  <option value="Licença Prevista em Lei" className="text-purple-600">Licença Prevista em Lei (Ex: Maternidade)</option>
+                  
+                  <optgroup label="Licenças Legais (Não Desconta Horas)">
+                    <option value="Licença Prevista em Lei" className="text-purple-600">Licença Maternidade / Paternidade</option>
+                    <option value="Licença - Casamento" className="text-purple-600">Licença Casamento (Gala)</option>
+                    <option value="Licença - Óbito" className="text-purple-600">Licença Óbito (Nojo)</option>
+                  </optgroup>
                 </select>
               </label>
               
               <label className="flex flex-col text-sm font-medium text-slate-700">
                 Motivo da Ausência / CID
-                <input type="text" name="reason" list="absence-reasons" value={formData.reason || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: Dor de cabeça, Conjuntivite..." />
+                <input type="text" name="reason" list="absence-reasons" value={formData.reason || ''} onChange={handleInputChange} required className="mt-1 border border-slate-300 p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Ex: Dor de cabeça, Casamento, Óbito do pai..." />
               </label>
 
               {formData.documentType === 'Acompanhante de Dependente' && (
@@ -1041,10 +1047,10 @@ export const Absenteismo: React.FC = () => {
                             record.documentType === 'Atestado' ? 'bg-blue-100 text-blue-700' : 
                             record.documentType === 'Declaração' ? 'bg-amber-100 text-amber-700' : 
                             record.documentType === 'Falta Injustificada' ? 'bg-red-100 text-red-700' :
-                            record.documentType === 'Licença Prevista em Lei' ? 'bg-purple-100 text-purple-700' :
+                            record.documentType?.startsWith('Licença') ? 'bg-purple-100 text-purple-700' :
                             'bg-indigo-100 text-indigo-700'
                           }`}>
-                            {record.documentType === 'Licença Prevista em Lei' ? 'Licença' : record.documentType}
+                            {record.documentType?.startsWith('Licença') ? 'Licença Legal' : record.documentType}
                           </span>
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
